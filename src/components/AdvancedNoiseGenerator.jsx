@@ -24,6 +24,7 @@ class NoiseGenerator {
     this.trebleFilter = null;
     this.resonanceFilter = null;
     this.currentParams = null; // Store current parameters for release envelope
+    this.stopTimeout = null; // Track pending cleanup timeout
     this.isPlaying = false;
   }
 
@@ -181,7 +182,8 @@ class NoiseGenerator {
 
   playNoise(type, params, volume = 50) {
     this.initialize(volume);
-    this.stop();
+    // Stop immediately without release envelope (we're switching variations)
+    this.stop(false);
 
     // Store params for later use (e.g., release envelope)
     this.currentParams = params;
@@ -212,16 +214,22 @@ class NoiseGenerator {
     this.gainNode.gain.setValueAtTime(0, now);
     this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-    // Note: Release will be applied in stop() method
+    // Note: Release will be applied in stop() method when explicitly stopped
 
     this.sourceNode.start(0);
     this.isPlaying = true;
   }
 
-  stop() {
+  stop(applyRelease = true) {
+    // Clear any pending cleanup timeout
+    if (this.stopTimeout) {
+      clearTimeout(this.stopTimeout);
+      this.stopTimeout = null;
+    }
+
     if (this.sourceNode) {
-      // Apply release envelope if we have currentParams
-      if (this.currentParams && this.gainNode) {
+      if (applyRelease && this.currentParams && this.gainNode) {
+        // Apply release envelope only when explicitly stopping (not when switching variations)
         const now = this.audioContext.currentTime;
         const releaseTime = this.currentParams.releaseTime / 1000; // Convert ms to seconds
         const currentGain = this.gainNode.gain.value;
@@ -231,52 +239,70 @@ class NoiseGenerator {
         this.gainNode.gain.setValueAtTime(currentGain, now);
         this.gainNode.gain.linearRampToValueAtTime(0, now + releaseTime);
 
-        // Schedule the actual stop after release time
-        setTimeout(() => {
-          if (this.sourceNode) {
-            this.sourceNode.stop();
-            this.sourceNode.disconnect();
-            this.sourceNode = null;
+        // Store references to OLD nodes that need to be cleaned up
+        const oldSourceNode = this.sourceNode;
+        const oldBassFilter = this.bassFilter;
+        const oldMidFilter = this.midFilter;
+        const oldTrebleFilter = this.trebleFilter;
+        const oldResonanceFilter = this.resonanceFilter;
+
+        // Clear current references immediately
+        this.sourceNode = null;
+        this.bassFilter = null;
+        this.midFilter = null;
+        this.trebleFilter = null;
+        this.resonanceFilter = null;
+
+        // Schedule cleanup of OLD nodes after release time
+        this.stopTimeout = setTimeout(() => {
+          if (oldSourceNode) {
+            try {
+              oldSourceNode.stop();
+              oldSourceNode.disconnect();
+            } catch (e) {
+              // Node may already be stopped, ignore error
+            }
           }
-          // Disconnect and clean up filters
-          if (this.bassFilter) {
-            this.bassFilter.disconnect();
-            this.bassFilter = null;
+          // Disconnect and clean up OLD filters
+          if (oldBassFilter) {
+            try { oldBassFilter.disconnect(); } catch (e) {}
           }
-          if (this.midFilter) {
-            this.midFilter.disconnect();
-            this.midFilter = null;
+          if (oldMidFilter) {
+            try { oldMidFilter.disconnect(); } catch (e) {}
           }
-          if (this.trebleFilter) {
-            this.trebleFilter.disconnect();
-            this.trebleFilter = null;
+          if (oldTrebleFilter) {
+            try { oldTrebleFilter.disconnect(); } catch (e) {}
           }
-          if (this.resonanceFilter) {
-            this.resonanceFilter.disconnect();
-            this.resonanceFilter = null;
+          if (oldResonanceFilter) {
+            try { oldResonanceFilter.disconnect(); } catch (e) {}
           }
+          this.stopTimeout = null;
         }, releaseTime * 1000);
       } else {
-        // No release envelope, stop immediately
-        this.sourceNode.stop();
-        this.sourceNode.disconnect();
+        // No release envelope - stop immediately (when switching variations)
+        try {
+          this.sourceNode.stop();
+          this.sourceNode.disconnect();
+        } catch (e) {
+          // Node may already be stopped, ignore error
+        }
         this.sourceNode = null;
 
-        // Disconnect and clean up filters
+        // Disconnect and clean up filters immediately
         if (this.bassFilter) {
-          this.bassFilter.disconnect();
+          try { this.bassFilter.disconnect(); } catch (e) {}
           this.bassFilter = null;
         }
         if (this.midFilter) {
-          this.midFilter.disconnect();
+          try { this.midFilter.disconnect(); } catch (e) {}
           this.midFilter = null;
         }
         if (this.trebleFilter) {
-          this.trebleFilter.disconnect();
+          try { this.trebleFilter.disconnect(); } catch (e) {}
           this.trebleFilter = null;
         }
         if (this.resonanceFilter) {
-          this.resonanceFilter.disconnect();
+          try { this.resonanceFilter.disconnect(); } catch (e) {}
           this.resonanceFilter = null;
         }
       }
