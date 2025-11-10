@@ -22,10 +22,11 @@ class NoiseGenerator {
     this.isPlaying = false;
   }
 
-  initialize() {
+  initialize(initialVolume = 50) {
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
       this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = initialVolume / 100; // Set initial volume
       this.gainNode.connect(this.audioContext.destination);
     }
   }
@@ -100,8 +101,8 @@ class NoiseGenerator {
     return buffer;
   }
 
-  playNoise(type, params) {
-    this.initialize();
+  playNoise(type, params, volume = 50) {
+    this.initialize(volume);
     this.stop();
 
     const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
@@ -249,6 +250,7 @@ export default function AdvancedNoiseGenerator() {
 
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
+  const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
 
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
@@ -267,10 +269,18 @@ export default function AdvancedNoiseGenerator() {
 
   // Update volume when changed
   useEffect(() => {
+    masterVolumeRef.current = masterVolume; // Update ref
     if (noiseGeneratorRef.current) {
       noiseGeneratorRef.current.setVolume(masterVolume);
     }
   }, [masterVolume]);
+
+  // Sync brown duration with pink when "use same duration" is enabled
+  useEffect(() => {
+    if (useSameDuration) {
+      setBrownDuration(pinkDuration);
+    }
+  }, [useSameDuration, pinkDuration]);
 
   // Start generation
   const startGeneration = useCallback(() => {
@@ -317,12 +327,12 @@ export default function AdvancedNoiseGenerator() {
 
     // Play the noise
     if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.playNoise('pink', variation.parameters);
+      noiseGeneratorRef.current.playNoise('pink', variation.parameters, masterVolume);
     }
 
     // Start timer
     startTimer(session);
-  }, [pinkDuration, brownDuration, useSameDuration, durationType, fixedTime, fixedCycles]);
+  }, [pinkDuration, brownDuration, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume]);
 
   // Timer logic
   const startTimer = useCallback((session) => {
@@ -373,7 +383,7 @@ export default function AdvancedNoiseGenerator() {
 
           // Play new noise
           if (noiseGeneratorRef.current) {
-            noiseGeneratorRef.current.playNoise(nextType, variation.parameters);
+            noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
           }
 
           return {
@@ -422,7 +432,7 @@ export default function AdvancedNoiseGenerator() {
       if (prev.isPaused) {
         // Resume
         if (noiseGeneratorRef.current && prev.currentVariation) {
-          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters);
+          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current);
         }
         startTimer(prev);
       } else {
