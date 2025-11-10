@@ -143,6 +143,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
         <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-800">
           <h2 className="text-2xl font-bold">Edit Idea</h2>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
@@ -151,6 +152,10 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
         </div>
 
         {/* Content */}
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          handleSave();
+        }}>
         <div className="space-y-6">
           {/* Idea Content */}
           <div>
@@ -170,6 +175,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             <label className="block text-sm font-medium mb-2">
               Classification Type
               <button
+                type="button"
                 onClick={handleAutoClassify}
                 disabled={isClassifying}
                 className="ml-3 text-xs neural-button-secondary py-1 px-2"
@@ -190,6 +196,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {CLASSIFICATION_TYPES.map(type => (
                 <button
+                  type="button"
                   key={type.value}
                   onClick={() => setEditedIdea(prev => ({
                     ...prev,
@@ -222,6 +229,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             <div className="flex flex-wrap gap-2 mb-3">
               {IDEA_TAGS.map(tag => (
                 <button
+                  type="button"
                   key={tag}
                   onClick={() => toggleTag(tag)}
                   className={`px-3 py-1 rounded-full text-sm transition-colors ${
@@ -241,11 +249,17 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
                 type="text"
                 value={customTag}
                 onChange={(e) => setCustomTag(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addCustomTag()}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addCustomTag();
+                  }
+                }}
                 placeholder="Add custom tag..."
                 className="neural-input flex-1 text-sm"
               />
               <button
+                type="button"
                 onClick={addCustomTag}
                 className="neural-button-secondary px-4 text-sm"
               >
@@ -263,6 +277,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
                   >
                     {tag}
                     <button
+                      type="button"
                       onClick={() => removeTag(tag)}
                       className="hover:text-red-400 transition-colors"
                     >
@@ -300,6 +315,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             />
             {editedIdea.dueDate && (
               <button
+                type="button"
                 onClick={() => setEditedIdea(prev => ({ ...prev, dueDate: '' }))}
                 className="text-xs text-gray-500 hover:text-gray-300 mt-1"
               >
@@ -375,6 +391,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             <div className="flex gap-2">
               {PRIORITY_OPTIONS.map(option => (
                 <button
+                  type="button"
                   key={option.value}
                   onClick={() => setEditedIdea(prev => ({ ...prev, priority: option.value }))}
                   className={`flex-1 py-2 px-4 rounded-lg border-2 transition-all ${
@@ -397,6 +414,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
         {/* Actions */}
         <div className="flex items-center justify-between mt-8 pt-6 border-t border-gray-800">
           <button
+            type="button"
             onClick={handleDelete}
             className="neural-button-secondary text-red-400 hover:bg-red-950 flex items-center gap-2"
           >
@@ -406,13 +424,14 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
 
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={onClose}
               className="neural-button-secondary"
             >
               Cancel
             </button>
             <button
-              onClick={handleSave}
+              type="submit"
               disabled={!editedIdea.content.trim()}
               className="neural-button flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -421,6 +440,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             </button>
           </div>
         </div>
+        </form>
       </div>
     </div>
   );
