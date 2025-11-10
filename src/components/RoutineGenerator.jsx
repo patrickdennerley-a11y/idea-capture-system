@@ -517,6 +517,7 @@ export default function RoutineGenerator({
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold">Save Routine</h3>
               <button
+                type="button"
                 onClick={() => setShowSaveDialog(false)}
                 className="text-gray-400 hover:text-white"
               >
@@ -524,37 +525,44 @@ export default function RoutineGenerator({
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  Routine Name *
-                </label>
-                <input
-                  type="text"
-                  value={routineName}
-                  onChange={(e) => setRoutineName(e.target.value)}
-                  className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
-                  placeholder="e.g., Morning Study Session, Exam Prep Day"
-                  autoFocus
-                />
-              </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveConfirm();
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Routine Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={routineName}
+                    onChange={(e) => setRoutineName(e.target.value)}
+                    className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
+                    placeholder="e.g., Morning Study Session, Exam Prep Day"
+                    autoFocus
+                    required
+                  />
+                </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={handleSaveConfirm}
-                  className="neural-button flex-1 flex items-center justify-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  Save
-                </button>
-                <button
-                  onClick={() => setShowSaveDialog(false)}
-                  className="neural-button-secondary px-4"
-                >
-                  Cancel
-                </button>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    className="neural-button flex-1 flex items-center justify-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveDialog(false)}
+                    className="neural-button-secondary px-4"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

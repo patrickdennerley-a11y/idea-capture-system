@@ -441,64 +441,71 @@ export default function DailyChecklist({ checklist, setChecklist }) {
         <div className="bg-neural-darker border border-neural-purple rounded-lg p-4 mb-4 animate-slide-in">
           <h3 className="font-bold mb-3">Add New Routine</h3>
 
-          <input
-            type="text"
-            value={newItemText}
-            onChange={(e) => setNewItemText(e.target.value)}
-            placeholder="Enter routine text..."
-            className="neural-input mb-3"
-            autoFocus
-          />
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            addCustomItem();
+          }}>
+            <input
+              type="text"
+              value={newItemText}
+              onChange={(e) => setNewItemText(e.target.value)}
+              placeholder="Enter routine text..."
+              className="neural-input mb-3"
+              autoFocus
+            />
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Category</label>
-              <select
-                value={newItemCategory}
-                onChange={(e) => setNewItemCategory(e.target.value)}
-                className="neural-input"
-              >
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Category</label>
+                <select
+                  value={newItemCategory}
+                  onChange={(e) => setNewItemCategory(e.target.value)}
+                  className="neural-input"
+                >
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Priority</label>
+                <button
+                  type="button"
+                  onClick={() => setNewItemImportant(!newItemImportant)}
+                  className={`w-full py-2 px-4 rounded-lg border-2 transition-all ${
+                    newItemImportant
+                      ? 'border-red-400 bg-red-400/20 text-red-400'
+                      : 'border-gray-700 bg-neural-dark text-gray-400'
+                  }`}
+                >
+                  <Star className={`w-4 h-4 inline mr-1 ${newItemImportant ? 'fill-current' : ''}`} />
+                  {newItemImportant ? 'Important' : 'Normal'}
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Priority</label>
+            <div className="flex gap-2">
               <button
-                onClick={() => setNewItemImportant(!newItemImportant)}
-                className={`w-full py-2 px-4 rounded-lg border-2 transition-all ${
-                  newItemImportant
-                    ? 'border-red-400 bg-red-400/20 text-red-400'
-                    : 'border-gray-700 bg-neural-dark text-gray-400'
-                }`}
+                type="submit"
+                disabled={!newItemText.trim()}
+                className="neural-button flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Star className={`w-4 h-4 inline mr-1 ${newItemImportant ? 'fill-current' : ''}`} />
-                {newItemImportant ? 'Important' : 'Normal'}
+                Add Routine
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewItemText('');
+                  setNewItemImportant(false);
+                }}
+                className="neural-button-secondary"
+              >
+                Cancel
               </button>
             </div>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={addCustomItem}
-              disabled={!newItemText.trim()}
-              className="neural-button flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Add Routine
-            </button>
-            <button
-              onClick={() => {
-                setShowAddForm(false);
-                setNewItemText('');
-                setNewItemImportant(false);
-              }}
-              className="neural-button-secondary"
-            >
-              Cancel
-            </button>
-          </div>
+          </form>
         </div>
       )}
 
