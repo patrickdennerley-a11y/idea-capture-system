@@ -57,7 +57,8 @@ class NoiseGenerator {
         b5 = -0.7616 * b5 - white * 0.0168980 * depthMod;
 
         let pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-        pink *= 0.11 * params.volume / 100;
+        // Normalized volume: 0.15 base multiplier for consistent loudness
+        pink *= 0.15 * params.volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
@@ -90,7 +91,9 @@ class NoiseGenerator {
         // Apply frequency modulation as a subtle filter
         const freqFactor = 0.5 + (params.frequency / 20000) * 0.5; // 0.5 to 1.0
 
-        let brown = lastOut * freqFactor * 5.0 * params.volume / 100;
+        // Normalized volume: 0.15 base multiplier (matching pink noise)
+        // Apply frequency factor as subtle variation
+        let brown = lastOut * freqFactor * 0.15 * params.volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
@@ -161,14 +164,14 @@ const generateRandomParameters = () => {
   const rand = () => (seededRandom() + Math.random()) / 2;
 
   return {
-    frequency: rand() * 19000 + 1000, // 1000-20000 Hz
-    rate: rand() * 9 + 1, // 1-10 cycles/sec
-    depth: rand() * 80 + 20, // 20-100%
-    carrier: rand() * 900 + 100, // 100-1000 Hz
-    volume: rand() * 30 + 70, // 70-100%
-    filterCutoff: rand() * 19000 + 1000, // 1000-20000 Hz
-    stereoWidth: rand() * 65 + 35, // 35-100%
-    phase: rand() * 2 * Math.PI, // 0-2π
+    frequency: rand() * 19500 + 500, // 500-20000 Hz (wider range)
+    rate: rand() * 9.5 + 0.5, // 0.5-10 cycles/sec (wider range)
+    depth: rand() * 95 + 5, // 5-100% (much wider range)
+    carrier: rand() * 950 + 50, // 50-1000 Hz (wider range)
+    volume: rand() * 60 + 40, // 40-100% (much wider range, but not too quiet)
+    filterCutoff: rand() * 19500 + 500, // 500-20000 Hz (wider range)
+    stereoWidth: rand() * 90 + 10, // 10-100% (much wider range)
+    phase: rand() * 2 * Math.PI, // 0-2π (unchanged)
   };
 };
 
@@ -190,9 +193,11 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
   // Memory management: only use last 100 variations of same type for distance calculation
   const recentSameTypeVariations = sameTypeVariations.slice(-100);
 
-  // Generate 100 candidates
+  // Generate 200 candidates (increased from 100 for better diversity)
   const candidates = [];
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 200; i++) {
+    // Reseed for each candidate to maximize diversity
+    randomSeed = Date.now() + variationNumber * 1000 + i * 17; // Prime number offset
     candidates.push(generateRandomParameters());
   }
 
