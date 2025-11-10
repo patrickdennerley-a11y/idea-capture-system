@@ -39,7 +39,8 @@ import { formatDateTime } from '../utils/dateUtils';
 import { organizeIdeas } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import IdeaEditModal from './IdeaEditModal';
-import { VariableSizeList as List } from 'react-window';
+// Temporarily disabled virtual scrolling - using regular rendering instead
+// import { VariableSizeList as List } from 'react-window';
 
 // 🔍 DIAGNOSTIC: Track render counts
 let ideaCaptureRenderCount = 0;
@@ -1171,7 +1172,7 @@ export default function IdeaCapture({
           </div>
         </div>
 
-        {/* Virtual Scrolling List with react-window */}
+        {/* Ideas List (virtual scrolling temporarily disabled) */}
         {filteredIdeas.length === 0 ? (
           <div className="max-h-96 flex items-center justify-center py-8">
             <p className="text-gray-500 text-center">
@@ -1179,16 +1180,10 @@ export default function IdeaCapture({
             </p>
           </div>
         ) : (
-          <div ref={scrollContainerRef}>
-            <List
-              height={384} // max-h-96 = 384px
-              itemCount={virtualListData.length}
-              itemSize={getItemSize}
-              width="100%"
-              className="neural-scrollbar"
-            >
-              {Row}
-            </List>
+          <div ref={scrollContainerRef} className="max-h-96 overflow-y-auto neural-scrollbar">
+            {virtualListData.map((row, index) => (
+              <Row key={index} index={index} style={{}} />
+            ))}
           </div>
         )}
 
