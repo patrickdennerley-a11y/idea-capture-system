@@ -3,8 +3,16 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      'react-window': 'react-window/dist/index.esm.js'
+    }
+  },
   optimizeDeps: {
-    include: ['react-window']
+    include: ['react-window'],
+    esbuildOptions: {
+      target: 'esnext'
+    }
   },
   server: {
     port: 3000,
