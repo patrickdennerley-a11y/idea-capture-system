@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neural-darker text-gray-100 font-sans antialiased;
+  }
+}
+
+@layer components {
+  .neural-card {
+    @apply bg-neural-dark border border-gray-800 rounded-lg p-4 shadow-lg;
+  }
+
+  .neural-button {
+    @apply px-4 py-2 bg-neural-purple hover:bg-purple-600 rounded-lg font-medium transition-colors;
+  }
+
+  .neural-button-secondary {
+    @apply px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg font-medium transition-colors;
+  }
+
+  .neural-input {
+    @apply w-full bg-neural-dark border border-gray-700 rounded-lg px-4 py-2 focus:border-neural-purple focus:outline-none focus:ring-2 focus:ring-neural-purple/50 transition-all;
+  }
+
+  /* Select elements need extra right padding for the dropdown arrow */
+  select.neural-input {
+    @apply pr-10;
+    background-image: none; /* Use browser default arrow */
+  }
+
+  .neural-textarea {
+    @apply w-full bg-neural-dark border border-gray-700 rounded-lg px-4 py-3 focus:border-neural-purple focus:outline-none focus:ring-2 focus:ring-neural-purple/50 transition-all resize-none;
+  }
+}
+
+/* Custom scrollbar styles for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0f;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #a855f7;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9333ea;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.5);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Custom range slider styles for perfect alignment */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  outline: none;
+  padding: 0;
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  border: none;
+  transition: all 0.2s ease;
+}
+
+input[type="range"].slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+input[type="range"].slider::-webkit-slider-thumb:active {
+  transform: scale(0.98);
+}
+
+/* Firefox */
+input[type="range"].slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  border: none;
+  transition: all 0.2s ease;
+}
+
+input[type="range"].slider::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+input[type="range"].slider::-moz-range-thumb:active {
+  transform: scale(0.98);
+}
+
+/* Track styling for Firefox */
+input[type="range"].slider::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+/* React Big Calendar - Basic Neural Theme Integration */
+.rbc-calendar {
+  color: #f3f4f6;
+}
+
+.rbc-header {
+  background: #1f2937 !important;
+  border-color: #374151 !important;
+  color: #f3f4f6;
+  padding: 24px 0;
+  font-weight: 600;
+}
+
+.rbc-time-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #111827;
+}
+
+.rbc-time-header .rbc-header {
+  border-left: none !important;
+  border-right: 1px solid #374151 !important;
+}
+
+.rbc-time-header .rbc-header:first-child {
+  border-left: 1px solid #374151 !important;
+}
+
+.rbc-time-view,
+.rbc-month-view {
+  background: #111827;
+  border-color: #374151;
+}
+
+.rbc-time-content,
+.rbc-month-row {
+  border-color: #374151;
+}
+
+.rbc-time-slot {
+  border-top: none !important;
+}
+
+.rbc-day-slot {
+  border-color: #374151;
+}
+
+.rbc-timeslot-group {
+  border-color: #374151;
+  min-height: 180px;
+}
+
+.rbc-time-header-content {
+  border-color: #374151;
+}
+
+.rbc-day-bg {
+  border-color: #374151;
+}
+
+/* Hide all-day event slot */
+.rbc-allday-cell {
+  display: none;
+}
+
+.rbc-today {
+  background-color: #111827 !important;
+}
+
+.rbc-current-time-indicator {
+  display: none;
+}
