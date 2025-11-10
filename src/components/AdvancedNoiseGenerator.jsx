@@ -19,6 +19,11 @@ class NoiseGenerator {
     this.audioContext = null;
     this.sourceNode = null;
     this.gainNode = null;
+    this.bassFilter = null;
+    this.midFilter = null;
+    this.trebleFilter = null;
+    this.resonanceFilter = null;
+    this.currentParams = null; // Store current parameters for release envelope
     this.isPlaying = false;
   }
 
@@ -31,18 +36,52 @@ class NoiseGenerator {
     }
   }
 
+  createEQFilters(params) {
+    // Bass filter (20-250 Hz)
+    this.bassFilter = this.audioContext.createBiquadFilter();
+    this.bassFilter.type = 'peaking';
+    this.bassFilter.frequency.value = 135; // Center of 20-250 Hz range
+    this.bassFilter.Q.value = 0.7;
+    this.bassFilter.gain.value = (params.bassBand - 1) * 12; // Convert 0.5-1.5x to -6 to +6 dB
+
+    // Mid filter (250-4000 Hz)
+    this.midFilter = this.audioContext.createBiquadFilter();
+    this.midFilter.type = 'peaking';
+    this.midFilter.frequency.value = 1000; // Center of 250-4000 Hz range
+    this.midFilter.Q.value = 0.7;
+    this.midFilter.gain.value = (params.midBand - 1) * 12;
+
+    // Treble filter (4000-20000 Hz)
+    this.trebleFilter = this.audioContext.createBiquadFilter();
+    this.trebleFilter.type = 'peaking';
+    this.trebleFilter.frequency.value = 8000; // Center of 4000-20000 Hz range
+    this.trebleFilter.Q.value = 0.7;
+    this.trebleFilter.gain.value = (params.trebleBand - 1) * 12;
+
+    // Resonance peak filter
+    this.resonanceFilter = this.audioContext.createBiquadFilter();
+    this.resonanceFilter.type = 'peaking';
+    this.resonanceFilter.frequency.value = params.resonanceFreq;
+    this.resonanceFilter.Q.value = params.resonanceQ;
+    this.resonanceFilter.gain.value = 6; // Fixed gain for resonance peak
+  }
+
   generatePinkNoise(params) {
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    const sampleRate = this.audioContext.sampleRate;
 
     for (let channel = 0; channel < 2; channel++) {
       const data = buffer.getChannelData(channel);
-      b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0;
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+
+      // Binaural offset: slightly different frequency for each channel
+      const channelFreqOffset = channel === 0 ? -params.binauralOffset / 2 : params.binauralOffset / 2;
 
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
+        const time = i / sampleRate;
 
         // Apply custom parameters to shape the noise
         const freqMod = params.frequency / 20000;
@@ -57,6 +96,21 @@ class NoiseGenerator {
         b5 = -0.7616 * b5 - white * 0.0168980 * depthMod;
 
         let pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+
+        // Apply modulation
+        if (params.modulationType === 'AM') {
+          // Amplitude Modulation: modulate amplitude with carrier frequency
+          const carrierFreq = params.carrier + channelFreqOffset;
+          const modulator = 0.5 + 0.5 * Math.sin(2 * Math.PI * carrierFreq * time);
+          pink *= modulator;
+        } else if (params.modulationType === 'FM') {
+          // Frequency Modulation: modulate with carrier frequency
+          const carrierFreq = params.carrier + channelFreqOffset;
+          const modulator = Math.sin(2 * Math.PI * carrierFreq * time);
+          pink *= (1 + modulator * 0.3); // 30% modulation depth
+        }
+        // 'none' = no modulation applied
+
         // Normalized volume: 0.15 base multiplier for consistent loudness
         pink *= 0.15 * params.volume / 100;
 
@@ -73,12 +127,18 @@ class NoiseGenerator {
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
+    const sampleRate = this.audioContext.sampleRate;
+
     for (let channel = 0; channel < 2; channel++) {
       const data = buffer.getChannelData(channel);
       let lastOut = 0;
 
+      // Binaural offset: slightly different frequency for each channel
+      const channelFreqOffset = channel === 0 ? -params.binauralOffset / 2 : params.binauralOffset / 2;
+
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
+        const time = i / sampleRate;
 
         // Brown noise = integrated white noise with parameter modulation
         const depthMod = params.depth / 100;
@@ -91,9 +151,24 @@ class NoiseGenerator {
         // Apply frequency modulation as a subtle filter
         const freqFactor = 0.5 + (params.frequency / 20000) * 0.5; // 0.5 to 1.0
 
+        let brown = lastOut * freqFactor;
+
+        // Apply modulation
+        if (params.modulationType === 'AM') {
+          // Amplitude Modulation: modulate amplitude with carrier frequency
+          const carrierFreq = params.carrier + channelFreqOffset;
+          const modulator = 0.5 + 0.5 * Math.sin(2 * Math.PI * carrierFreq * time);
+          brown *= modulator;
+        } else if (params.modulationType === 'FM') {
+          // Frequency Modulation: modulate with carrier frequency
+          const carrierFreq = params.carrier + channelFreqOffset;
+          const modulator = Math.sin(2 * Math.PI * carrierFreq * time);
+          brown *= (1 + modulator * 0.3); // 30% modulation depth
+        }
+        // 'none' = no modulation applied
+
         // Normalized volume: 0.15 base multiplier (matching pink noise)
-        // Apply frequency factor as subtle variation
-        let brown = lastOut * freqFactor * 0.15 * params.volume / 100;
+        brown *= 0.15 * params.volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
@@ -108,21 +183,103 @@ class NoiseGenerator {
     this.initialize(volume);
     this.stop();
 
+    // Store params for later use (e.g., release envelope)
+    this.currentParams = params;
+
     const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
 
+    // Create source node
     this.sourceNode = this.audioContext.createBufferSource();
     this.sourceNode.buffer = buffer;
     this.sourceNode.loop = true;
-    this.sourceNode.connect(this.gainNode);
+
+    // Create EQ filters
+    this.createEQFilters(params);
+
+    // Create audio chain: source -> bass -> mid -> treble -> resonance -> gain -> destination
+    this.sourceNode.connect(this.bassFilter);
+    this.bassFilter.connect(this.midFilter);
+    this.midFilter.connect(this.trebleFilter);
+    this.trebleFilter.connect(this.resonanceFilter);
+    this.resonanceFilter.connect(this.gainNode);
+
+    // Apply envelope (attack)
+    const now = this.audioContext.currentTime;
+    const attackTime = params.attackTime / 1000; // Convert ms to seconds
+
+    // Attack: fade in from 0 to target volume
+    this.gainNode.gain.cancelScheduledValues(now);
+    this.gainNode.gain.setValueAtTime(0, now);
+    this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+
+    // Note: Release will be applied in stop() method
+
     this.sourceNode.start(0);
     this.isPlaying = true;
   }
 
   stop() {
     if (this.sourceNode) {
-      this.sourceNode.stop();
-      this.sourceNode.disconnect();
-      this.sourceNode = null;
+      // Apply release envelope if we have currentParams
+      if (this.currentParams && this.gainNode) {
+        const now = this.audioContext.currentTime;
+        const releaseTime = this.currentParams.releaseTime / 1000; // Convert ms to seconds
+        const currentGain = this.gainNode.gain.value;
+
+        // Release: fade out from current volume to 0
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(currentGain, now);
+        this.gainNode.gain.linearRampToValueAtTime(0, now + releaseTime);
+
+        // Schedule the actual stop after release time
+        setTimeout(() => {
+          if (this.sourceNode) {
+            this.sourceNode.stop();
+            this.sourceNode.disconnect();
+            this.sourceNode = null;
+          }
+          // Disconnect and clean up filters
+          if (this.bassFilter) {
+            this.bassFilter.disconnect();
+            this.bassFilter = null;
+          }
+          if (this.midFilter) {
+            this.midFilter.disconnect();
+            this.midFilter = null;
+          }
+          if (this.trebleFilter) {
+            this.trebleFilter.disconnect();
+            this.trebleFilter = null;
+          }
+          if (this.resonanceFilter) {
+            this.resonanceFilter.disconnect();
+            this.resonanceFilter = null;
+          }
+        }, releaseTime * 1000);
+      } else {
+        // No release envelope, stop immediately
+        this.sourceNode.stop();
+        this.sourceNode.disconnect();
+        this.sourceNode = null;
+
+        // Disconnect and clean up filters
+        if (this.bassFilter) {
+          this.bassFilter.disconnect();
+          this.bassFilter = null;
+        }
+        if (this.midFilter) {
+          this.midFilter.disconnect();
+          this.midFilter = null;
+        }
+        if (this.trebleFilter) {
+          this.trebleFilter.disconnect();
+          this.trebleFilter = null;
+        }
+        if (this.resonanceFilter) {
+          this.resonanceFilter.disconnect();
+          this.resonanceFilter = null;
+        }
+      }
     }
     this.isPlaying = false;
   }
@@ -134,9 +291,13 @@ class NoiseGenerator {
   }
 }
 
-// Maximum Distance Algorithm
+// Maximum Distance Algorithm - 15D Euclidean space
 const calculateEuclideanDistance = (params1, params2) => {
+  // Normalize modulation type to numeric: AM=0, FM=0.5, none=1
+  const modTypeToNum = (type) => type === 'AM' ? 0 : type === 'FM' ? 0.5 : 1;
+
   const normalizedDiff = {
+    // Original 8 parameters
     frequency: (params1.frequency - params2.frequency) / 20000,
     rate: (params1.rate - params2.rate) / 10,
     depth: (params1.depth - params2.depth) / 100,
@@ -145,6 +306,17 @@ const calculateEuclideanDistance = (params1, params2) => {
     filterCutoff: (params1.filterCutoff - params2.filterCutoff) / 20000,
     stereoWidth: (params1.stereoWidth - params2.stereoWidth) / 100,
     phase: (params1.phase - params2.phase) / (2 * Math.PI),
+
+    // New 7 parameters (expanding to 15D space)
+    bassBand: (params1.bassBand - params2.bassBand) / 1.0, // 0.5-1.5 range = 1.0 spread
+    midBand: (params1.midBand - params2.midBand) / 1.0,
+    trebleBand: (params1.trebleBand - params2.trebleBand) / 1.0,
+    attackTime: (params1.attackTime - params2.attackTime) / 500,
+    releaseTime: (params1.releaseTime - params2.releaseTime) / 500,
+    modulationType: (modTypeToNum(params1.modulationType) - modTypeToNum(params2.modulationType)) / 1.0,
+    binauralOffset: (params1.binauralOffset - params2.binauralOffset) / 20,
+    resonanceFreq: (params1.resonanceFreq - params2.resonanceFreq) / 5000,
+    resonanceQ: (params1.resonanceQ - params2.resonanceQ) / 4.5,
   };
 
   return Math.sqrt(
@@ -164,6 +336,7 @@ const generateRandomParameters = () => {
   const rand = () => (seededRandom() + Math.random()) / 2;
 
   return {
+    // Original 8 parameters
     frequency: rand() * 19500 + 500, // 500-20000 Hz (wider range)
     rate: rand() * 9.5 + 0.5, // 0.5-10 cycles/sec (wider range)
     depth: rand() * 95 + 5, // 5-100% (much wider range)
@@ -172,6 +345,17 @@ const generateRandomParameters = () => {
     filterCutoff: rand() * 19500 + 500, // 500-20000 Hz (wider range)
     stereoWidth: rand() * 90 + 10, // 10-100% (much wider range)
     phase: rand() * 2 * Math.PI, // 0-2π (unchanged)
+
+    // New 7 independent parameters (expanding to 15D space)
+    bassBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 20-250 Hz
+    midBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 250-4000 Hz
+    trebleBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 4000-20000 Hz
+    attackTime: rand() * 500, // 0-500ms fade in
+    releaseTime: rand() * 500, // 0-500ms fade out
+    modulationType: ['AM', 'FM', 'none'][Math.floor(rand() * 3)], // Modulation type
+    binauralOffset: rand() * 20, // 0-20 Hz L/R frequency difference
+    resonanceFreq: rand() * 4900 + 100, // 100-5000 Hz peak frequency
+    resonanceQ: rand() * 4.5 + 0.5, // 0.5-5.0 Q factor (peak width)
   };
 };
 
@@ -692,11 +876,11 @@ export default function AdvancedNoiseGenerator() {
                   <span className="text-sm font-medium">Variation Distance</span>
                 </div>
                 <div className="text-2xl font-bold text-green-400">
-                  {activeSession.currentVariation.distanceFromPrevious.toFixed(2)} / 10.0
+                  {activeSession.currentVariation.distanceFromPrevious.toFixed(2)} / 3.87 ({Math.round((activeSession.currentVariation.distanceFromPrevious / 3.87) * 100)}%)
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  {activeSession.currentVariation.distanceFromPrevious >= 7 ? 'Very Different' :
-                   activeSession.currentVariation.distanceFromPrevious >= 5 ? 'Moderately Different' : 'Somewhat Different'}
+                  {activeSession.currentVariation.distanceFromPrevious >= 1.2 ? 'Very Different' :
+                   activeSession.currentVariation.distanceFromPrevious >= 0.8 ? 'Moderately Different' : 'Somewhat Different'}
                 </p>
               </div>
             )}
@@ -712,11 +896,11 @@ export default function AdvancedNoiseGenerator() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-400">Avg Pink Distance:</span>
-                  <span className="ml-2 font-bold text-pink-400">{statistics.avgDistancePink}/10</span>
+                  <span className="ml-2 font-bold text-pink-400">{statistics.avgDistancePink}/3.87 ({Math.round((statistics.avgDistancePink / 3.87) * 100)}%)</span>
                 </div>
                 <div>
                   <span className="text-gray-400">Avg Brown Distance:</span>
-                  <span className="ml-2 font-bold text-amber-400">{statistics.avgDistanceBrown}/10</span>
+                  <span className="ml-2 font-bold text-amber-400">{statistics.avgDistanceBrown}/3.87 ({Math.round((statistics.avgDistanceBrown / 3.87) * 100)}%)</span>
                 </div>
                 <div>
                   <span className="text-gray-400">Pink Variations:</span>
@@ -782,9 +966,9 @@ export default function AdvancedNoiseGenerator() {
               <div className="p-3 bg-neural-darker rounded-lg mb-4">
                 <p className="text-sm text-gray-400 mb-2">Average Variation Distance:</p>
                 <p className="text-lg font-bold">
-                  <span className="text-pink-400">Pink: {statistics.avgDistancePink}/10</span>
+                  <span className="text-pink-400">Pink: {statistics.avgDistancePink}/3.87 ({Math.round((statistics.avgDistancePink / 3.87) * 100)}%)</span>
                   <span className="mx-2">|</span>
-                  <span className="text-amber-400">Brown: {statistics.avgDistanceBrown}/10</span>
+                  <span className="text-amber-400">Brown: {statistics.avgDistanceBrown}/3.87 ({Math.round((statistics.avgDistanceBrown / 3.87) * 100)}%)</span>
                 </p>
               </div>
             )}
@@ -963,7 +1147,8 @@ export default function AdvancedNoiseGenerator() {
             <ul className="text-sm text-gray-400 space-y-1">
               <li>• Alternates between pink and brown noise with custom durations</li>
               <li>• Each variation is mathematically maximized to be different from all previous ones</li>
-              <li>• Uses Euclidean distance in 8-dimensional parameter space</li>
+              <li>• Uses Euclidean distance in 15-dimensional parameter space (max 3.87, target 1.0-1.2)</li>
+              <li>• Parameters: frequency, rate, depth, carrier, volume, filter, stereo, phase, EQ (3 bands), envelope, modulation, binaural offset, resonance</li>
               <li>• Generation continues when you switch tabs</li>
               <li>• Save completed sessions to replay later</li>
               <li>• Choose indefinite play or set specific time/cycle limits</li>
