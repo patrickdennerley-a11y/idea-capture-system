@@ -148,18 +148,33 @@ const calculateEuclideanDistance = (params1, params2) => {
   );
 };
 
-const generateRandomParameters = () => ({
-  frequency: Math.random() * 19000 + 1000, // 1000-20000 Hz
-  rate: Math.random() * 9 + 1, // 1-10 cycles/sec
-  depth: Math.random() * 80 + 20, // 20-100%
-  carrier: Math.random() * 900 + 100, // 100-1000 Hz
-  volume: Math.random() * 30 + 70, // 70-100%
-  filterCutoff: Math.random() * 19000 + 1000, // 1000-20000 Hz
-  stereoWidth: Math.random() * 65 + 35, // 35-100%
-  phase: Math.random() * 2 * Math.PI, // 0-2π
-});
+// Seeded random number generator for reproducibility and extra randomness
+let randomSeed = Date.now();
+const seededRandom = () => {
+  randomSeed = (randomSeed * 9301 + 49297) % 233280;
+  return randomSeed / 233280;
+};
 
-const generateMaximallyDifferentVariation = (type, previousVariations) => {
+const generateRandomParameters = () => {
+  // Mix seeded random with Math.random for extra entropy
+  const rand = () => (seededRandom() + Math.random()) / 2;
+
+  return {
+    frequency: rand() * 19000 + 1000, // 1000-20000 Hz
+    rate: rand() * 9 + 1, // 1-10 cycles/sec
+    depth: rand() * 80 + 20, // 20-100%
+    carrier: rand() * 900 + 100, // 100-1000 Hz
+    volume: rand() * 30 + 70, // 70-100%
+    filterCutoff: rand() * 19000 + 1000, // 1000-20000 Hz
+    stereoWidth: rand() * 65 + 35, // 35-100%
+    phase: rand() * 2 * Math.PI, // 0-2π
+  };
+};
+
+const generateMaximallyDifferentVariation = (type, previousVariations, variationNumber) => {
+  // Update seed with timestamp and variation number for extra randomness
+  randomSeed = Date.now() + variationNumber * 1000;
+
   const sameTypeVariations = previousVariations.filter(v => v.type === type);
 
   if (sameTypeVariations.length === 0) {
@@ -171,15 +186,18 @@ const generateMaximallyDifferentVariation = (type, previousVariations) => {
     };
   }
 
+  // Memory management: only use last 100 variations of same type for distance calculation
+  const recentSameTypeVariations = sameTypeVariations.slice(-100);
+
   // Generate 100 candidates
   const candidates = [];
   for (let i = 0; i < 100; i++) {
     candidates.push(generateRandomParameters());
   }
 
-  // Calculate minimum distance to all previous variations for each candidate
+  // Calculate minimum distance to all recent previous variations for each candidate
   const candidateScores = candidates.map(candidate => {
-    const distances = sameTypeVariations.map(prev =>
+    const distances = recentSameTypeVariations.map(prev =>
       calculateEuclideanDistance(candidate, prev.parameters)
     );
     return {
@@ -195,7 +213,7 @@ const generateMaximallyDifferentVariation = (type, previousVariations) => {
   , 0);
 
   const bestScore = candidateScores[bestCandidateIndex];
-  const nearestVariation = sameTypeVariations[bestScore.nearestIndex];
+  const nearestVariation = recentSameTypeVariations[bestScore.nearestIndex];
 
   return {
     parameters: candidates[bestCandidateIndex],
@@ -227,9 +245,13 @@ export default function AdvancedNoiseGenerator() {
   const [durationType, setDurationType] = useState('indefinite'); // 'indefinite', 'time', 'cycles'
   const [fixedTime, setFixedTime] = useState(60);
   const [fixedCycles, setFixedCycles] = useState(10);
+  const [masterVolume, setMasterVolume] = useState(50); // 0-100
 
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
+
+  // Memory management: keep only last 100 variations for distance calculation
+  const MAX_VARIATIONS_IN_MEMORY = 100;
 
   useEffect(() => {
     noiseGeneratorRef.current = new NoiseGenerator();
@@ -242,6 +264,13 @@ export default function AdvancedNoiseGenerator() {
       }
     };
   }, []);
+
+  // Update volume when changed
+  useEffect(() => {
+    if (noiseGeneratorRef.current) {
+      noiseGeneratorRef.current.setVolume(masterVolume);
+    }
+  }, [masterVolume]);
 
   // Start generation
   const startGeneration = useCallback(() => {
@@ -265,7 +294,7 @@ export default function AdvancedNoiseGenerator() {
     };
 
     // Generate first variation
-    const variation = generateMaximallyDifferentVariation('pink', []);
+    const variation = generateMaximallyDifferentVariation('pink', [], 1);
     const variationObj = {
       id: `${session.id}-1`,
       type: 'pink',
@@ -326,7 +355,7 @@ export default function AdvancedNoiseGenerator() {
           }
 
           // Generate next variation
-          const variation = generateMaximallyDifferentVariation(nextType, prev.variations);
+          const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
           const variationObj = {
             id: `${prev.id}-${nextVariationNumber}`,
             type: nextType,
@@ -614,6 +643,22 @@ export default function AdvancedNoiseGenerator() {
               </div>
             )}
 
+            {/* Volume Control During Playback */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-gray-400">Volume</label>
+                <span className="text-sm font-medium">{masterVolume}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={masterVolume}
+                onChange={(e) => setMasterVolume(parseInt(e.target.value))}
+                className="w-full h-2 bg-neural-darker rounded-lg appearance-none cursor-pointer accent-purple-500"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-gray-400">Total Elapsed:</span>
@@ -794,6 +839,26 @@ export default function AdvancedNoiseGenerator() {
                       disabled={useSameDuration}
                       className="neural-input disabled:opacity-50"
                     />
+                  </div>
+                </div>
+
+                {/* Volume Control */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm text-gray-400">Master Volume</label>
+                    <span className="text-sm font-medium">{masterVolume}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={masterVolume}
+                    onChange={(e) => setMasterVolume(parseInt(e.target.value))}
+                    className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>Silent</span>
+                    <span>Loud</span>
                   </div>
                 </div>
 
