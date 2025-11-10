@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Volume2, VolumeX, Play, Pause, Radio } from 'lucide-react';
+import { Volume2, VolumeX, Play, Pause, Radio, Sparkles } from 'lucide-react';
+import AdvancedNoiseGenerator from './AdvancedNoiseGenerator';
 
 const NOISE_TYPES = {
   pink: {
@@ -24,6 +25,7 @@ const NOISE_TYPES = {
 };
 
 export default function NoiseHub() {
+  const [currentView, setCurrentView] = useState('simple'); // 'simple' or 'advanced'
   const [activeNoise, setActiveNoise] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(50);
@@ -55,7 +57,7 @@ export default function NoiseHub() {
             Pink/Brown noise & 40Hz gamma waves for mental health
           </p>
         </div>
-        {activeNoise && (
+        {activeNoise && currentView === 'simple' && (
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 px-3 py-2 bg-neural-darker rounded-lg">
               <div className={`w-2 h-2 rounded-full bg-${NOISE_TYPES[activeNoise].color}-400 ${isPlaying ? 'animate-pulse' : ''}`} />
@@ -71,6 +73,37 @@ export default function NoiseHub() {
         )}
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-gray-800">
+        <button
+          onClick={() => setCurrentView('simple')}
+          className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+            currentView === 'simple'
+              ? 'text-pink-400 border-pink-400'
+              : 'text-gray-400 border-transparent hover:text-gray-300'
+          }`}
+        >
+          <Radio className="w-4 h-4 inline mr-2" />
+          Simple Player
+        </button>
+        <button
+          onClick={() => setCurrentView('advanced')}
+          className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+            currentView === 'advanced'
+              ? 'text-pink-400 border-pink-400'
+              : 'text-gray-400 border-transparent hover:text-gray-300'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 inline mr-2" />
+          Advanced Generator
+        </button>
+      </div>
+
+      {/* Conditional View Rendering */}
+      {currentView === 'advanced' ? (
+        <AdvancedNoiseGenerator />
+      ) : (
+        <>
       {/* Quick Access Buttons */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {Object.entries(NOISE_TYPES).map(([key, noise]) => (
@@ -175,6 +208,8 @@ export default function NoiseHub() {
           Consider saving local copies and/or getting YouTube Premium to ensure uninterrupted access.
         </p>
       </div>
+        </>
+      )}
     </div>
   );
 }
