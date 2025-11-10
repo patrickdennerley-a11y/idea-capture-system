@@ -78,16 +78,18 @@ class NoiseGenerator {
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
 
-        // Brown noise = integrated white noise with custom parameters
-        const freqMod = params.frequency / 20000;
+        // Brown noise = integrated white noise with parameter modulation
         const depthMod = params.depth / 100;
         const rateMod = params.rate / 10;
 
-        // Low-pass filter with parameter modulation
-        lastOut = (lastOut + (0.02 * white * rateMod)) / (1.02 * depthMod);
-        lastOut = lastOut * freqMod;
+        // Integration with decay to prevent DC drift
+        // Higher rate = faster changes, higher depth = more integration
+        lastOut = lastOut * 0.996 + white * 0.004 * rateMod * depthMod;
 
-        let brown = lastOut * 3.5 * params.volume / 100;
+        // Apply frequency modulation as a subtle filter
+        const freqFactor = 0.5 + (params.frequency / 20000) * 0.5; // 0.5 to 1.0
+
+        let brown = lastOut * freqFactor * 5.0 * params.volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
