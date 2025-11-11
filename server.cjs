@@ -220,7 +220,13 @@ Be encouraging and supportive in your tone. Focus on helping execute these ideas
     res.json(organizedData);
 
   } catch (error) {
-    console.error('Error organizing ideas:', error);
+    console.error('❌ Error organizing ideas:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
 
     if (error.status === 401) {
       return res.status(401).json({
@@ -619,7 +625,13 @@ IMPORTANT GUIDELINES:
     res.json(routine);
 
   } catch (error) {
-    console.error('Error generating routine:', error);
+    console.error('❌ Error generating routine:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
 
     if (error.status === 401) {
       return res.status(401).json({
@@ -1222,8 +1234,30 @@ Be practical and supportive. Focus on routines they'll actually follow.`
     });
 
   } catch (error) {
-    console.error('Error generating smart routines:', error);
-    res.status(500).json({ error: 'Failed to generate smart routines' });
+    console.error('❌ Error generating smart routines:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Failed to generate smart routines. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -1604,12 +1638,13 @@ app.listen(PORT, () => {
 ║   POST /api/analyze-patterns                   ║
 ║   POST /api/plan-activity                      ║
 ║   POST /api/generate-routine                   ║
+║   POST /api/generate-smart-routines [NEW]      ║
 ║   POST /api/classify-subject                   ║
 ║   POST /api/analyze-tags                       ║
 ║   POST /api/analyze-urgency                    ║
 ║   POST /api/get-reminders                      ║
-║   POST /api/classify-idea         [NEW]        ║
-║   POST /api/classify-ideas-batch  [NEW]        ║
+║   POST /api/classify-idea                      ║
+║   POST /api/classify-ideas-batch               ║
 ║                                                ║
 ║   Make sure ANTHROPIC_API_KEY is set!          ║
 ╚════════════════════════════════════════════════╝
@@ -1617,7 +1652,18 @@ app.listen(PORT, () => {
 
   // Check for API key
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('\n⚠️  WARNING: ANTHROPIC_API_KEY environment variable is not set!');
-    console.warn('   Add it to your .env file or set it in your environment.\n');
+    console.error('\n❌ ERROR: ANTHROPIC_API_KEY environment variable is not set!');
+    console.error('   1. Create a .env file in the project root');
+    console.error('   2. Add this line: ANTHROPIC_API_KEY=sk-ant-...');
+    console.error('   3. Get your key from: https://console.anthropic.com/settings/keys\n');
+  } else if (process.env.ANTHROPIC_API_KEY === 'your_api_key_here') {
+    console.error('\n❌ ERROR: ANTHROPIC_API_KEY is set to the placeholder value!');
+    console.error('   Replace "your_api_key_here" with your actual API key.\n');
+  } else if (!process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
+    console.warn('\n⚠️  WARNING: ANTHROPIC_API_KEY format looks incorrect!');
+    console.warn('   API keys should start with "sk-ant-"');
+    console.warn('   Current value starts with:', process.env.ANTHROPIC_API_KEY.substring(0, 10) + '...\n');
+  } else {
+    console.log('\n✓ ANTHROPIC_API_KEY is configured correctly\n');
   }
 });
