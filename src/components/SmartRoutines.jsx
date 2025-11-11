@@ -18,17 +18,40 @@
  * - Discard: Permanently removes from this generation (with confirmation)
  */
 
-import { useState } from 'react';
-import { Sparkles, Check, X, SkipForward, Clock, Calendar, Lightbulb, Loader, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles, Check, X, SkipForward, Clock, Calendar, Lightbulb, Loader, AlertCircle, History, Save, Trash2 } from 'lucide-react';
 
-const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => {
-  const [suggestions, setSuggestions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [metadata, setMetadata] = useState(null);
-  const [suggestionStates, setSuggestionStates] = useState({});
+const SmartRoutines = ({
+  ideas,
+  logs,
+  timetable,
+  routines,
+  suggestions,
+  setSuggestions,
+  loading,
+  setLoading,
+  error,
+  setError,
+  showSuggestions,
+  setShowSuggestions,
+  metadata,
+  setMetadata,
+  suggestionStates,
+  setSuggestionStates,
+  generationHistory,
+  setGenerationHistory,
+  onRoutineAdded
+}) => {
   const [discardConfirm, setDiscardConfirm] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Auto-show suggestions when results are ready (handles tab switch during generation)
+  useEffect(() => {
+    if (suggestions.length > 0 && !showSuggestions) {
+      console.log('🔍 Auto-showing smart routines (results ready after tab switch)');
+      setShowSuggestions(true);
+    }
+  }, [suggestions, showSuggestions, setShowSuggestions]);
 
   const fetchSmartRoutines = async () => {
     setLoading(true);
@@ -131,6 +154,62 @@ const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => 
     setDiscardConfirm(null);
   };
 
+  const handleCloseSuggestions = () => {
+    setShowSuggestions(false);
+    // Clear suggestions so they don't auto-show when returning to tab
+    setSuggestions([]);
+    setSuggestionStates({});
+    setMetadata(null);
+  };
+
+  const handleDismissAll = () => {
+    // Mark all as discarded
+    const allDiscarded = {};
+    suggestions.forEach(s => {
+      allDiscarded[s.id] = 'discarded';
+    });
+    setSuggestionStates(allDiscarded);
+
+    // Close and clear
+    setTimeout(() => {
+      handleCloseSuggestions();
+    }, 300);
+  };
+
+  const handleSaveToHistory = () => {
+    const historyEntry = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      suggestions: suggestions,
+      metadata: metadata,
+      states: suggestionStates
+    };
+
+    // Add to smart routines history
+    setGenerationHistory(prev => ({
+      ...prev,
+      smartRoutines: [historyEntry, ...(prev.smartRoutines || [])]
+    }));
+
+    // Close suggestions panel
+    handleCloseSuggestions();
+  };
+
+  const viewHistoryEntry = (entry) => {
+    setSuggestions(entry.suggestions);
+    setMetadata(entry.metadata);
+    setSuggestionStates(entry.states);
+    setShowSuggestions(true);
+    setShowHistory(false);
+  };
+
+  const deleteHistoryEntry = (entryId) => {
+    setGenerationHistory(prev => ({
+      ...prev,
+      smartRoutines: (prev.smartRoutines || []).filter(e => e.id !== entryId)
+    }));
+  };
+
   const getTypeStyles = (type) => {
     if (type === 'direct') {
       return {
@@ -166,7 +245,7 @@ const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => 
 
   return (
     <div className="space-y-4">
-      {/* Generate Button */}
+      {/* Generate Button & History */}
       <div className="flex items-center gap-3">
         <button
           onClick={fetchSmartRoutines}
@@ -178,6 +257,16 @@ const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => 
           <Sparkles className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
           {loading ? 'Generating...' : 'Generate Smart Routines'}
         </button>
+
+        {(generationHistory?.smartRoutines?.length > 0) && (
+          <button
+            onClick={() => setShowHistory(true)}
+            className="neural-button-secondary flex items-center gap-2"
+          >
+            <History className="w-4 h-4" />
+            History ({generationHistory.smartRoutines.length})
+          </button>
+        )}
 
         {metadata && (
           <div className="ml-auto text-sm text-gray-400">
@@ -199,16 +288,34 @@ const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => 
       {/* Suggestions Panel */}
       {showSuggestions && visibleSuggestions.length > 0 && (
         <div className="neural-card space-y-4 animate-slide-in">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-3 -mt-2 -mx-2 px-2">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-neural-purple" />
               Smart Routine Suggestions
             </h3>
             <button
-              onClick={() => setShowSuggestions(false)}
+              onClick={handleCloseSuggestions}
               className="text-gray-400 hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveToHistory}
+              className="neural-button-secondary flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Save to History
+            </button>
+            <button
+              onClick={handleDismissAll}
+              className="text-red-400 hover:text-red-300 transition-colors flex items-center gap-2 px-3 py-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Dismiss All
             </button>
           </div>
 
@@ -360,6 +467,80 @@ const SmartRoutines = ({ ideas, logs, timetable, routines, onRoutineAdded }) => 
               >
                 Yes, Discard
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neural-dark border border-neural-purple rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neural-dark border-b border-gray-800 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <History className="w-6 h-6 text-neural-purple" />
+                <h2 className="text-2xl font-bold">Smart Routines History</h2>
+              </div>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {generationHistory?.smartRoutines?.length > 0 ? (
+                generationHistory.smartRoutines.map((entry) => {
+                  const date = new Date(entry.timestamp);
+                  const confirmedCount = Object.values(entry.states || {}).filter(s => s === 'confirmed').length;
+                  const discardedCount = Object.values(entry.states || {}).filter(s => s === 'discarded').length;
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="bg-neural-darker border border-gray-800 rounded-lg p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <div className="text-sm text-gray-400">
+                            {date.toLocaleDateString()} at {date.toLocaleTimeString()}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {entry.suggestions?.length || 0} suggestions |
+                            {confirmedCount > 0 && ` ${confirmedCount} accepted`}
+                            {discardedCount > 0 && ` | ${discardedCount} discarded`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => viewHistoryEntry(entry)}
+                            className="neural-button-secondary px-3 py-1 text-sm"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => deleteHistoryEntry(entry.id)}
+                            className="text-red-400 hover:text-red-300 transition-colors p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {entry.metadata && (
+                        <div className="text-xs text-gray-500">
+                          {entry.metadata.directCount} direct, {entry.metadata.mashupCount} AI mashups
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center text-gray-400 py-8">
+                  <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No history yet. Generate smart routines to save them here!</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

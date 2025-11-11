@@ -44,7 +44,21 @@ export default function RoutineGenerator({
   generatedRoutine,
   setGeneratedRoutine,
   routineError,
-  setRoutineError
+  setRoutineError,
+  smartRoutines,
+  setSmartRoutines,
+  isGeneratingSmartRoutines,
+  setIsGeneratingSmartRoutines,
+  smartRoutinesError,
+  setSmartRoutinesError,
+  showSmartRoutines,
+  setShowSmartRoutines,
+  smartRoutinesMetadata,
+  setSmartRoutinesMetadata,
+  smartRoutineStates,
+  setSmartRoutineStates,
+  generationHistory,
+  setGenerationHistory
 }) {
   const [currentView, setCurrentView] = useState('generator'); // 'generator' or 'calendar'
   const [savedRoutines, setSavedRoutines] = useLocalStorage('neural-saved-routines', []);
@@ -334,6 +348,20 @@ export default function RoutineGenerator({
           logs={logs}
           timetable={[]} // TODO: Pass actual timetable data
           routines={checklist?.items || []}
+          suggestions={smartRoutines}
+          setSuggestions={setSmartRoutines}
+          loading={isGeneratingSmartRoutines}
+          setLoading={setIsGeneratingSmartRoutines}
+          error={smartRoutinesError}
+          setError={setSmartRoutinesError}
+          showSuggestions={showSmartRoutines}
+          setShowSuggestions={setShowSmartRoutines}
+          metadata={smartRoutinesMetadata}
+          setMetadata={setSmartRoutinesMetadata}
+          suggestionStates={smartRoutineStates}
+          setSuggestionStates={setSmartRoutineStates}
+          generationHistory={generationHistory}
+          setGenerationHistory={setGenerationHistory}
           onRoutineAdded={(routine) => {
             // Add routine to checklist items
             if (checklist && checklist.items) {

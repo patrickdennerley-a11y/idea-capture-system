@@ -62,6 +62,22 @@ function App() {
   const [plan, setPlan] = useState(null);
   const [planError, setPlanError] = useState(null);
 
+  // Smart Routines state (persists across tab switches)
+  const [smartRoutines, setSmartRoutines] = useState([]);
+  const [isGeneratingSmartRoutines, setIsGeneratingSmartRoutines] = useState(false);
+  const [smartRoutinesError, setSmartRoutinesError] = useState(null);
+  const [showSmartRoutines, setShowSmartRoutines] = useState(false);
+  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState(null);
+  const [smartRoutineStates, setSmartRoutineStates] = useState({});
+
+  // History for all AI generations
+  const [generationHistory, setGenerationHistory] = useLocalStorage('neural-generation-history', {
+    routines: [],
+    smartRoutines: [],
+    ideas: [],
+    plans: []
+  });
+
   // Helper to check if a tab has AI work in progress
   const isTabProcessing = (tabId) => {
     switch (tabId) {
@@ -69,8 +85,10 @@ function App() {
         return isOrganizing;
       case 'plan':
         return isAnalyzing;
+      case 'checklist':
+        return isGeneratingSmartRoutines;
       case 'routine':
-        return isGeneratingRoutine;
+        return isGeneratingRoutine || isGeneratingSmartRoutines;
       default:
         return false;
     }
@@ -126,6 +144,20 @@ function App() {
             setGeneratedRoutine={setGeneratedRoutine}
             routineError={routineError}
             setRoutineError={setRoutineError}
+            smartRoutines={smartRoutines}
+            setSmartRoutines={setSmartRoutines}
+            isGeneratingSmartRoutines={isGeneratingSmartRoutines}
+            setIsGeneratingSmartRoutines={setIsGeneratingSmartRoutines}
+            smartRoutinesError={smartRoutinesError}
+            setSmartRoutinesError={setSmartRoutinesError}
+            showSmartRoutines={showSmartRoutines}
+            setShowSmartRoutines={setShowSmartRoutines}
+            smartRoutinesMetadata={smartRoutinesMetadata}
+            setSmartRoutinesMetadata={setSmartRoutinesMetadata}
+            smartRoutineStates={smartRoutineStates}
+            setSmartRoutineStates={setSmartRoutineStates}
+            generationHistory={generationHistory}
+            setGenerationHistory={setGenerationHistory}
           />
         );
       case 'review':
@@ -172,6 +204,20 @@ function App() {
     setGeneratedRoutine,
     routineError,
     setRoutineError,
+    smartRoutines,
+    setSmartRoutines,
+    isGeneratingSmartRoutines,
+    setIsGeneratingSmartRoutines,
+    smartRoutinesError,
+    setSmartRoutinesError,
+    showSmartRoutines,
+    setShowSmartRoutines,
+    smartRoutinesMetadata,
+    setSmartRoutinesMetadata,
+    smartRoutineStates,
+    setSmartRoutineStates,
+    generationHistory,
+    setGenerationHistory,
   ]);
 
   return (
