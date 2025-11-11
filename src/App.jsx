@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
@@ -77,6 +77,30 @@ function App() {
     ideas: [],
     plans: []
   });
+
+  // Noise Generator state (persists across tab switches)
+  const audioContextRef = useRef(null);
+  const [activeSession, setActiveSession] = useState(null);
+
+  // Initialize audio context once at app level (never destroyed)
+  useEffect(() => {
+    if (!audioContextRef.current && typeof window !== 'undefined') {
+      try {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('🔊 Audio context initialized at app level');
+      } catch (err) {
+        console.error('Failed to initialize audio context:', err);
+      }
+    }
+
+    // Cleanup only on app unmount (not tab switch)
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        console.log('🔊 Audio context closed');
+      }
+    };
+  }, []);
 
   // Helper to check if a tab has AI work in progress
   const isTabProcessing = (tabId) => {
@@ -170,7 +194,13 @@ function App() {
           />
         );
       case 'noise':
-        return <NoiseHub />;
+        return (
+          <NoiseHub
+            audioContextRef={audioContextRef}
+            activeSession={activeSession}
+            setActiveSession={setActiveSession}
+          />
+        );
       default:
         return <IdeaCapture ideas={ideas} setIdeas={setIdeas} />;
     }
@@ -218,6 +248,9 @@ function App() {
     setSmartRoutineStates,
     generationHistory,
     setGenerationHistory,
+    audioContextRef,
+    activeSession,
+    setActiveSession,
   ]);
 
   return (

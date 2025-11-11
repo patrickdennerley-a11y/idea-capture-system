@@ -15,8 +15,8 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 
 // Web Audio API Noise Generation
 class NoiseGenerator {
-  constructor() {
-    this.audioContext = null;
+  constructor(audioContext = null) {
+    this.audioContext = audioContext;
     this.sourceNode = null;
     this.gainNode = null;
     this.bassFilter = null;
@@ -30,7 +30,9 @@ class NoiseGenerator {
 
   initialize(initialVolume = 50) {
     if (!this.audioContext) {
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      throw new Error('AudioContext must be provided to NoiseGenerator');
+    }
+    if (!this.gainNode) {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = initialVolume / 100; // Set initial volume
       this.gainNode.connect(this.audioContext.destination);
@@ -447,9 +449,8 @@ const formatTime = (seconds) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-export default function AdvancedNoiseGenerator() {
+export default function AdvancedNoiseGenerator({ audioContextRef, activeSession, setActiveSession }) {
   const [savedPlaylists, setSavedPlaylists] = useLocalStorage('neural-noise-playlists', []);
-  const [activeSession, setActiveSession] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
   const [showStats, setShowStats] = useState(false);
@@ -471,16 +472,22 @@ export default function AdvancedNoiseGenerator() {
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
   useEffect(() => {
-    noiseGeneratorRef.current = new NoiseGenerator();
+    // Only create noise generator if we have an audioContext and don't already have one
+    if (audioContextRef?.current && !noiseGeneratorRef.current) {
+      noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
+      console.log('🔊 Noise generator created with app-level audio context');
+    }
+
+    // Important: Don't destroy audio on unmount!
+    // The audioContext lives at app level, so we keep it running
     return () => {
-      if (noiseGeneratorRef.current) {
-        noiseGeneratorRef.current.stop();
-      }
+      // Only clean up the interval, not the audio
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
+      // Audio continues playing even when component unmounts
     };
-  }, []);
+  }, [audioContextRef]);
 
   // Update volume when changed
   useEffect(() => {
