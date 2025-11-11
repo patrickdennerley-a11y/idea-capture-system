@@ -216,6 +216,8 @@ export default function IdeaCapture({
   setOrganizedData,
   organizationError,
   setOrganizationError,
+  showOrganized,
+  setShowOrganized,
 }) {
   // 🔍 DIAGNOSTIC: Count main component renders
   ideaCaptureRenderCount++;
@@ -244,9 +246,6 @@ export default function IdeaCapture({
 
   const textareaRef = useRef(null);
   const recognitionRef = useRef(null);
-
-  // AI Organization state (local UI state only)
-  const [showOrganized, setShowOrganized] = useState(false);
 
   // History state
   const [organizationHistory, setOrganizationHistory] = useLocalStorage('neural-organization-history', []);
@@ -292,6 +291,15 @@ export default function IdeaCapture({
       };
     }
   }, []);
+
+  // Auto-show organized data modal when results are ready
+  // This handles the case where user switches tabs during generation
+  useEffect(() => {
+    if (organizedData && !showOrganized) {
+      console.log('🔍 Auto-showing organized data modal (results ready after tab switch)');
+      setShowOrganized(true);
+    }
+  }, [organizedData, showOrganized, setShowOrganized]);
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) {
@@ -558,6 +566,12 @@ export default function IdeaCapture({
 
   const deleteHistoryEntry = (id) => {
     setOrganizationHistory(prev => prev.filter(entry => entry.id !== id));
+  };
+
+  const handleCloseOrganizedModal = () => {
+    setShowOrganized(false);
+    // Clear the data so modal doesn't auto-show again when returning to tab
+    setOrganizedData(null);
   };
 
   // 🔍 DIAGNOSTIC: Track drag events
@@ -1270,7 +1284,7 @@ export default function IdeaCapture({
                 <h2 className="text-2xl font-bold">AI Organized Ideas</h2>
               </div>
               <button
-                onClick={() => setShowOrganized(false)}
+                onClick={handleCloseOrganizedModal}
                 className="text-gray-400 hover:text-white transition-colors"
               >
                 <X className="w-6 h-6" />
@@ -1364,7 +1378,7 @@ export default function IdeaCapture({
             {/* Modal Footer */}
             <div className="sticky bottom-0 bg-neural-dark border-t border-gray-800 p-4 flex justify-end">
               <button
-                onClick={() => setShowOrganized(false)}
+                onClick={handleCloseOrganizedModal}
                 className="neural-button-secondary"
               >
                 Close

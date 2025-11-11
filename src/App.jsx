@@ -55,6 +55,7 @@ function App() {
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [organizedData, setOrganizedData] = useState(null);
   const [organizationError, setOrganizationError] = useState(null);
+  const [showOrganized, setShowOrganized] = useState(false);
 
   // Planning state (persists across tab switches)
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -89,6 +90,8 @@ function App() {
             setOrganizedData={setOrganizedData}
             organizationError={organizationError}
             setOrganizationError={setOrganizationError}
+            showOrganized={showOrganized}
+            setShowOrganized={setShowOrganized}
           />
         );
       case 'checklist':
@@ -155,6 +158,8 @@ function App() {
     setOrganizedData,
     organizationError,
     setOrganizationError,
+    showOrganized,
+    setShowOrganized,
     isAnalyzing,
     setIsAnalyzing,
     plan,
