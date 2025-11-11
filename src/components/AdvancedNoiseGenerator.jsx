@@ -497,16 +497,55 @@ export default function AdvancedNoiseGenerator() {
     }
   }, [useSameDuration, pinkDuration]);
 
+  // Keep audio playing in background tabs
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      // When tab becomes visible or hidden, check audio context state
+      if (noiseGeneratorRef.current && noiseGeneratorRef.current.audioContext) {
+        const ctx = noiseGeneratorRef.current.audioContext;
+
+        // Resume audio context if it's suspended (browser may auto-suspend in background)
+        if (ctx.state === 'suspended') {
+          ctx.resume().then(() => {
+            console.log('Audio context resumed after visibility change');
+          }).catch(err => {
+            console.error('Failed to resume audio context:', err);
+          });
+        }
+      }
+    };
+
+    // Listen for visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also check periodically in case browser suspends without visibility change
+    const keepAliveInterval = setInterval(() => {
+      if (activeSession && !activeSession.isPaused && noiseGeneratorRef.current?.audioContext) {
+        const ctx = noiseGeneratorRef.current.audioContext;
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(err => console.error('Keep-alive resume failed:', err));
+        }
+      }
+    }, 2000); // Check every 2 seconds
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(keepAliveInterval);
+    };
+  }, [activeSession]);
+
   // Start generation
   const startGeneration = useCallback(() => {
+    const startTime = Date.now();
     const session = {
-      id: Date.now(),
+      id: startTime,
       title: `Session ${new Date().toLocaleString()}`,
       createdAt: new Date().toISOString(),
       completedAt: null,
       variations: [],
       currentType: 'pink',
-      currentVariationStart: Date.now(),
+      currentVariationStart: startTime,
+      sessionStartTime: startTime, // Track absolute session start for accurate elapsed time
       totalElapsed: 0,
       isIndefinite: durationType === 'indefinite',
       settings: {
@@ -560,7 +599,8 @@ export default function AdvancedNoiseGenerator() {
           : prev.settings.brownDuration;
 
         const elapsed = Math.floor((Date.now() - prev.currentVariationStart) / 1000);
-        const newTotalElapsed = prev.totalElapsed + 1;
+        // Calculate total elapsed from session start time, not from tick count
+        const newTotalElapsed = Math.floor((Date.now() - prev.sessionStartTime) / 1000);
 
         // Check if current variation is complete
         if (elapsed >= currentDuration * 60) {
@@ -645,13 +685,27 @@ export default function AdvancedNoiseGenerator() {
       if (!prev) return prev;
 
       if (prev.isPaused) {
-        // Resume
+        // Resume - adjust sessionStartTime to account for paused duration
+        const pausedDuration = Date.now() - prev.pauseStartTime;
+        const newSessionStartTime = prev.sessionStartTime + pausedDuration;
+        const newCurrentVariationStart = prev.currentVariationStart + pausedDuration;
+
         if (noiseGeneratorRef.current && prev.currentVariation) {
           noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current);
         }
-        startTimer(prev);
+
+        const resumed = {
+          ...prev,
+          sessionStartTime: newSessionStartTime,
+          currentVariationStart: newCurrentVariationStart,
+          isPaused: false,
+          pauseStartTime: null,
+        };
+
+        startTimer(resumed);
+        return resumed;
       } else {
-        // Pause
+        // Pause - record pause time
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
@@ -659,9 +713,13 @@ export default function AdvancedNoiseGenerator() {
         if (noiseGeneratorRef.current) {
           noiseGeneratorRef.current.stop();
         }
-      }
 
-      return { ...prev, isPaused: !prev.isPaused };
+        return {
+          ...prev,
+          isPaused: true,
+          pauseStartTime: Date.now(),
+        };
+      }
     });
   }, [startTimer]);
 
