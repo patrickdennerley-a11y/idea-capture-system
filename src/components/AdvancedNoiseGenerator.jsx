@@ -140,7 +140,25 @@ class NoiseGenerator {
   }
 
   generateBrownNoise(params) {
-    console.log('🟤 Generating BROWN noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
+    console.log('🟤 Generating BROWN noise with params:', {
+      frequency: params.frequency,
+      depth: params.depth,
+      rate: params.rate,
+      volume: params.volume,
+      bassBand: params.bassBand,
+      midBand: params.midBand,
+      trebleBand: params.trebleBand
+    });
+
+    // DIAGNOSTIC: Check for NaN values in params
+    if (isNaN(params.depth) || isNaN(params.rate) || isNaN(params.volume)) {
+      console.error('❌ BROWN NOISE: Invalid params detected!', {
+        depthIsNaN: isNaN(params.depth),
+        rateIsNaN: isNaN(params.rate),
+        volumeIsNaN: isNaN(params.volume)
+      });
+    }
+
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
@@ -149,6 +167,10 @@ class NoiseGenerator {
     for (let channel = 0; channel < 2; channel++) {
       const data = buffer.getChannelData(channel);
       let lastOut = 0;
+      let maxSample = 0;
+      let minSample = 0;
+      let sampleSum = 0;
+      let nonZeroCount = 0;
 
       // Binaural offset: slightly different frequency for each channel
       const channelFreqOffset = channel === 0 ? -params.binauralOffset / 2 : params.binauralOffset / 2;
@@ -197,9 +219,29 @@ class NoiseGenerator {
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
         data[i] = brown * (1 + pan);
+
+        // Track sample statistics for diagnostics
+        if (Math.abs(data[i]) > 0.0001) nonZeroCount++;
+        maxSample = Math.max(maxSample, data[i]);
+        minSample = Math.min(minSample, data[i]);
+        sampleSum += Math.abs(data[i]);
+      }
+
+      const avgSample = sampleSum / bufferSize;
+      console.log(`🟤 Channel ${channel} brown noise stats:`, {
+        maxSample: maxSample.toFixed(6),
+        minSample: minSample.toFixed(6),
+        avgAbsSample: avgSample.toFixed(6),
+        nonZeroSamples: nonZeroCount,
+        percentNonZero: ((nonZeroCount / bufferSize) * 100).toFixed(1) + '%'
+      });
+
+      if (maxSample === 0 && minSample === 0) {
+        console.error(`❌ Channel ${channel}: ALL SAMPLES ARE ZERO - BROWN NOISE WILL BE SILENT!`);
       }
     }
 
+    console.log('🟤 Brown noise buffer generation complete');
     return buffer;
   }
 
