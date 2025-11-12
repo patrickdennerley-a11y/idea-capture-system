@@ -145,6 +145,11 @@ class NoiseGenerator {
       depth: params.depth,
       rate: params.rate,
       volume: params.volume,
+      integrationConst: params.integrationConst,
+      leakFactor: params.leakFactor,
+      bassBoost: params.bassBoost,
+      rumbleIntensity: params.rumbleIntensity,
+      driftRate: params.driftRate,
       bassBand: params.bassBand,
       midBand: params.midBand,
       trebleBand: params.trebleBand
@@ -164,9 +169,17 @@ class NoiseGenerator {
 
     const sampleRate = this.audioContext.sampleRate;
 
+    // Use brown-specific parameters or fall back to defaults
+    const integrationConst = params.integrationConst || 0.02;
+    const leakFactor = params.leakFactor || 0.998;
+    const bassBoost = params.bassBoost || 1.0;
+    const rumbleIntensity = params.rumbleIntensity || 1.0;
+    const driftRate = params.driftRate || 0.0;
+
     for (let channel = 0; channel < 2; channel++) {
       const data = buffer.getChannelData(channel);
       let lastOut = 0;
+      let driftPhase = 0; // For drift modulation
       let maxSample = 0;
       let minSample = 0;
       let sampleSum = 0;
@@ -183,17 +196,32 @@ class NoiseGenerator {
         const depthMod = params.depth / 100;
         const rateMod = params.rate / 10;
 
-        // Integration with decay to prevent DC drift
-        // CRITICAL FIX: Increased integration from 0.004 to 0.02 for proper brown noise character
-        // Brown noise needs MORE integration to get that deep bass rumble
-        // Higher rate = faster changes, higher depth = more integration
-        lastOut = lastOut * 0.998 + white * 0.02 * rateMod * depthMod;
+        // Add drift modulation for variety (oscillates the integration)
+        const driftMod = driftRate > 0 ? Math.sin(driftPhase) * driftRate : 0;
+        driftPhase += 0.001;
 
-        // Apply frequency modulation as a subtle filter
-        // ADJUSTED: Changed from 0.5-1.0 range to 0.8-1.2 to avoid excessive volume reduction
-        const freqFactor = 0.8 + (params.frequency / 20000) * 0.4; // 0.8 to 1.2
+        // Integration with VARIABLE parameters (not hardcoded!)
+        // integrationConst: 0.01-0.07 (how much white noise accumulates)
+        // Higher rate = faster changes, higher depth = more integration
+        lastOut = lastOut + (white * integrationConst * rateMod * depthMod * (1 + driftMod));
+
+        // Apply VARIABLE leak factor (not hardcoded!)
+        // leakFactor: 0.985-1.000 (how fast it returns to center)
+        lastOut = lastOut * leakFactor;
+
+        // Apply frequency modulation - adjusted for bass-focused range (50-1500 Hz)
+        // Instead of 0.8-1.2 range, use frequency to shape the character
+        const freqFactor = 0.5 + (params.frequency / 3000) * 0.5; // Adjusted for lower frequencies
 
         let brown = lastOut * freqFactor;
+
+        // Apply VARIABLE bass boost (not hardcoded!)
+        // bassBoost: 0.5-1.5x (additional bass multiplier)
+        brown *= bassBoost;
+
+        // Apply VARIABLE rumble intensity (not hardcoded!)
+        // rumbleIntensity: 0.2-1.0 (sub-bass character)
+        brown *= rumbleIntensity;
 
         // Apply modulation
         if (params.modulationType === 'AM') {
@@ -209,11 +237,8 @@ class NoiseGenerator {
         }
         // 'none' = no modulation applied
 
-        // CRITICAL FIX: Brown noise needs HIGHER gain to compensate for:
-        // 1. Bass-heavy character (less perceptually loud than high frequencies)
-        // 2. Low-pass filter cutting highs
-        // 3. Integration making it more "smooth" (less sharp transients)
-        // Increased from 0.15 to 0.35 (2.3x louder than pink noise)
+        // CRITICAL: Brown noise needs HIGHER gain to compensate for bass-heavy character
+        // Normalized to 0.35 base multiplier (2.3x louder than pink)
         brown *= 0.35 * params.volume / 100;
 
         // Apply stereo width
@@ -431,7 +456,7 @@ class NoiseGenerator {
   }
 }
 
-// Maximum Distance Algorithm - 15D Euclidean space
+// Maximum Distance Algorithm - Now 20D Euclidean space (added 5 brown-specific parameters)
 const calculateEuclideanDistance = (params1, params2) => {
   // Normalize modulation type to numeric: AM=0, FM=0.5, none=1
   const modTypeToNum = (type) => type === 'AM' ? 0 : type === 'FM' ? 0.5 : 1;
@@ -447,7 +472,7 @@ const calculateEuclideanDistance = (params1, params2) => {
     stereoWidth: (params1.stereoWidth - params2.stereoWidth) / 100,
     phase: (params1.phase - params2.phase) / (2 * Math.PI),
 
-    // New 7 parameters (expanding to 15D space)
+    // Standard parameters (7)
     bassBand: (params1.bassBand - params2.bassBand) / 1.0, // 0.5-1.5 range = 1.0 spread
     midBand: (params1.midBand - params2.midBand) / 1.0,
     trebleBand: (params1.trebleBand - params2.trebleBand) / 1.0,
@@ -457,6 +482,13 @@ const calculateEuclideanDistance = (params1, params2) => {
     binauralOffset: (params1.binauralOffset - params2.binauralOffset) / 20,
     resonanceFreq: (params1.resonanceFreq - params2.resonanceFreq) / 5000,
     resonanceQ: (params1.resonanceQ - params2.resonanceQ) / 4.5,
+
+    // Brown-specific parameters (5) - expanding to 20D space
+    integrationConst: ((params1.integrationConst || 0.02) - (params2.integrationConst || 0.02)) / 0.06, // 0.01-0.07 range
+    leakFactor: ((params1.leakFactor || 0.998) - (params2.leakFactor || 0.998)) / 0.015, // 0.985-1.000 range
+    bassBoost: ((params1.bassBoost || 1.0) - (params2.bassBoost || 1.0)) / 1.0, // 0.5-1.5 range
+    rumbleIntensity: ((params1.rumbleIntensity || 1.0) - (params2.rumbleIntensity || 1.0)) / 0.8, // 0.2-1.0 range
+    driftRate: ((params1.driftRate || 0.0) - (params2.driftRate || 0.0)) / 0.5, // 0.1-0.6 range
   };
 
   return Math.sqrt(
@@ -499,6 +531,71 @@ const generateRandomParameters = () => {
   };
 };
 
+// Brown-noise-specific parameter generation for maximum perceptible variation
+const generateBrownNoiseParameters = () => {
+  // Mix seeded random with Math.random for extra entropy
+  const rand = () => (seededRandom() + Math.random()) / 2;
+
+  return {
+    // Bass-focused frequency range (where brown noise lives)
+    frequency: rand() * 1450 + 50, // 50-1500 Hz (bass range only)
+
+    // Rate and depth affect drift character
+    rate: rand() * 9.5 + 0.5, // 0.5-10 cycles/sec (same as pink)
+    depth: rand() * 95 + 5, // 5-100% (same as pink)
+
+    // Carrier for modulation
+    carrier: rand() * 450 + 50, // 50-500 Hz (lower than pink)
+
+    // Wider volume range for brown (bass needs more dynamic range)
+    volume: rand() * 70 + 30, // 30-100% (wider than pink)
+
+    // Lower filter cutoff for brown (emphasize bass)
+    filterCutoff: rand() * 800 + 200, // 200-1000 Hz (much lower than pink)
+
+    // Stereo width
+    stereoWidth: rand() * 90 + 10, // 10-100% (same as pink)
+
+    // Phase
+    phase: rand() * 2 * Math.PI, // 0-2π (same as pink)
+
+    // BROWN-SPECIFIC PARAMETERS (NEW)
+    // Integration constant - how much white noise accumulates (affects "drift" speed)
+    integrationConst: rand() * 0.06 + 0.01, // 0.01-0.07 (was hardcoded 0.02)
+
+    // Leak factor - how fast it returns to center (affects settling behavior)
+    leakFactor: rand() * 0.015 + 0.985, // 0.985-1.000 (was hardcoded 0.998)
+
+    // Bass boost multiplier - additional bass emphasis
+    bassBoost: rand() * 1.0 + 0.5, // 0.5-1.5x (NEW)
+
+    // Rumble intensity - sub-bass character
+    rumbleIntensity: rand() * 0.8 + 0.2, // 0.2-1.0 (NEW)
+
+    // Drift rate - oscillation in the drift pattern
+    driftRate: rand() * 0.5 + 0.1, // 0.1-0.6 (NEW)
+
+    // EQ bands (same as pink)
+    bassBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 20-250 Hz
+    midBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 250-4000 Hz
+    trebleBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 4000-20000 Hz
+
+    // Envelope (same as pink)
+    attackTime: rand() * 500, // 0-500ms fade in
+    releaseTime: rand() * 500, // 0-500ms fade out
+
+    // Modulation type
+    modulationType: ['AM', 'FM', 'none'][Math.floor(rand() * 3)],
+
+    // Binaural offset
+    binauralOffset: rand() * 20, // 0-20 Hz L/R frequency difference
+
+    // Resonance peak (lower frequencies for brown)
+    resonanceFreq: rand() * 1400 + 100, // 100-1500 Hz (lower than pink)
+    resonanceQ: rand() * 4.5 + 0.5, // 0.5-5.0 Q factor
+  };
+};
+
 const generateMaximallyDifferentVariation = (type, previousVariations, variationNumber) => {
   // Update seed with timestamp and variation number for extra randomness
   randomSeed = Date.now() + variationNumber * 1000;
@@ -506,8 +603,10 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
   const sameTypeVariations = previousVariations.filter(v => v.type === type);
 
   if (sameTypeVariations.length === 0) {
+    // First variation: use type-specific parameter generation
+    const parameters = type === 'brown' ? generateBrownNoiseParameters() : generateRandomParameters();
     return {
-      parameters: generateRandomParameters(),
+      parameters: parameters,
       distanceFromPrevious: null,
       nearestVariation: null,
       nearestDistance: null,
@@ -517,12 +616,22 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
   // Memory management: only use last 100 variations of same type for distance calculation
   const recentSameTypeVariations = sameTypeVariations.slice(-100);
 
-  // Generate 200 candidates (increased from 100 for better diversity)
+  // Brown noise needs MORE candidates to escape local optimum (higher dimensionality)
+  // Pink noise: 200 candidates, Brown noise: 500 candidates
+  const candidateCount = type === 'brown' ? 500 : 200;
+
+  // Generate candidates using TYPE-SPECIFIC parameter generation
   const candidates = [];
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < candidateCount; i++) {
     // Reseed for each candidate to maximize diversity
     randomSeed = Date.now() + variationNumber * 1000 + i * 17; // Prime number offset
-    candidates.push(generateRandomParameters());
+
+    // Use brown-specific parameters for brown noise, standard for pink
+    if (type === 'brown') {
+      candidates.push(generateBrownNoiseParameters());
+    } else {
+      candidates.push(generateRandomParameters());
+    }
   }
 
   // Calculate minimum distance to all recent previous variations for each candidate
@@ -544,6 +653,8 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
 
   const bestScore = candidateScores[bestCandidateIndex];
   const nearestVariation = recentSameTypeVariations[bestScore.nearestIndex];
+
+  console.log(`📊 ${type === 'brown' ? '🟤' : '🩷'} Generated variation #${variationNumber} from ${candidateCount} candidates, best distance: ${bestScore.minDistance.toFixed(2)}`);
 
   return {
     parameters: candidates[bestCandidateIndex],
@@ -1692,8 +1803,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             <ul className="text-sm text-gray-400 space-y-1">
               <li>• Alternates between pink and brown noise with custom durations</li>
               <li>• Each variation is mathematically maximized to be different from all previous ones</li>
-              <li>• Uses Euclidean distance in 15-dimensional parameter space (max 3.87, target 1.0-1.2)</li>
-              <li>• Parameters: frequency, rate, depth, carrier, volume, filter, stereo, phase, EQ (3 bands), envelope, modulation, binaural offset, resonance</li>
+              <li>• Uses Euclidean distance in 20-dimensional parameter space for brown noise (15D for pink)</li>
+              <li>• Parameters: frequency, rate, depth, carrier, volume, filter, stereo, phase, EQ (3 bands), envelope, modulation, binaural offset, resonance + brown-specific (integration, leak, bass boost, rumble, drift)</li>
               <li>• Generation continues when you switch tabs</li>
               <li>• Save completed sessions to replay later</li>
               <li>• Choose indefinite play or set specific time/cycle limits</li>
