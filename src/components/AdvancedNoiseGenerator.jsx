@@ -240,8 +240,9 @@ class NoiseGenerator {
         }
 
         // CRITICAL: Brown noise needs MUCH HIGHER gain due to integration algorithm producing weak signals
-        // Increased from 0.35 to 1.5 (10x pink noise gain of 0.15) to compensate for weak accumulation
-        brown *= 1.5 * volume / 100;
+        // Increased from 0.35 to 10.0 (28.5x increase, 66.7x pink noise's 0.15) to match loudness
+        // This compensates for weak accumulation and ensures brown noise is clearly audible
+        brown *= 10.0 * volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -stereoWidth / 200 : stereoWidth / 200;
