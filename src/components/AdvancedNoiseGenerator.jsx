@@ -82,6 +82,7 @@ class NoiseGenerator {
   }
 
   generatePinkNoise(params) {
+    console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
@@ -139,6 +140,7 @@ class NoiseGenerator {
   }
 
   generateBrownNoise(params) {
+    console.log('🟤 Generating BROWN noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
@@ -160,8 +162,10 @@ class NoiseGenerator {
         const rateMod = params.rate / 10;
 
         // Integration with decay to prevent DC drift
+        // CRITICAL FIX: Increased integration from 0.004 to 0.02 for proper brown noise character
+        // Brown noise needs MORE integration to get that deep bass rumble
         // Higher rate = faster changes, higher depth = more integration
-        lastOut = lastOut * 0.996 + white * 0.004 * rateMod * depthMod;
+        lastOut = lastOut * 0.998 + white * 0.02 * rateMod * depthMod;
 
         // Apply frequency modulation as a subtle filter
         const freqFactor = 0.5 + (params.frequency / 20000) * 0.5; // 0.5 to 1.0
@@ -231,8 +235,23 @@ class NoiseGenerator {
       // Create EQ filters
       this.createEQFilters(params);
 
-      // Create audio chain: source -> bass -> mid -> treble -> resonance -> gain -> destination
-      this.sourceNode.connect(this.bassFilter);
+      // For brown noise, add extra low-pass filter to emphasize bass character
+      if (type === 'brown') {
+        this.brownLowpass = this.audioContext.createBiquadFilter();
+        this.brownLowpass.type = 'lowpass';
+        this.brownLowpass.frequency.value = 1200; // Cut frequencies above 1200Hz
+        this.brownLowpass.Q.value = 0.7;
+        console.log('🟤 Applied brown noise low-pass filter (1200Hz cutoff) for deeper bass');
+
+        // Create audio chain with brown filter: source -> brownLowpass -> bass -> mid -> treble -> resonance -> gain -> destination
+        this.sourceNode.connect(this.brownLowpass);
+        this.brownLowpass.connect(this.bassFilter);
+      } else {
+        // Pink noise: standard chain without extra low-pass
+        this.sourceNode.connect(this.bassFilter);
+      }
+
+      // Rest of chain (same for both):
       this.bassFilter.connect(this.midFilter);
       this.midFilter.connect(this.trebleFilter);
       this.trebleFilter.connect(this.resonanceFilter);
@@ -280,6 +299,7 @@ class NoiseGenerator {
 
         // Store references to OLD nodes that need to be cleaned up
         const oldSourceNode = this.sourceNode;
+        const oldBrownLowpass = this.brownLowpass;
         const oldBassFilter = this.bassFilter;
         const oldMidFilter = this.midFilter;
         const oldTrebleFilter = this.trebleFilter;
@@ -287,6 +307,7 @@ class NoiseGenerator {
 
         // Clear current references immediately
         this.sourceNode = null;
+        this.brownLowpass = null;
         this.bassFilter = null;
         this.midFilter = null;
         this.trebleFilter = null;
@@ -303,6 +324,9 @@ class NoiseGenerator {
             }
           }
           // Disconnect and clean up OLD filters
+          if (oldBrownLowpass) {
+            try { oldBrownLowpass.disconnect(); } catch (e) {}
+          }
           if (oldBassFilter) {
             try { oldBassFilter.disconnect(); } catch (e) {}
           }
@@ -328,6 +352,10 @@ class NoiseGenerator {
         this.sourceNode = null;
 
         // Disconnect and clean up filters immediately
+        if (this.brownLowpass) {
+          try { this.brownLowpass.disconnect(); } catch (e) {}
+          this.brownLowpass = null;
+        }
         if (this.bassFilter) {
           try { this.bassFilter.disconnect(); } catch (e) {}
           this.bassFilter = null;
