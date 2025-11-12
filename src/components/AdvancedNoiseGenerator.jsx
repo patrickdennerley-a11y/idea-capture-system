@@ -194,7 +194,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  playNoise(type, params, volume = 50) {
+  async playNoise(type, params, volume = 50) {
     try {
       this.initialize(volume);
 
@@ -206,7 +206,8 @@ class NoiseGenerator {
 
       if (this.audioContext.state === 'suspended') {
         console.warn('⚠️ AudioContext suspended, resuming...');
-        this.audioContext.resume();
+        await this.audioContext.resume(); // CRITICAL: Must await resume!
+        console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
       // Stop immediately without release envelope (we're switching variations)
@@ -592,6 +593,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     document.addEventListener('keydown', handleUserInteraction);
 
     // Also check periodically in case browser suspends without visibility change
+    let lastDiagnosticLog = Date.now();
     const keepAliveInterval = setInterval(() => {
       if (activeSession && !activeSession.isPaused && noiseGeneratorRef.current?.audioContext) {
         const ctx = noiseGeneratorRef.current.audioContext;
@@ -599,6 +601,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
         // Update visual indicator
         setAudioContextState(ctx.state);
+
+        // Diagnostic logging every 10 seconds for long-session debugging
+        const now = Date.now();
+        if (now - lastDiagnosticLog >= 10000) {
+          console.log(`📊 Health check: Variations=${activeSession.variations.length}, State=${ctx.state}, Playing=${gen.isPlaying}, Node=${!!gen.sourceNode}`);
+          lastDiagnosticLog = now;
+        }
 
         // Check if audio is actually playing
         if (gen.isPlaying && !gen.sourceNode) {
@@ -622,7 +631,33 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   }, [activeSession]);
 
   // Start generation
-  const startGeneration = useCallback(() => {
+  const startGeneration = useCallback(async () => {
+    console.log('🎬 Starting new session...');
+    console.log('  AudioContext state:', audioContextRef.current?.state);
+    console.log('  Sample rate:', audioContextRef.current?.sampleRate);
+    console.log('  Current time:', audioContextRef.current?.currentTime);
+
+    // Diagnostic: Check AudioContext health
+    if (!audioContextRef.current) {
+      console.error('❌ AudioContext not initialized!');
+      alert('Audio system not initialized. Please refresh the page.');
+      return;
+    }
+
+    if (audioContextRef.current.state === 'closed') {
+      console.error('❌ AudioContext is closed! Recreating...');
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // Recreate noise generator with new context
+      noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
+      console.log('✅ New AudioContext created');
+    }
+
+    if (audioContextRef.current.state === 'suspended') {
+      console.warn('⚠️ AudioContext suspended, resuming...');
+      await audioContextRef.current.resume();
+      console.log('✅ AudioContext resumed');
+    }
+
     const startTime = Date.now();
     const session = {
       id: startTime,
@@ -669,9 +704,17 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     setActiveSession(session);
 
-    // Play the noise
+    // Play the noise (now async)
     if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.playNoise('pink', variation.parameters, masterVolume);
+      try {
+        await noiseGeneratorRef.current.playNoise('pink', variation.parameters, masterVolume);
+        console.log('✅ Session started successfully');
+      } catch (error) {
+        console.error('❌ Failed to start audio:', error);
+        alert(`Failed to start audio: ${error.message}`);
+        setActiveSession(null);
+        return;
+      }
     }
 
     // Start timer
@@ -853,13 +896,20 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Stop generation
   const stopGeneration = useCallback(() => {
+    console.log('🛑 Stopping session...');
+    console.log('  Variations played:', activeSession?.variations?.length || 0);
+    console.log('  Total elapsed:', activeSession?.totalElapsedMs ? `${(activeSession.totalElapsedMs / 1000).toFixed(1)}s` : '0s');
+    console.log('  AudioContext state:', audioContextRef.current?.state);
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+      console.log('  ✅ Timer cleared');
     }
 
     if (noiseGeneratorRef.current) {
       noiseGeneratorRef.current.stop();
+      console.log('  ✅ Audio stopped');
     }
 
     if (activeSession) {
@@ -868,7 +918,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         completedAt: new Date().toISOString(),
       };
       setActiveSession(completedSession);
+      console.log('  ✅ Session marked complete');
     }
+
+    console.log('🏁 Session stopped, AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession]);
 
   // Pause/Resume
