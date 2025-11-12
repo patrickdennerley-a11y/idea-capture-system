@@ -511,18 +511,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
-  // Safety check: ensure durations are at least 0.5 minutes (30 seconds)
-  useEffect(() => {
-    if (pinkDuration < 0.5) {
-      console.warn(`⚠️ Pink duration too short (${pinkDuration}min), resetting to 3 minutes`);
-      setPinkDuration(3);
-    }
-    if (brownDuration < 0.5) {
-      console.warn(`⚠️ Brown duration too short (${brownDuration}min), resetting to 3 minutes`);
-      setBrownDuration(3);
-    }
-  }, [pinkDuration, brownDuration, setPinkDuration, setBrownDuration]);
-
   // Force re-renders every 100ms for millisecond display when session is active
   useEffect(() => {
     if (!activeSession || activeSession.isPaused || activeSession.completedAt) return;
@@ -1223,31 +1211,85 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             {showSettings && (
               <div className="space-y-4">
                 {/* Duration settings */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  {/* Quick Presets */}
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Pink Duration (minutes)</label>
-                    <input
-                      type="number"
-                      min="0.5"
-                      max="180"
-                      step="0.5"
-                      value={pinkDuration}
-                      onChange={(e) => setPinkDuration(parseFloat(e.target.value))}
-                      className="neural-input"
-                    />
+                    <label className="block text-sm text-gray-400 mb-2">Quick Presets:</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => { setPinkDuration(0.00167); setBrownDuration(0.00167); }}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                        title="0.1 seconds each"
+                      >
+                        0.1s (rapid)
+                      </button>
+                      <button
+                        onClick={() => { setPinkDuration(0.0033); setBrownDuration(0.0033); }}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                        title="0.2 seconds each"
+                      >
+                        0.2s (fast)
+                      </button>
+                      <button
+                        onClick={() => { setPinkDuration(0.0167); setBrownDuration(0.0167); }}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                        title="1 second each"
+                      >
+                        1s
+                      </button>
+                      <button
+                        onClick={() => { setPinkDuration(0.0833); setBrownDuration(0.0833); }}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                        title="5 seconds each"
+                      >
+                        5s
+                      </button>
+                      <button
+                        onClick={() => { setPinkDuration(3); setBrownDuration(3); }}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                        title="3 minutes each"
+                      >
+                        3min (default)
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-1">Brown Duration (minutes)</label>
-                    <input
-                      type="number"
-                      min="0.5"
-                      max="180"
-                      step="0.5"
-                      value={brownDuration}
-                      onChange={(e) => setBrownDuration(parseFloat(e.target.value))}
-                      disabled={useSameDuration}
-                      className="neural-input disabled:opacity-50"
-                    />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        Pink Duration (minutes)
+                        <span className="text-xs text-gray-500 ml-2">
+                          = {(pinkDuration * 60).toFixed(2)}s
+                        </span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0.001"
+                        max="180"
+                        step="0.001"
+                        value={pinkDuration}
+                        onChange={(e) => setPinkDuration(parseFloat(e.target.value))}
+                        className="neural-input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        Brown Duration (minutes)
+                        <span className="text-xs text-gray-500 ml-2">
+                          = {(brownDuration * 60).toFixed(2)}s
+                        </span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0.001"
+                        max="180"
+                        step="0.001"
+                        value={brownDuration}
+                        onChange={(e) => setBrownDuration(parseFloat(e.target.value))}
+                        disabled={useSameDuration}
+                        className="neural-input disabled:opacity-50"
+                      />
+                    </div>
                   </div>
                 </div>
 
