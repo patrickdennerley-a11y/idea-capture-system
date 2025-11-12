@@ -410,8 +410,8 @@ class NoiseGenerator {
 
       console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
 
-      // Warn if attack time seems excessive
-      if (attackTime > 0.3) {
+      // Warn if attack time seems excessive (should not happen with new 20-100ms range)
+      if (attackTime > 0.15) {
         console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
       }
 
@@ -605,8 +605,8 @@ const generateRandomParameters = () => {
     bassBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 20-250 Hz
     midBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 250-4000 Hz
     trebleBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 4000-20000 Hz
-    attackTime: rand() * 500, // 0-500ms fade in
-    releaseTime: rand() * 500, // 0-500ms fade out
+    attackTime: rand() * 80 + 20, // 20-100ms fade in (reduced from 0-500ms to prevent long silence)
+    releaseTime: rand() * 80 + 20, // 20-100ms fade out (reduced from 0-500ms)
     modulationType: ['AM', 'FM', 'none'][Math.floor(rand() * 3)], // Modulation type
     binauralOffset: rand() * 20, // 0-20 Hz L/R frequency difference
     resonanceFreq: rand() * 4900 + 100, // 100-5000 Hz peak frequency
@@ -663,9 +663,9 @@ const generateBrownNoiseParameters = () => {
     midBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 250-4000 Hz
     trebleBand: rand() * 1.0 + 0.5, // 0.5-1.5x multiplier for 4000-20000 Hz
 
-    // Envelope (same as pink)
-    attackTime: rand() * 500, // 0-500ms fade in
-    releaseTime: rand() * 500, // 0-500ms fade out
+    // Envelope - REDUCED to prevent long silence at start
+    attackTime: rand() * 80 + 20, // 20-100ms fade in (was 0-500ms - caused 400ms silence!)
+    releaseTime: rand() * 80 + 20, // 20-100ms fade out (was 0-500ms)
 
     // Modulation type
     modulationType: ['AM', 'FM', 'none'][Math.floor(rand() * 3)],
