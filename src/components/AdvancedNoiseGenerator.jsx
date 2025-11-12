@@ -141,34 +141,26 @@ class NoiseGenerator {
   }
 
   generateBrownNoise(params) {
-    console.log('🟤 Generating BROWN noise with params:', {
-      frequency: params.frequency,
-      depth: params.depth,
-      rate: params.rate,
-      volume: params.volume,
-      integrationConst: params.integrationConst,
-      leakFactor: params.leakFactor,
-      bassBoost: params.bassBoost,
-      rumbleIntensity: params.rumbleIntensity,
-      driftRate: params.driftRate,
-      bassBand: params.bassBand,
-      midBand: params.midBand,
-      trebleBand: params.trebleBand
-    });
+    console.log('═══ BROWN NOISE DEBUG START ═══');
+    console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
 
-    // DIAGNOSTIC: Check for NaN values in params
-    if (isNaN(params.depth) || isNaN(params.rate) || isNaN(params.volume)) {
-      console.error('❌ BROWN NOISE: Invalid params detected!', {
-        depthIsNaN: isNaN(params.depth),
-        rateIsNaN: isNaN(params.rate),
-        volumeIsNaN: isNaN(params.volume)
-      });
+    // Verify audioContext exists
+    if (!this.audioContext) {
+      console.error('❌ FATAL: audioContext is null');
+      return null;
     }
 
-    const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
-    const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
+    console.log('AudioContext state:', this.audioContext.state);
+    console.log('AudioContext sample rate:', this.audioContext.sampleRate);
 
     const sampleRate = this.audioContext.sampleRate;
+    const bufferSize = Math.floor(sampleRate * 2); // 2 seconds buffer
+
+    console.log('Sample rate:', sampleRate);
+    console.log('Duration: 2 seconds');
+    console.log('Buffer size:', bufferSize);
+
+    const buffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
 
     // Use brown-specific parameters or fall back to defaults
     const integrationConst = params.integrationConst || 0.02;
@@ -176,103 +168,126 @@ class NoiseGenerator {
     const bassBoost = params.bassBoost || 1.0;
     const rumbleIntensity = params.rumbleIntensity || 1.0;
     const driftRate = params.driftRate || 0.0;
+    const frequency = params.frequency || 1000;
+    const volume = params.volume || 50;
+    const depth = params.depth || 50;
+    const rate = params.rate || 5;
+    const stereoWidth = params.stereoWidth || 50;
+
+    console.log('CALCULATED VALUES:', {
+      integrationConst,
+      leakFactor,
+      bassBoost,
+      rumbleIntensity,
+      driftRate,
+      frequency,
+      volume,
+      depth,
+      rate,
+      stereoWidth
+    });
+
+    let globalMaxValue = 0;
+    let globalNonZeroCount = 0;
+    let totalSamples = 0;
 
     for (let channel = 0; channel < 2; channel++) {
       const data = buffer.getChannelData(channel);
       let lastOut = 0;
-      let driftPhase = 0; // For drift modulation
-      let maxSample = 0;
-      let minSample = 0;
-      let sampleSum = 0;
-      let nonZeroCount = 0;
+      let driftPhase = 0;
 
-      // Binaural offset: slightly different frequency for each channel
-      const channelFreqOffset = channel === 0 ? -params.binauralOffset / 2 : params.binauralOffset / 2;
+      // Binaural offset
+      const channelFreqOffset = channel === 0 ? -(params.binauralOffset || 0) / 2 : (params.binauralOffset || 0) / 2;
 
       for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
         const time = i / sampleRate;
 
         // Brown noise = integrated white noise with parameter modulation
-        const depthMod = params.depth / 100;
-        const rateMod = params.rate / 10;
+        const depthMod = depth / 100;
+        const rateMod = rate / 10;
 
         // Add drift modulation for variety (oscillates the integration)
         const driftMod = driftRate > 0 ? Math.sin(driftPhase) * driftRate : 0;
         driftPhase += 0.001;
 
-        // Integration with VARIABLE parameters (not hardcoded!)
-        // integrationConst: 0.01-0.07 (how much white noise accumulates)
-        // Higher rate = faster changes, higher depth = more integration
+        // Integration with VARIABLE parameters
         lastOut = lastOut + (white * integrationConst * rateMod * depthMod * (1 + driftMod));
 
-        // Apply VARIABLE leak factor (not hardcoded!)
-        // leakFactor: 0.985-1.000 (how fast it returns to center)
+        // Apply VARIABLE leak factor
         lastOut = lastOut * leakFactor;
 
-        // Apply frequency modulation - adjusted for bass-focused range (50-1500 Hz)
-        // Instead of 0.8-1.2 range, use frequency to shape the character
-        const freqFactor = 0.5 + (params.frequency / 3000) * 0.5; // Adjusted for lower frequencies
+        // Apply frequency modulation
+        const freqFactor = 0.5 + (frequency / 3000) * 0.5;
 
         let brown = lastOut * freqFactor;
 
-        // Apply VARIABLE bass boost (not hardcoded!)
-        // bassBoost: 0.5-1.5x (additional bass multiplier)
+        // Apply VARIABLE bass boost
         brown *= bassBoost;
 
-        // Apply VARIABLE rumble intensity (not hardcoded!)
-        // rumbleIntensity: 0.2-1.0 (sub-bass character)
+        // Apply VARIABLE rumble intensity
         brown *= rumbleIntensity;
 
         // Apply modulation
         if (params.modulationType === 'AM') {
-          // Amplitude Modulation: modulate amplitude with carrier frequency
-          const carrierFreq = params.carrier + channelFreqOffset;
+          const carrierFreq = (params.carrier || 250) + channelFreqOffset;
           const modulator = 0.5 + 0.5 * Math.sin(2 * Math.PI * carrierFreq * time);
           brown *= modulator;
         } else if (params.modulationType === 'FM') {
-          // Frequency Modulation: modulate with carrier frequency
-          const carrierFreq = params.carrier + channelFreqOffset;
+          const carrierFreq = (params.carrier || 250) + channelFreqOffset;
           const modulator = Math.sin(2 * Math.PI * carrierFreq * time);
-          brown *= (1 + modulator * 0.3); // 30% modulation depth
+          brown *= (1 + modulator * 0.3);
         }
-        // 'none' = no modulation applied
 
-        // CRITICAL: Brown noise needs HIGHER gain to compensate for bass-heavy character
-        // Normalized to 0.35 base multiplier (2.3x louder than pink)
-        brown *= 0.35 * params.volume / 100;
+        // CRITICAL: Brown noise needs HIGHER gain
+        brown *= 0.35 * volume / 100;
 
         // Apply stereo width
-        const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
+        const pan = channel === 0 ? -stereoWidth / 200 : stereoWidth / 200;
         data[i] = brown * (1 + pan);
 
-        // Track sample statistics for diagnostics
-        if (Math.abs(data[i]) > 0.0001) nonZeroCount++;
-        maxSample = Math.max(maxSample, data[i]);
-        minSample = Math.min(minSample, data[i]);
-        sampleSum += Math.abs(data[i]);
-      }
-
-      const avgSample = sampleSum / bufferSize;
-      console.log(`🟤 Channel ${channel} brown noise stats:`, {
-        maxSample: maxSample.toFixed(6),
-        minSample: minSample.toFixed(6),
-        avgAbsSample: avgSample.toFixed(6),
-        nonZeroSamples: nonZeroCount,
-        percentNonZero: ((nonZeroCount / bufferSize) * 100).toFixed(1) + '%'
-      });
-
-      if (maxSample === 0 && minSample === 0) {
-        console.error(`❌ Channel ${channel}: ALL SAMPLES ARE ZERO - BROWN NOISE WILL BE SILENT!`);
+        totalSamples++;
+        const absValue = Math.abs(data[i]);
+        if (absValue > 0.0001) {
+          globalNonZeroCount++;
+          globalMaxValue = Math.max(globalMaxValue, absValue);
+        }
       }
     }
 
-    console.log('🟤 Brown noise buffer generation complete');
+    console.log('═══ BROWN NOISE GENERATION STATS ═══');
+    console.log('Total samples:', totalSamples);
+    console.log('Non-zero samples:', globalNonZeroCount);
+    console.log('Percent non-zero:', (globalNonZeroCount / totalSamples * 100).toFixed(2) + '%');
+    console.log('Max absolute value:', globalMaxValue.toFixed(6));
+
+    if (globalMaxValue === 0) {
+      console.error('❌ CRITICAL: ALL SAMPLES ARE ZERO - NO AUDIO WILL PLAY');
+      console.error('This means brown noise is generating SILENCE');
+      console.error('Check these values:');
+      console.error('  integrationConst:', integrationConst);
+      console.error('  leakFactor:', leakFactor);
+      console.error('  depthMod:', depth / 100);
+      console.error('  rateMod:', rate / 10);
+      console.error('  volume:', volume);
+    } else if (globalMaxValue < 0.001) {
+      console.warn('⚠️ WARNING: Samples are very quiet (max:', globalMaxValue, ')');
+      console.warn('Audio might be inaudible at this level');
+    } else {
+      console.log('✅ Audio samples look good (max:', globalMaxValue, ')');
+    }
+
+    console.log('═══ BROWN NOISE DEBUG END ═══');
     return buffer;
   }
 
   async playNoise(type, params, volume = 50) {
     try {
+      console.log('═══ PLAY NOISE DEBUG START ═══');
+      console.log('Type:', type);
+      console.log('Volume param:', volume);
+      console.log('Params object keys:', Object.keys(params));
+
       this.initialize(volume);
 
       // Check AudioContext state before playing
@@ -293,7 +308,41 @@ class NoiseGenerator {
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
 
+      console.log(`→ Generating ${type} noise buffer...`);
       const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
+
+      if (!buffer) {
+        console.error('❌ BUFFER IS NULL - CANNOT PLAY');
+        throw new Error('Buffer generation returned null');
+      }
+
+      console.log('✓ Buffer received:', {
+        channels: buffer.numberOfChannels,
+        length: buffer.length,
+        duration: buffer.duration.toFixed(2) + 's',
+        sampleRate: buffer.sampleRate
+      });
+
+      // CRITICAL: Check if buffer has actual audio data
+      const channel0 = buffer.getChannelData(0);
+      let maxInBuffer = 0;
+      let nonZeroInBuffer = 0;
+      const samplesToCheck = Math.min(1000, channel0.length);
+      for (let i = 0; i < samplesToCheck; i++) {
+        const abs = Math.abs(channel0[i]);
+        if (abs > 0.0001) nonZeroInBuffer++;
+        maxInBuffer = Math.max(maxInBuffer, abs);
+      }
+      console.log(`Buffer sample check (first ${samplesToCheck} samples):`, {
+        max: maxInBuffer.toFixed(6),
+        nonZero: nonZeroInBuffer,
+        percentNonZero: ((nonZeroInBuffer / samplesToCheck) * 100).toFixed(1) + '%'
+      });
+
+      if (maxInBuffer === 0) {
+        console.error('❌❌❌ BUFFER CONTAINS ONLY ZEROS - THIS IS WHY YOU HEAR NOTHING ❌❌❌');
+        console.error('The buffer was generated but has no audio data!');
+      }
 
       // Create source node
       this.sourceNode = this.audioContext.createBufferSource();
@@ -338,6 +387,18 @@ class NoiseGenerator {
       this.trebleFilter.connect(this.resonanceFilter);
       this.resonanceFilter.connect(this.gainNode);
 
+      console.log('✓ Audio node chain connected:', type === 'brown' ?
+        'source → brownLowpass → bass → mid → treble → resonance → gain → destination' :
+        'source → bass → mid → treble → resonance → gain → destination'
+      );
+
+      // Verify gainNode exists and is connected
+      console.log('GainNode state:', {
+        exists: !!this.gainNode,
+        currentValue: this.gainNode?.gain?.value,
+        connected: !!this.gainNode
+      });
+
       // Apply envelope (attack)
       const now = this.audioContext.currentTime;
       const attackTime = params.attackTime / 1000; // Convert ms to seconds
@@ -347,7 +408,7 @@ class NoiseGenerator {
       this.gainNode.gain.setValueAtTime(0, now);
       this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-      console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in`);
+      console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
 
       // Warn if attack time seems excessive
       if (attackTime > 0.3) {
@@ -356,10 +417,12 @@ class NoiseGenerator {
 
       // Note: Release will be applied in stop() method when explicitly stopped
 
+      console.log('→ Starting playback NOW...');
       this.sourceNode.start(0);
       this.isPlaying = true;
 
-      console.log(`🔊 Playing ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
+      console.log(`✅ PLAYBACK STARTED - ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
+      console.log('═══ PLAY NOISE DEBUG END ═══');
     } catch (error) {
       console.error(`❌ Error playing ${type} noise:`, error);
       throw error;
