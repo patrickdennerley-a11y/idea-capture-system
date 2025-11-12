@@ -466,6 +466,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
   const [showStats, setShowStats] = useState(false);
+  const [audioContextState, setAudioContextState] = useState('checking');
 
   // Settings
   const [pinkDuration, setPinkDuration] = useState(3);
@@ -516,7 +517,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
   }, [useSameDuration, pinkDuration]);
 
-  // Keep audio playing in background tabs
+  // Keep audio playing in background tabs - CRITICAL FOR FOCUS
   useEffect(() => {
     const handleVisibilityChange = () => {
       // When tab becomes visible or hidden, check audio context state
@@ -526,29 +527,50 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         // Resume audio context if it's suspended (browser may auto-suspend in background)
         if (ctx.state === 'suspended') {
           ctx.resume().then(() => {
-            console.log('Audio context resumed after visibility change');
+            console.log('🔊 Audio context resumed after visibility change');
           }).catch(err => {
-            console.error('Failed to resume audio context:', err);
+            console.error('❌ Failed to resume audio context:', err);
+            alert('Audio was paused by the browser. Click anywhere to resume.');
           });
         }
+      }
+    };
+
+    // User interaction handler to resume suspended audio
+    const handleUserInteraction = () => {
+      if (noiseGeneratorRef.current?.audioContext?.state === 'suspended') {
+        noiseGeneratorRef.current.audioContext.resume().then(() => {
+          console.log('🔊 Audio resumed by user interaction');
+        });
       }
     };
 
     // Listen for visibility changes
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Listen for user interactions (click, key) to auto-resume if suspended
+    document.addEventListener('click', handleUserInteraction);
+    document.addEventListener('keydown', handleUserInteraction);
+
     // Also check periodically in case browser suspends without visibility change
     const keepAliveInterval = setInterval(() => {
       if (activeSession && !activeSession.isPaused && noiseGeneratorRef.current?.audioContext) {
         const ctx = noiseGeneratorRef.current.audioContext;
+
+        // Update visual indicator
+        setAudioContextState(ctx.state);
+
         if (ctx.state === 'suspended') {
+          console.warn('⚠️ Audio context suspended, attempting resume...');
           ctx.resume().catch(err => console.error('Keep-alive resume failed:', err));
         }
       }
-    }, 2000); // Check every 2 seconds
+    }, 1000); // Check every 1 second (more aggressive)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('click', handleUserInteraction);
+      document.removeEventListener('keydown', handleUserInteraction);
       clearInterval(keepAliveInterval);
     };
   }, [activeSession]);
@@ -900,6 +922,22 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       {/* Active session display */}
       {activeSession && !activeSession.completedAt ? (
         <div className="space-y-6">
+          {/* Audio Context Status Indicator - CRITICAL FOR ADHD FOCUS */}
+          {audioContextRef?.current && (
+            <div className={`px-3 py-2 rounded-lg border text-sm font-medium ${
+              audioContextState === 'running'
+                ? 'bg-green-950/30 border-green-800 text-green-400'
+                : audioContextState === 'suspended'
+                ? 'bg-yellow-950/30 border-yellow-800 text-yellow-400 animate-pulse'
+                : 'bg-red-950/30 border-red-800 text-red-400'
+            }`}>
+              🔊 Audio: {audioContextState === 'running' ? '✓ Active & Playing' :
+                       audioContextState === 'suspended' ? '⚠️ SUSPENDED - Click anywhere to resume!' :
+                       audioContextState === 'closed' ? '❌ Closed - Refresh page' :
+                       'Checking...'}
+            </div>
+          )}
+
           {/* Current status */}
           <div className="bg-gradient-to-r from-pink-900/20 to-amber-900/20 border border-pink-500/30 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
