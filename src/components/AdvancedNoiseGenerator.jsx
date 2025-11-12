@@ -692,10 +692,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
         // Handle delay period (silence between variations)
         if (prev.inDelay) {
-          const delayDuration = prev.settings.silenceDelay;
+          const delayDurationMs = prev.settings.silenceDelay * 60 * 1000; // Convert minutes to ms
 
-          // Check if delay is complete
-          if (elapsed >= delayDuration * 60) {
+          // Check if delay is complete (using milliseconds for precision)
+          if (elapsedMs >= delayDurationMs) {
             // Exit delay, play next variation
             const nextType = prev.currentType === 'pink' ? 'brown' : 'pink';
             const nextVariationNumber = prev.variations.length + 1;
@@ -731,8 +731,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             // Play new noise
             if (noiseGeneratorRef.current) {
               try {
+                const nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
                 noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
-                console.log(`🔊 Delay complete, playing ${nextType} noise`);
+                console.log(`🔊 Delay complete, playing ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
                 alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
@@ -761,12 +762,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         }
 
         // Handle normal playback (not in delay)
-        const currentDuration = prev.currentType === 'pink'
+        const currentDurationMs = (prev.currentType === 'pink'
           ? prev.settings.pinkDuration
-          : prev.settings.brownDuration;
+          : prev.settings.brownDuration) * 60 * 1000; // Convert minutes to ms
 
-        // Check if current variation is complete
-        if (elapsed >= currentDuration * 60) {
+        // Check if current variation is complete (using milliseconds for precision)
+        if (elapsedMs >= currentDurationMs) {
           // Check if we have a delay configured
           if (prev.settings.silenceDelay > 0) {
             // Enter delay mode (silence)
@@ -819,7 +820,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           // Play new noise
           if (noiseGeneratorRef.current) {
             try {
+              const nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
               noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
+              console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
               alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
