@@ -26,6 +26,7 @@ class NoiseGenerator {
     this.currentParams = null; // Store current parameters for release envelope
     this.stopTimeout = null; // Track pending cleanup timeout
     this.isPlaying = false;
+    this.intentionallyStopping = false; // Track if we're stopping intentionally (not an error)
   }
 
   initialize(initialVolume = 50) {
@@ -299,9 +300,17 @@ class NoiseGenerator {
       this.sourceNode.buffer = buffer;
       this.sourceNode.loop = true;
 
-      // Add error handler for source node
+      // Add handler for source node ending
+      // Note: This fires when source stops (either intentionally or due to error)
       this.sourceNode.onended = () => {
-        console.warn('⚠️ Source node ended unexpectedly');
+        if (this.intentionallyStopping) {
+          console.log('✓ Source node stopped as expected (switching variations)');
+          this.intentionallyStopping = false;
+        } else if (this.sourceNode.loop) {
+          // If loop=true and we didn't intentionally stop, this IS unexpected
+          console.error('❌ CRITICAL: Looped source node ended unexpectedly! This should not happen.');
+          console.error('   This may indicate buffer issues or AudioContext problems.');
+        }
       };
 
       // Create EQ filters
@@ -338,12 +347,19 @@ class NoiseGenerator {
       this.gainNode.gain.setValueAtTime(0, now);
       this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
+      console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in`);
+
+      // Warn if attack time seems excessive
+      if (attackTime > 0.3) {
+        console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
+      }
+
       // Note: Release will be applied in stop() method when explicitly stopped
 
       this.sourceNode.start(0);
       this.isPlaying = true;
 
-      console.log(`🔊 Playing ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s`);
+      console.log(`🔊 Playing ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
     } catch (error) {
       console.error(`❌ Error playing ${type} noise:`, error);
       throw error;
@@ -389,10 +405,12 @@ class NoiseGenerator {
         this.stopTimeout = setTimeout(() => {
           if (oldSourceNode) {
             try {
+              this.intentionallyStopping = true; // Mark as intentional before stopping
               oldSourceNode.stop();
               oldSourceNode.disconnect();
             } catch (e) {
               // Node may already be stopped, ignore error
+              this.intentionallyStopping = false;
             }
           }
           // Disconnect and clean up OLD filters
@@ -416,10 +434,12 @@ class NoiseGenerator {
       } else {
         // No release envelope - stop immediately (when switching variations)
         try {
+          this.intentionallyStopping = true; // Mark as intentional before stopping
           this.sourceNode.stop();
           this.sourceNode.disconnect();
         } catch (e) {
           // Node may already be stopped, ignore error
+          this.intentionallyStopping = false;
         }
         this.sourceNode = null;
 
@@ -997,6 +1017,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
         // Check if current variation is complete (using milliseconds for precision)
         if (elapsedMs >= currentDurationMs) {
+          // TIMING DIAGNOSTIC: Log expected vs actual duration
+          const durationMin = prev.currentType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
+          console.log(`⏱️ Variation #${prev.currentVariation.variationNumber} complete:`);
+          console.log(`   Expected: ${(currentDurationMs / 1000).toFixed(3)}s (${durationMin.toFixed(4)} min)`);
+          console.log(`   Actual: ${(elapsedMs / 1000).toFixed(3)}s`);
+          console.log(`   Difference: ${((elapsedMs - currentDurationMs) / 1000).toFixed(3)}s`);
           // Check if we have a delay configured
           if (prev.settings.silenceDelay > 0) {
             // Enter delay mode (silence)
