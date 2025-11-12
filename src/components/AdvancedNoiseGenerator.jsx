@@ -478,11 +478,13 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
   };
 };
 
-// Format time display
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+// Format time display with milliseconds for better bug detection
+const formatTime = (milliseconds) => {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const ms = Math.floor((milliseconds % 1000) / 10); // Show centiseconds (0-99)
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
 };
 
 export default function AdvancedNoiseGenerator({ audioContextRef, activeSession, setActiveSession }) {
@@ -491,6 +493,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [showSettings, setShowSettings] = useState(true);
   const [showStats, setShowStats] = useState(false);
   const [audioContextState, setAudioContextState] = useState('checking');
+  const [renderTick, setRenderTick] = useState(0); // Force re-renders for millisecond display
 
   // Settings
   const [pinkDuration, setPinkDuration] = useState(3);
@@ -507,6 +510,17 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
+
+  // Force re-renders every 100ms for millisecond display when session is active
+  useEffect(() => {
+    if (!activeSession || activeSession.isPaused || activeSession.completedAt) return;
+
+    const renderInterval = setInterval(() => {
+      setRenderTick(prev => prev + 1);
+    }, 100);
+
+    return () => clearInterval(renderInterval);
+  }, [activeSession?.isPaused, activeSession?.completedAt, activeSession]);
 
   useEffect(() => {
     // Only create noise generator if we have an audioContext and don't already have one
@@ -619,6 +633,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       currentVariationStart: startTime,
       sessionStartTime: startTime, // Track absolute session start for accurate elapsed time
       totalElapsed: 0,
+      totalElapsedMs: 0, // Track milliseconds for precise timing
       isIndefinite: durationType === 'indefinite',
       settings: {
         pinkDuration,
@@ -660,7 +675,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     startTimer(session);
   }, [pinkDuration, brownDuration, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume]);
 
-  // Timer logic
+  // Timer logic - runs every 100ms for millisecond precision
   const startTimer = useCallback((session) => {
     intervalRef.current = setInterval(() => {
       setActiveSession(prev => {
@@ -670,9 +685,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           ? prev.settings.pinkDuration
           : prev.settings.brownDuration;
 
-        const elapsed = Math.floor((Date.now() - prev.currentVariationStart) / 1000);
+        const elapsedMs = Date.now() - prev.currentVariationStart;
+        const elapsed = Math.floor(elapsedMs / 1000);
         // Calculate total elapsed from session start time, not from tick count
-        const newTotalElapsed = Math.floor((Date.now() - prev.sessionStartTime) / 1000);
+        const totalElapsedMs = Date.now() - prev.sessionStartTime;
+        const newTotalElapsed = Math.floor(totalElapsedMs / 1000);
 
         // Check if current variation is complete
         if (elapsed >= currentDuration * 60) {
@@ -727,15 +744,17 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             currentType: nextType,
             currentVariationStart: Date.now(),
             totalElapsed: newTotalElapsed,
+            totalElapsedMs: totalElapsedMs,
           };
         }
 
         return {
           ...prev,
           totalElapsed: newTotalElapsed,
+          totalElapsedMs: totalElapsedMs,
         };
       });
-    }, 1000);
+    }, 100); // Update every 100ms for millisecond precision
   }, []);
 
   // Stop generation
@@ -839,7 +858,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     };
   }, [activeSession]);
 
-  // Current progress
+  // Current progress - uses milliseconds for precise tracking
   const currentProgress = useMemo(() => {
     if (!activeSession || !activeSession.currentVariation) return null;
 
@@ -847,17 +866,17 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       ? activeSession.settings.pinkDuration
       : activeSession.settings.brownDuration;
 
-    const elapsed = Math.floor((Date.now() - activeSession.currentVariationStart) / 1000);
-    const total = currentDuration * 60;
-    const remaining = total - elapsed;
+    const elapsedMs = Date.now() - activeSession.currentVariationStart;
+    const totalMs = currentDuration * 60 * 1000;
+    const remainingMs = totalMs - elapsedMs;
 
     return {
-      elapsed,
-      total,
-      remaining,
-      percentage: (elapsed / total) * 100,
+      elapsed: elapsedMs,
+      total: totalMs,
+      remaining: remainingMs,
+      percentage: (elapsedMs / totalMs) * 100,
     };
-  }, [activeSession]);
+  }, [activeSession, renderTick]); // Update with renderTick for millisecond precision
 
   // Render different views
   if (showHistory) {
@@ -1040,7 +1059,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-gray-400">Total Elapsed:</span>
-                <span className="ml-2 font-bold">{formatTime(activeSession.totalElapsed)}</span>
+                <span className="ml-2 font-bold">{formatTime(activeSession.totalElapsedMs || 0)}</span>
               </div>
               <div>
                 <span className="text-gray-400">Total Variations:</span>
@@ -1125,7 +1144,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             <div className="grid grid-cols-2 gap-4 text-sm mb-4">
               <div>
                 <span className="text-gray-400">Duration:</span>
-                <span className="ml-2 font-bold">{formatTime(activeSession.totalElapsed)}</span>
+                <span className="ml-2 font-bold">{formatTime(activeSession.totalElapsedMs || (activeSession.totalElapsed * 1000))}</span>
               </div>
               <div>
                 <span className="text-gray-400">Variations:</span>
