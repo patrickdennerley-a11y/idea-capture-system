@@ -168,7 +168,8 @@ class NoiseGenerator {
         lastOut = lastOut * 0.998 + white * 0.02 * rateMod * depthMod;
 
         // Apply frequency modulation as a subtle filter
-        const freqFactor = 0.5 + (params.frequency / 20000) * 0.5; // 0.5 to 1.0
+        // ADJUSTED: Changed from 0.5-1.0 range to 0.8-1.2 to avoid excessive volume reduction
+        const freqFactor = 0.8 + (params.frequency / 20000) * 0.4; // 0.8 to 1.2
 
         let brown = lastOut * freqFactor;
 
@@ -186,8 +187,12 @@ class NoiseGenerator {
         }
         // 'none' = no modulation applied
 
-        // Normalized volume: 0.15 base multiplier (matching pink noise)
-        brown *= 0.15 * params.volume / 100;
+        // CRITICAL FIX: Brown noise needs HIGHER gain to compensate for:
+        // 1. Bass-heavy character (less perceptually loud than high frequencies)
+        // 2. Low-pass filter cutting highs
+        // 3. Integration making it more "smooth" (less sharp transients)
+        // Increased from 0.15 to 0.35 (2.3x louder than pink noise)
+        brown *= 0.35 * params.volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -params.stereoWidth / 200 : params.stereoWidth / 200;
@@ -239,9 +244,9 @@ class NoiseGenerator {
       if (type === 'brown') {
         this.brownLowpass = this.audioContext.createBiquadFilter();
         this.brownLowpass.type = 'lowpass';
-        this.brownLowpass.frequency.value = 1200; // Cut frequencies above 1200Hz
+        this.brownLowpass.frequency.value = 1800; // Cut frequencies above 1800Hz (was 1200Hz - too aggressive)
         this.brownLowpass.Q.value = 0.7;
-        console.log('🟤 Applied brown noise low-pass filter (1200Hz cutoff) for deeper bass');
+        console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
 
         // Create audio chain with brown filter: source -> brownLowpass -> bass -> mid -> treble -> resonance -> gain -> destination
         this.sourceNode.connect(this.brownLowpass);
