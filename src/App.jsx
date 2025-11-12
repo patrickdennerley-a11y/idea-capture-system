@@ -93,12 +93,12 @@ function App() {
       }
     }
 
-    // Cleanup only on app unmount (not tab switch)
+    // Important: Don't cleanup in development (React StrictMode unmounts/remounts)
+    // Only cleanup on actual app unmount
     return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        console.log('🔊 Audio context closed');
-      }
+      // Don't close AudioContext here - it causes issues with React StrictMode
+      // The browser will clean it up when the page unloads
+      console.log('🔊 Audio context cleanup skipped (preserving for tab switches)');
     };
   }, []);
 

@@ -32,6 +32,18 @@ class NoiseGenerator {
     if (!this.audioContext) {
       throw new Error('AudioContext must be provided to NoiseGenerator');
     }
+
+    // Check if AudioContext is in a usable state
+    if (this.audioContext.state === 'closed') {
+      console.error('AudioContext is closed - cannot initialize noise generator');
+      throw new Error('AudioContext is closed');
+    }
+
+    // Resume if suspended (can happen on page load)
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+
     if (!this.gainNode) {
       this.gainNode = this.audioContext.createGain();
       this.gainNode.gain.value = initialVolume / 100; // Set initial volume
