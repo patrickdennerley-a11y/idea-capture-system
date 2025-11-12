@@ -195,43 +195,67 @@ class NoiseGenerator {
   }
 
   playNoise(type, params, volume = 50) {
-    this.initialize(volume);
-    // Stop immediately without release envelope (we're switching variations)
-    this.stop(false);
+    try {
+      this.initialize(volume);
 
-    // Store params for later use (e.g., release envelope)
-    this.currentParams = params;
+      // Check AudioContext state before playing
+      if (this.audioContext.state === 'closed') {
+        console.error('❌ Cannot play - AudioContext is closed');
+        throw new Error('AudioContext is closed');
+      }
 
-    const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
+      if (this.audioContext.state === 'suspended') {
+        console.warn('⚠️ AudioContext suspended, resuming...');
+        this.audioContext.resume();
+      }
 
-    // Create source node
-    this.sourceNode = this.audioContext.createBufferSource();
-    this.sourceNode.buffer = buffer;
-    this.sourceNode.loop = true;
+      // Stop immediately without release envelope (we're switching variations)
+      this.stop(false);
 
-    // Create EQ filters
-    this.createEQFilters(params);
+      // Store params for later use (e.g., release envelope)
+      this.currentParams = params;
 
-    // Create audio chain: source -> bass -> mid -> treble -> resonance -> gain -> destination
-    this.sourceNode.connect(this.bassFilter);
-    this.bassFilter.connect(this.midFilter);
-    this.midFilter.connect(this.trebleFilter);
-    this.trebleFilter.connect(this.resonanceFilter);
-    this.resonanceFilter.connect(this.gainNode);
+      const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
 
-    // Apply envelope (attack)
-    const now = this.audioContext.currentTime;
-    const attackTime = params.attackTime / 1000; // Convert ms to seconds
+      // Create source node
+      this.sourceNode = this.audioContext.createBufferSource();
+      this.sourceNode.buffer = buffer;
+      this.sourceNode.loop = true;
 
-    // Attack: fade in from 0 to target volume
-    this.gainNode.gain.cancelScheduledValues(now);
-    this.gainNode.gain.setValueAtTime(0, now);
-    this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+      // Add error handler for source node
+      this.sourceNode.onended = () => {
+        console.warn('⚠️ Source node ended unexpectedly');
+      };
 
-    // Note: Release will be applied in stop() method when explicitly stopped
+      // Create EQ filters
+      this.createEQFilters(params);
 
-    this.sourceNode.start(0);
-    this.isPlaying = true;
+      // Create audio chain: source -> bass -> mid -> treble -> resonance -> gain -> destination
+      this.sourceNode.connect(this.bassFilter);
+      this.bassFilter.connect(this.midFilter);
+      this.midFilter.connect(this.trebleFilter);
+      this.trebleFilter.connect(this.resonanceFilter);
+      this.resonanceFilter.connect(this.gainNode);
+
+      // Apply envelope (attack)
+      const now = this.audioContext.currentTime;
+      const attackTime = params.attackTime / 1000; // Convert ms to seconds
+
+      // Attack: fade in from 0 to target volume
+      this.gainNode.gain.cancelScheduledValues(now);
+      this.gainNode.gain.setValueAtTime(0, now);
+      this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+
+      // Note: Release will be applied in stop() method when explicitly stopped
+
+      this.sourceNode.start(0);
+      this.isPlaying = true;
+
+      console.log(`🔊 Playing ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s`);
+    } catch (error) {
+      console.error(`❌ Error playing ${type} noise:`, error);
+      throw error;
+    }
   }
 
   stop(applyRelease = true) {
@@ -556,9 +580,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     const keepAliveInterval = setInterval(() => {
       if (activeSession && !activeSession.isPaused && noiseGeneratorRef.current?.audioContext) {
         const ctx = noiseGeneratorRef.current.audioContext;
+        const gen = noiseGeneratorRef.current;
 
         // Update visual indicator
         setAudioContextState(ctx.state);
+
+        // Check if audio is actually playing
+        if (gen.isPlaying && !gen.sourceNode) {
+          console.error('❌ CRITICAL: Audio marked as playing but no source node!');
+          alert('⚠️ AUDIO STOPPED UNEXPECTEDLY!\n\nThe audio generator lost its connection.\n\nClick OK to continue. Consider refreshing if this happens repeatedly.');
+        }
 
         if (ctx.state === 'suspended') {
           console.warn('⚠️ Audio context suspended, attempting resume...');
@@ -679,7 +710,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
           // Play new noise
           if (noiseGeneratorRef.current) {
-            noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
+            try {
+              noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
+            } catch (error) {
+              console.error('❌ CRITICAL: Failed to play next variation:', error);
+              // Alert user that audio stopped
+              alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
+              stopGeneration();
+            }
           }
 
           return {
