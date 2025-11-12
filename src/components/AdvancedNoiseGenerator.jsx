@@ -495,14 +495,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [audioContextState, setAudioContextState] = useState('checking');
   const [renderTick, setRenderTick] = useState(0); // Force re-renders for millisecond display
 
-  // Settings
-  const [pinkDuration, setPinkDuration] = useState(3);
-  const [brownDuration, setBrownDuration] = useState(3);
-  const [useSameDuration, setUseSameDuration] = useState(true);
-  const [durationType, setDurationType] = useState('indefinite'); // 'indefinite', 'time', 'cycles'
-  const [fixedTime, setFixedTime] = useState(60);
-  const [fixedCycles, setFixedCycles] = useState(10);
-  const [masterVolume, setMasterVolume] = useState(50); // 0-100
+  // Settings - now persisted in localStorage with safety checks
+  const [pinkDuration, setPinkDuration] = useLocalStorage('neural-noise-pink-duration', 3);
+  const [brownDuration, setBrownDuration] = useLocalStorage('neural-noise-brown-duration', 3);
+  const [useSameDuration, setUseSameDuration] = useLocalStorage('neural-noise-same-duration', true);
+  const [durationType, setDurationType] = useLocalStorage('neural-noise-duration-type', 'indefinite');
+  const [fixedTime, setFixedTime] = useLocalStorage('neural-noise-fixed-time', 60);
+  const [fixedCycles, setFixedCycles] = useLocalStorage('neural-noise-fixed-cycles', 10);
+  const [masterVolume, setMasterVolume] = useLocalStorage('neural-noise-master-volume', 50);
 
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
@@ -510,6 +510,18 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
+
+  // Safety check: ensure durations are at least 0.5 minutes (30 seconds)
+  useEffect(() => {
+    if (pinkDuration < 0.5) {
+      console.warn(`⚠️ Pink duration too short (${pinkDuration}min), resetting to 3 minutes`);
+      setPinkDuration(3);
+    }
+    if (brownDuration < 0.5) {
+      console.warn(`⚠️ Brown duration too short (${brownDuration}min), resetting to 3 minutes`);
+      setBrownDuration(3);
+    }
+  }, [pinkDuration, brownDuration, setPinkDuration, setBrownDuration]);
 
   // Force re-renders every 100ms for millisecond display when session is active
   useEffect(() => {
