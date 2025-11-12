@@ -225,8 +225,8 @@ class NoiseGenerator {
         // Apply VARIABLE bass boost
         brown *= bassBoost;
 
-        // Apply VARIABLE rumble intensity
-        brown *= rumbleIntensity;
+        // Apply VARIABLE rumble intensity (additive instead of multiplicative to prevent silence)
+        brown *= (0.6 + rumbleIntensity * 0.4); // Range: 0.6-1.0 instead of 0.2-1.0
 
         // Apply modulation
         if (params.modulationType === 'AM') {
@@ -239,8 +239,9 @@ class NoiseGenerator {
           brown *= (1 + modulator * 0.3);
         }
 
-        // CRITICAL: Brown noise needs HIGHER gain
-        brown *= 0.35 * volume / 100;
+        // CRITICAL: Brown noise needs MUCH HIGHER gain due to integration algorithm producing weak signals
+        // Increased from 0.35 to 1.5 (10x pink noise gain of 0.15) to compensate for weak accumulation
+        brown *= 1.5 * volume / 100;
 
         // Apply stereo width
         const pan = channel === 0 ? -stereoWidth / 200 : stereoWidth / 200;
@@ -350,16 +351,18 @@ class NoiseGenerator {
       this.sourceNode.loop = true;
 
       // Add handler for source node ending
-      // Note: This fires when source stops (either intentionally or due to error)
+      // Store reference to this specific node for the closure
+      const currentNode = this.sourceNode;
       this.sourceNode.onended = () => {
         if (this.intentionallyStopping) {
           console.log('✓ Source node stopped as expected (switching variations)');
           this.intentionallyStopping = false;
-        } else if (this.sourceNode.loop) {
-          // If loop=true and we didn't intentionally stop, this IS unexpected
+        } else if (currentNode.loop && currentNode === this.sourceNode) {
+          // Only warn if this node was looped AND is still the current node
           console.error('❌ CRITICAL: Looped source node ended unexpectedly! This should not happen.');
           console.error('   This may indicate buffer issues or AudioContext problems.');
         }
+        // If currentNode !== this.sourceNode, this is an old node - ignore
       };
 
       // Create EQ filters
