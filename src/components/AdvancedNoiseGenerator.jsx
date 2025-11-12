@@ -498,6 +498,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Settings - now persisted in localStorage with safety checks
   const [pinkDuration, setPinkDuration] = useLocalStorage('neural-noise-pink-duration', 3);
   const [brownDuration, setBrownDuration] = useLocalStorage('neural-noise-brown-duration', 3);
+  const [silenceDelay, setSilenceDelay] = useLocalStorage('neural-noise-silence-delay', 0);
   const [useSameDuration, setUseSameDuration] = useLocalStorage('neural-noise-same-duration', true);
   const [durationType, setDurationType] = useLocalStorage('neural-noise-duration-type', 'indefinite');
   const [fixedTime, setFixedTime] = useLocalStorage('neural-noise-fixed-time', 60);
@@ -635,9 +636,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       totalElapsed: 0,
       totalElapsedMs: 0, // Track milliseconds for precise timing
       isIndefinite: durationType === 'indefinite',
+      inDelay: false, // Track if we're in silence delay period
       settings: {
         pinkDuration,
         brownDuration: useSameDuration ? pinkDuration : brownDuration,
+        silenceDelay, // Delay in minutes between variations
         totalDuration: durationType === 'time' ? fixedTime : null,
         totalCycles: durationType === 'cycles' ? fixedCycles : null,
       },
@@ -673,7 +676,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     // Start timer
     startTimer(session);
-  }, [pinkDuration, brownDuration, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume]);
+  }, [pinkDuration, brownDuration, silenceDelay, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume]);
 
   // Timer logic - runs every 100ms for millisecond precision
   const startTimer = useCallback((session) => {
@@ -681,19 +684,107 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       setActiveSession(prev => {
         if (!prev || prev.isPaused) return prev;
 
-        const currentDuration = prev.currentType === 'pink'
-          ? prev.settings.pinkDuration
-          : prev.settings.brownDuration;
-
         const elapsedMs = Date.now() - prev.currentVariationStart;
         const elapsed = Math.floor(elapsedMs / 1000);
         // Calculate total elapsed from session start time, not from tick count
         const totalElapsedMs = Date.now() - prev.sessionStartTime;
         const newTotalElapsed = Math.floor(totalElapsedMs / 1000);
 
+        // Handle delay period (silence between variations)
+        if (prev.inDelay) {
+          const delayDuration = prev.settings.silenceDelay;
+
+          // Check if delay is complete
+          if (elapsed >= delayDuration * 60) {
+            // Exit delay, play next variation
+            const nextType = prev.currentType === 'pink' ? 'brown' : 'pink';
+            const nextVariationNumber = prev.variations.length + 1;
+
+            // Check if we should stop
+            if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
+              stopGeneration();
+              return prev;
+            }
+
+            if (prev.settings.totalDuration && newTotalElapsed >= prev.settings.totalDuration * 60) {
+              stopGeneration();
+              return prev;
+            }
+
+            // Generate next variation
+            const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
+            const variationObj = {
+              id: `${prev.id}-${nextVariationNumber}`,
+              type: nextType,
+              variationNumber: nextVariationNumber,
+              parameters: variation.parameters,
+              distanceFromPrevious: variation.distanceFromPrevious,
+              distanceMetrics: {
+                nearestVariation: variation.nearestVariation,
+                nearestDistance: variation.nearestDistance,
+                avgDistanceToAll: variation.avgDistanceToAll,
+              },
+              timestamp: new Date().toISOString(),
+              durationMinutes: nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration,
+            };
+
+            // Play new noise
+            if (noiseGeneratorRef.current) {
+              try {
+                noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
+                console.log(`🔊 Delay complete, playing ${nextType} noise`);
+              } catch (error) {
+                console.error('❌ CRITICAL: Failed to play next variation:', error);
+                alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
+                stopGeneration();
+              }
+            }
+
+            return {
+              ...prev,
+              variations: [...prev.variations, variationObj],
+              currentVariation: variationObj,
+              currentType: nextType,
+              currentVariationStart: Date.now(),
+              totalElapsed: newTotalElapsed,
+              totalElapsedMs: totalElapsedMs,
+              inDelay: false, // Exit delay mode
+            };
+          }
+
+          // Still in delay, just update timers
+          return {
+            ...prev,
+            totalElapsed: newTotalElapsed,
+            totalElapsedMs: totalElapsedMs,
+          };
+        }
+
+        // Handle normal playback (not in delay)
+        const currentDuration = prev.currentType === 'pink'
+          ? prev.settings.pinkDuration
+          : prev.settings.brownDuration;
+
         // Check if current variation is complete
         if (elapsed >= currentDuration * 60) {
-          // Switch to next noise type
+          // Check if we have a delay configured
+          if (prev.settings.silenceDelay > 0) {
+            // Enter delay mode (silence)
+            if (noiseGeneratorRef.current) {
+              noiseGeneratorRef.current.stop();
+              console.log(`🔇 Entering silence delay for ${prev.settings.silenceDelay * 60}s`);
+            }
+
+            return {
+              ...prev,
+              inDelay: true,
+              currentVariationStart: Date.now(), // Reset timer for delay period
+              totalElapsed: newTotalElapsed,
+              totalElapsedMs: totalElapsedMs,
+            };
+          }
+
+          // No delay configured, immediately switch to next variation
           const nextType = prev.currentType === 'pink' ? 'brown' : 'pink';
           const nextVariationNumber = prev.variations.length + 1;
 
@@ -731,7 +822,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
-              // Alert user that audio stopped
               alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
               stopGeneration();
             }
@@ -748,6 +838,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           };
         }
 
+        // Normal playback, just update timers
         return {
           ...prev,
           totalElapsed: newTotalElapsed,
@@ -862,9 +953,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const currentProgress = useMemo(() => {
     if (!activeSession || !activeSession.currentVariation) return null;
 
-    const currentDuration = activeSession.currentType === 'pink'
-      ? activeSession.settings.pinkDuration
-      : activeSession.settings.brownDuration;
+    // If in delay mode, show delay progress instead
+    const currentDuration = activeSession.inDelay
+      ? activeSession.settings.silenceDelay
+      : (activeSession.currentType === 'pink'
+          ? activeSession.settings.pinkDuration
+          : activeSession.settings.brownDuration);
 
     const elapsedMs = Date.now() - activeSession.currentVariationStart;
     const totalMs = currentDuration * 60 * 1000;
@@ -875,6 +969,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       total: totalMs,
       remaining: remainingMs,
       percentage: (elapsedMs / totalMs) * 100,
+      isDelay: activeSession.inDelay,
     };
   }, [activeSession, renderTick]); // Update with renderTick for millisecond precision
 
@@ -999,13 +1094,21 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           <div className="bg-gradient-to-r from-pink-900/20 to-amber-900/20 border border-pink-500/30 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${activeSession.isPaused ? 'bg-yellow-400' : 'bg-green-400 animate-pulse'}`} />
+                <div className={`w-3 h-3 rounded-full ${
+                  activeSession.isPaused ? 'bg-yellow-400' :
+                  activeSession.inDelay ? 'bg-gray-400 animate-pulse' :
+                  'bg-green-400 animate-pulse'
+                }`} />
                 <div>
                   <h3 className="text-2xl font-bold">
-                    {activeSession.currentType === 'pink' ? '🩷' : '🤎'} {activeSession.currentType === 'pink' ? 'Pink' : 'Brown'} Noise #{activeSession.currentVariation.variationNumber}
+                    {activeSession.inDelay ? (
+                      <>🔇 Silence Delay</>
+                    ) : (
+                      <>{activeSession.currentType === 'pink' ? '🩷' : '🤎'} {activeSession.currentType === 'pink' ? 'Pink' : 'Brown'} Noise #{activeSession.currentVariation.variationNumber}</>
+                    )}
                   </h3>
                   <p className="text-sm text-gray-400">
-                    {activeSession.isPaused ? 'Paused' : 'Playing'}
+                    {activeSession.isPaused ? 'Paused' : activeSession.inDelay ? 'Silent Gap' : 'Playing'}
                   </p>
                 </div>
               </div>
@@ -1028,12 +1131,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             {currentProgress && (
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-2">
-                  <span>Time in Current: {formatTime(currentProgress.elapsed)} / {formatTime(currentProgress.total)}</span>
+                  <span>
+                    {currentProgress.isDelay ? 'Silence Delay: ' : 'Time in Current: '}
+                    {formatTime(currentProgress.elapsed)} / {formatTime(currentProgress.total)}
+                  </span>
                   <span>{formatTime(currentProgress.remaining)} remaining</span>
                 </div>
                 <div className="h-2 bg-neural-darker rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-pink-500 to-amber-500 transition-all duration-1000"
+                    className={`h-full transition-all duration-1000 ${
+                      currentProgress.isDelay
+                        ? 'bg-gradient-to-r from-gray-600 to-gray-400'
+                        : 'bg-gradient-to-r from-pink-500 to-amber-500'
+                    }`}
                     style={{ width: `${currentProgress.percentage}%` }}
                   />
                 </div>
@@ -1290,6 +1400,58 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                         className="neural-input disabled:opacity-50"
                       />
                     </div>
+                  </div>
+
+                  {/* Silence Delay Setting */}
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-2">
+                      Silence Delay (gap between variations)
+                      <span className="text-xs text-gray-500 ml-2">
+                        = {(silenceDelay * 60).toFixed(2)}s
+                      </span>
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <button
+                        onClick={() => setSilenceDelay(0)}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                      >
+                        0s (none)
+                      </button>
+                      <button
+                        onClick={() => setSilenceDelay(0.00167)}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                      >
+                        0.1s
+                      </button>
+                      <button
+                        onClick={() => setSilenceDelay(0.0083)}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                      >
+                        0.5s
+                      </button>
+                      <button
+                        onClick={() => setSilenceDelay(0.0167)}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                      >
+                        1s
+                      </button>
+                      <button
+                        onClick={() => setSilenceDelay(0.0333)}
+                        className="neural-button-secondary text-xs px-2 py-1"
+                      >
+                        2s
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="180"
+                      step="0.001"
+                      value={silenceDelay}
+                      onChange={(e) => setSilenceDelay(parseFloat(e.target.value) || 0)}
+                      className="neural-input"
+                      placeholder="Custom delay (minutes)"
+                    />
                   </div>
                 </div>
 
