@@ -1467,6 +1467,73 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     });
   }, [startTimer, gammaCarrierFreq]);
 
+  // Force restart audio - completely recreate AudioContext
+  const forceRestartAudio = useCallback(async () => {
+    console.log('🔧 FORCE RESTARTING AUDIO SYSTEM...');
+
+    // Stop everything
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (noiseGeneratorRef.current) {
+      noiseGeneratorRef.current.stop();
+      noiseGeneratorRef.current.stopGammaWave();
+    }
+
+    // Close old AudioContext
+    if (audioContextRef.current) {
+      try {
+        await audioContextRef.current.close();
+        console.log('  ✅ Old AudioContext closed');
+      } catch (e) {
+        console.warn('  ⚠️ Error closing old AudioContext:', e);
+      }
+    }
+
+    // Create fresh AudioContext
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('  ✅ New AudioContext created, state:', audioContextRef.current.state);
+
+    // Recreate noise generator
+    noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
+    console.log('  ✅ Noise generator recreated');
+
+    // If there's an active session, resume it
+    if (activeSession && !activeSession.completedAt) {
+      const wasGammaEnabled = activeSession.gammaWasEnabled || gammaEnabled;
+
+      if (activeSession.currentVariation) {
+        try {
+          await noiseGeneratorRef.current.playNoise(
+            activeSession.currentType,
+            activeSession.currentVariation.parameters,
+            masterVolumeRef.current
+          );
+          console.log('  ✅ Resumed current variation');
+
+          // Resume gamma if it was enabled
+          if (wasGammaEnabled) {
+            noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolumeRef.current);
+            console.log('  ✅ Resumed gamma wave');
+          }
+
+          // Restart timer if not paused
+          if (!activeSession.isPaused) {
+            startTimer(activeSession);
+            console.log('  ✅ Timer restarted');
+          }
+        } catch (error) {
+          console.error('  ❌ Failed to resume audio:', error);
+          alert('Failed to resume audio. You may need to stop and start a new session.');
+        }
+      }
+    }
+
+    alert('✅ Audio system restarted! You should hear audio now.');
+    console.log('🔧 FORCE RESTART COMPLETE');
+  }, [activeSession, gammaEnabled, gammaCarrierFreq, startTimer]);
+
   // Save to history
   const saveToHistory = useCallback((title) => {
     if (!activeSession) return;
@@ -1645,6 +1712,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             </div>
           )}
 
+          {/* Long session warning */}
+          {activeSession.variations.length >= 5000 && (
+            <div className="px-3 py-2 rounded-lg border bg-orange-950/30 border-orange-500/50 text-orange-400 text-sm">
+              ⚠️ Long session detected ({activeSession.variations.length.toLocaleString()} variations).
+              If audio stops working, click the <strong>🔧 button</strong> to force restart audio.
+            </div>
+          )}
+
           {/* Current status */}
           <div className="bg-gradient-to-r from-pink-900/20 to-amber-900/20 border border-pink-500/30 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
@@ -1671,14 +1746,23 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 <button
                   onClick={togglePause}
                   className="neural-button-secondary"
+                  title="Pause/Resume"
                 >
                   {activeSession.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={stopGeneration}
                   className="neural-button-secondary"
+                  title="Stop Session"
                 >
                   <Square className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={forceRestartAudio}
+                  className="neural-button-secondary bg-orange-900/30 border-orange-500/50 hover:bg-orange-900/50"
+                  title="Force restart audio if you can't hear anything"
+                >
+                  🔧
                 </button>
               </div>
             </div>
