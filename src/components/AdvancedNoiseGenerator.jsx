@@ -1398,7 +1398,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         };
       });
     }, 100); // Update every 100ms for millisecond precision
-  }, [autoRefreshEnabled, refreshInterval, performAutoRefresh]);
+  }, [autoRefreshEnabled, refreshInterval]);
 
   // Stop generation
   const stopGeneration = useCallback(() => {
