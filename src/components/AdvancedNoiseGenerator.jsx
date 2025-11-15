@@ -1665,7 +1665,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
           // Resume gamma wave if it was enabled before pause
           if (prev.gammaWasEnabled) {
-            noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolumeRef.current);
+            noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
           }
         }
 
@@ -1707,7 +1707,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         };
       }
     });
-  }, [startTimer, gammaCarrierFreq]);
+  }, [startTimer, overlayGammaCarrier]);
 
   // Automatic AudioContext refresh for overnight sessions
   const performAutoRefresh = useCallback(async () => {
@@ -1756,7 +1756,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
         // Resume gamma if it was playing
         if (wasGammaPlaying) {
-          noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolumeRef.current);
+          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
           console.log('  ✅ Resumed gamma wave');
         }
       } catch (error) {
@@ -1765,7 +1765,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, gammaCarrierFreq]);
+  }, [activeSession, overlayGammaCarrier]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
@@ -1801,7 +1801,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     // If there's an active session, resume it
     if (activeSession && !activeSession.completedAt) {
-      const wasGammaEnabled = activeSession.gammaWasEnabled || gammaEnabled;
+      const wasGammaEnabled = activeSession.gammaWasEnabled || overlayGammaEnabled;
 
       if (activeSession.currentVariation) {
         try {
@@ -1814,7 +1814,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
           // Resume gamma if it was enabled
           if (wasGammaEnabled) {
-            noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolumeRef.current);
+            noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
             console.log('  ✅ Resumed gamma wave');
           }
 
@@ -1832,7 +1832,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     alert('✅ Audio system restarted! You should hear audio now.');
     console.log('🔧 FORCE RESTART COMPLETE');
-  }, [activeSession, gammaEnabled, gammaCarrierFreq, startTimer]);
+  }, [activeSession, overlayGammaEnabled, overlayGammaCarrier, startTimer]);
 
   // Save to history
   const saveToHistory = useCallback((title) => {
