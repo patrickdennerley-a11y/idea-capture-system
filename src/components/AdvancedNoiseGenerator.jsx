@@ -613,6 +613,72 @@ class NoiseGenerator {
       this.gammaGain.gain.value = volume / 100;
     }
   }
+
+  // Play one-shot gamma wave for alternating mode (not looping)
+  async playGamma(carrierFreq, gammaOffset, volume, durationMinutes) {
+    console.log(`🌊 Playing alternating gamma wave: ${carrierFreq}Hz carrier, ${gammaOffset}Hz offset, ${volume}% volume, ${durationMinutes.toFixed(4)} min (${(durationMinutes * 60).toFixed(2)}s)`);
+
+    const durationSeconds = durationMinutes * 60;
+
+    // Stop any existing noise playback
+    if (this.sourceNode) {
+      this.intentionallyStopping = true;
+      try {
+        this.sourceNode.stop();
+        this.sourceNode.disconnect();
+      } catch (e) {
+        // Already stopped
+      }
+      this.sourceNode = null;
+    }
+
+    // Clear existing filters
+    [this.bassFilter, this.midFilter, this.trebleFilter, this.resonanceFilter].forEach(filter => {
+      if (filter) {
+        try {
+          filter.disconnect();
+        } catch (e) {}
+      }
+    });
+    this.bassFilter = this.midFilter = this.trebleFilter = this.resonanceFilter = null;
+
+    // Generate gamma buffer for exact duration (don't loop)
+    const gammaBuffer = this.generateGammaWave(durationSeconds, carrierFreq, gammaOffset);
+
+    const source = this.audioContext.createBufferSource();
+    source.buffer = gammaBuffer;
+    source.loop = false; // One-shot playback
+
+    const gain = this.audioContext.createGain();
+    gain.gain.value = volume / 100;
+
+    // Attack envelope (consistent with pink/brown)
+    const attackTime = (Math.random() * 80 + 20) / 1000; // 20-100ms
+    gain.gain.setValueAtTime(0, this.audioContext.currentTime);
+    gain.gain.linearRampToValueAtTime(volume / 100, this.audioContext.currentTime + attackTime);
+
+    source.connect(gain);
+    gain.connect(this.audioContext.destination);
+
+    // Store references
+    this.sourceNode = source;
+    this.gainNode = gain;
+    this.isPlaying = true;
+    this.intentionallyStopping = false;
+
+    // Start playback
+    source.start(0);
+
+    console.log(`✅ Alternating gamma playback started (duration: ${durationSeconds.toFixed(2)}s)`);
+
+    return new Promise((resolve, reject) => {
+      source.onended = () => {
+        console.log('🎵 Alternating gamma playback ended');
+        this.isPlaying = false;
+        resolve();
+      };
+    });
+  }
 }
 
 // Maximum Distance Algorithm - Now 20D Euclidean space (added 5 brown-specific parameters)
@@ -844,6 +910,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Settings - now persisted in localStorage with safety checks
   const [pinkDuration, setPinkDuration] = useLocalStorage('neural-noise-pink-duration', 3);
   const [brownDuration, setBrownDuration] = useLocalStorage('neural-noise-brown-duration', 3);
+  const [gammaDuration, setGammaDuration] = useLocalStorage('neural-noise-gamma-duration', 3);
   const [silenceDelay, setSilenceDelay] = useLocalStorage('neural-noise-silence-delay', 0);
   const [useSameDuration, setUseSameDuration] = useLocalStorage('neural-noise-same-duration', true);
   const [durationType, setDurationType] = useLocalStorage('neural-noise-duration-type', 'indefinite');
@@ -851,13 +918,18 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [fixedCycles, setFixedCycles] = useLocalStorage('neural-noise-fixed-cycles', 10);
   const [masterVolume, setMasterVolume] = useLocalStorage('neural-noise-master-volume', 50);
 
-  // Noise mode selection
-  const [noiseMode, setNoiseMode] = useLocalStorage('neural-noise-mode', 'alternating'); // 'pink' | 'brown' | 'alternating'
+  // Alternation mode selection
+  // 'two-way' | 'three-way' | 'pink-only' | 'brown-only' | 'gamma-only'
+  const [alternationMode, setAlternationMode] = useLocalStorage('neural-noise-alternation-mode', 'two-way');
 
-  // Gamma wave settings
-  const [gammaEnabled, setGammaEnabled] = useLocalStorage('neural-noise-gamma-enabled', false);
-  const [gammaVolume, setGammaVolume] = useLocalStorage('neural-noise-gamma-volume', 30);
-  const [gammaCarrierFreq, setGammaCarrierFreq] = useLocalStorage('neural-noise-gamma-carrier', 200);
+  // Overlay gamma wave settings (continuous looping on top)
+  const [overlayGammaEnabled, setOverlayGammaEnabled] = useLocalStorage('neural-noise-overlay-gamma-enabled', false);
+  const [overlayGammaVolume, setOverlayGammaVolume] = useLocalStorage('neural-noise-overlay-gamma-volume', 30);
+  const [overlayGammaCarrier, setOverlayGammaCarrier] = useLocalStorage('neural-noise-overlay-gamma-carrier', 200);
+
+  // Alternating gamma wave settings (one-shot playback in rotation)
+  const [alternatingGammaVolume, setAlternatingGammaVolume] = useLocalStorage('neural-noise-alternating-gamma-volume', 40);
+  const [alternatingGammaCarrier, setAlternatingGammaCarrier] = useLocalStorage('neural-noise-alternating-gamma-carrier', 200);
 
   // Auto-refresh settings for overnight sessions
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useLocalStorage('neural-noise-auto-refresh', true);
@@ -866,7 +938,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
-  const gammaVolumeRef = useRef(gammaVolume); // Track gamma volume for timer callbacks
+  const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
+  const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
+  const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const lastRefreshVariation = useRef(0); // Track when we last refreshed
 
   // Memory management: keep only last 100 variations for distance calculation
@@ -909,13 +983,22 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
   }, [masterVolume]);
 
-  // Update gamma volume when changed
+  // Update overlay gamma volume when changed
   useEffect(() => {
-    gammaVolumeRef.current = gammaVolume; // Update ref
+    overlayGammaVolumeRef.current = overlayGammaVolume; // Update ref
     if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.setGammaVolume(gammaVolume);
+      noiseGeneratorRef.current.setGammaVolume(overlayGammaVolume);
     }
-  }, [gammaVolume]);
+  }, [overlayGammaVolume]);
+
+  // Update alternating gamma settings refs when changed
+  useEffect(() => {
+    alternatingGammaVolumeRef.current = alternatingGammaVolume;
+  }, [alternatingGammaVolume]);
+
+  useEffect(() => {
+    alternatingGammaCarrierRef.current = alternatingGammaCarrier;
+  }, [alternatingGammaCarrier]);
 
   // Sync brown duration with pink when "use same duration" is enabled
   useEffect(() => {
@@ -1003,8 +1086,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     console.log('  AudioContext state:', audioContextRef.current?.state);
     console.log('  Sample rate:', audioContextRef.current?.sampleRate);
     console.log('  Current time:', audioContextRef.current?.currentTime);
-    console.log('  Noise mode:', noiseMode);
-    console.log('  Gamma enabled:', gammaEnabled);
+    console.log('  Alternation mode:', alternationMode);
+    console.log('  Overlay gamma enabled:', overlayGammaEnabled);
 
     // Diagnostic: Check AudioContext health
     if (!audioContextRef.current) {
@@ -1030,17 +1113,26 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     // Validate durations based on mode
     const actualPinkDuration = pinkDuration;
     const actualBrownDuration = useSameDuration ? pinkDuration : brownDuration;
+    const actualGammaDuration = useSameDuration ? pinkDuration : gammaDuration;
 
-    if (noiseMode === 'pink' && actualPinkDuration <= 0) {
+    if (alternationMode === 'pink-only' && actualPinkDuration <= 0) {
       alert('❌ Pink duration must be greater than 0 when Pink Only mode is selected.');
       return;
     }
-    if (noiseMode === 'brown' && actualBrownDuration <= 0) {
+    if (alternationMode === 'brown-only' && actualBrownDuration <= 0) {
       alert('❌ Brown duration must be greater than 0 when Brown Only mode is selected.');
       return;
     }
-    if (noiseMode === 'alternating' && actualPinkDuration <= 0 && actualBrownDuration <= 0) {
-      alert('❌ At least one duration must be greater than 0 in Alternating mode.');
+    if (alternationMode === 'gamma-only' && actualGammaDuration <= 0) {
+      alert('❌ Gamma duration must be greater than 0 when Gamma Only mode is selected.');
+      return;
+    }
+    if (alternationMode === 'two-way' && actualPinkDuration <= 0 && actualBrownDuration <= 0) {
+      alert('❌ At least one duration must be greater than 0 in Two-way mode.');
+      return;
+    }
+    if (alternationMode === 'three-way' && actualPinkDuration <= 0 && actualBrownDuration <= 0 && actualGammaDuration <= 0) {
+      alert('❌ At least one duration must be greater than 0 in Three-way mode.');
       return;
     }
 
@@ -1048,16 +1140,27 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     // Determine first type based on mode and durations
     let firstType;
-    if (noiseMode === 'pink') {
+    if (alternationMode === 'pink-only') {
       firstType = 'pink';
-    } else if (noiseMode === 'brown') {
+    } else if (alternationMode === 'brown-only') {
       firstType = 'brown';
-    } else {
-      // Alternating mode - start with whichever has non-zero duration
+    } else if (alternationMode === 'gamma-only') {
+      firstType = 'gamma';
+    } else if (alternationMode === 'two-way') {
+      // Two-way: start with whichever has non-zero duration
       if (actualPinkDuration > 0) {
         firstType = 'pink';
       } else {
         firstType = 'brown';
+      }
+    } else {
+      // Three-way: start with first available type
+      if (actualPinkDuration > 0) {
+        firstType = 'pink';
+      } else if (actualBrownDuration > 0) {
+        firstType = 'brown';
+      } else {
+        firstType = 'gamma';
       }
     }
 
@@ -1077,30 +1180,48 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       settings: {
         pinkDuration: actualPinkDuration,
         brownDuration: actualBrownDuration,
+        gammaDuration: actualGammaDuration,
         silenceDelay, // Delay in minutes between variations
         totalDuration: durationType === 'time' ? fixedTime : null,
         totalCycles: durationType === 'cycles' ? fixedCycles : null,
-        noiseMode, // Store mode in session
+        alternationMode, // Store mode in session
       },
       isPaused: false,
     };
 
-    // Generate first variation
-    const variation = generateMaximallyDifferentVariation(firstType, [], 1);
-    const variationObj = {
-      id: `${session.id}-1`,
-      type: firstType,
-      variationNumber: 1,
-      parameters: variation.parameters,
-      distanceFromPrevious: variation.distanceFromPrevious,
-      distanceMetrics: {
-        nearestVariation: variation.nearestVariation,
-        nearestDistance: variation.nearestDistance,
-        avgDistanceToAll: variation.avgDistanceToAll,
-      },
-      timestamp: new Date().toISOString(),
-      durationMinutes: firstType === 'pink' ? actualPinkDuration : actualBrownDuration,
-    };
+    // Generate first variation (or create gamma entry)
+    let variationObj;
+
+    if (firstType === 'gamma') {
+      // For gamma, we don't generate variations with parameters
+      variationObj = {
+        id: `${session.id}-1`,
+        type: 'gamma',
+        variationNumber: 1,
+        parameters: null, // Gamma doesn't use variation algorithm
+        distanceFromPrevious: null,
+        distanceMetrics: null,
+        timestamp: new Date().toISOString(),
+        durationMinutes: actualGammaDuration,
+      };
+    } else {
+      // For pink/brown, generate variation with maximal difference algorithm
+      const variation = generateMaximallyDifferentVariation(firstType, [], 1);
+      variationObj = {
+        id: `${session.id}-1`,
+        type: firstType,
+        variationNumber: 1,
+        parameters: variation.parameters,
+        distanceFromPrevious: variation.distanceFromPrevious,
+        distanceMetrics: {
+          nearestVariation: variation.nearestVariation,
+          nearestDistance: variation.nearestDistance,
+          avgDistanceToAll: variation.avgDistanceToAll,
+        },
+        timestamp: new Date().toISOString(),
+        durationMinutes: firstType === 'pink' ? actualPinkDuration : actualBrownDuration,
+      };
+    }
 
     session.variations.push(variationObj);
     session.currentVariation = variationObj;
@@ -1110,7 +1231,18 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     // Play the noise (now async)
     if (noiseGeneratorRef.current) {
       try {
-        await noiseGeneratorRef.current.playNoise(firstType, variation.parameters, masterVolume);
+        if (firstType === 'gamma') {
+          // Play alternating gamma (one-shot)
+          await noiseGeneratorRef.current.playGamma(
+            alternatingGammaCarrier,
+            40,
+            alternatingGammaVolume,
+            actualGammaDuration
+          );
+        } else {
+          // Play pink or brown noise
+          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
+        }
         console.log('✅ Session started successfully');
       } catch (error) {
         console.error('❌ Failed to start audio:', error);
@@ -1120,20 +1252,81 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       }
     }
 
-    // Start gamma wave if enabled
-    if (gammaEnabled && noiseGeneratorRef.current) {
+    // Start overlay gamma wave if enabled
+    if (overlayGammaEnabled && noiseGeneratorRef.current) {
       try {
-        noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolume);
-        console.log('✅ Gamma wave started');
+        noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolume);
+        console.log('✅ Overlay gamma wave started');
       } catch (error) {
-        console.error('❌ Failed to start gamma wave:', error);
+        console.error('❌ Failed to start overlay gamma wave:', error);
         // Don't fail the whole session if gamma fails
       }
     }
 
     // Start timer
     startTimer(session);
-  }, [pinkDuration, brownDuration, silenceDelay, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume, noiseMode, gammaEnabled, gammaVolume, gammaCarrierFreq]);
+  }, [pinkDuration, brownDuration, gammaDuration, silenceDelay, useSameDuration, durationType, fixedTime, fixedCycles, masterVolume, alternationMode, overlayGammaEnabled, overlayGammaVolume, overlayGammaCarrier, alternatingGammaVolume, alternatingGammaCarrier]);
+
+  // Helper function to determine next type based on alternation mode
+  const getNextType = useCallback((currentType, settings) => {
+    const mode = settings.alternationMode || 'two-way';
+    const pinkDur = settings.pinkDuration || 0;
+    const brownDur = settings.brownDuration || 0;
+    const gammaDur = settings.gammaDuration || 0;
+
+    if (mode === 'pink-only') {
+      return 'pink';
+    } else if (mode === 'brown-only') {
+      return 'brown';
+    } else if (mode === 'gamma-only') {
+      return 'gamma';
+    } else if (mode === 'two-way') {
+      // Two-way: Pink ↔ Brown
+      if (pinkDur <= 0 && brownDur <= 0) {
+        console.error('❌ Both pink and brown durations are 0');
+        return null;
+      }
+      if (pinkDur <= 0) return 'brown';
+      if (brownDur <= 0) return 'pink';
+      return currentType === 'pink' ? 'brown' : 'pink';
+    } else if (mode === 'three-way') {
+      // Three-way: Pink → Brown → Gamma → Pink → ...
+      // Use modulo 3 to determine position in cycle
+      const validTypes = [];
+      if (pinkDur > 0) validTypes.push('pink');
+      if (brownDur > 0) validTypes.push('brown');
+      if (gammaDur > 0) validTypes.push('gamma');
+
+      if (validTypes.length === 0) {
+        console.error('❌ All durations are 0 in three-way mode');
+        return null;
+      }
+
+      // If only one type is valid, return it
+      if (validTypes.length === 1) return validTypes[0];
+
+      // Determine next in sequence
+      if (currentType === 'pink') {
+        // After pink, try brown, then gamma
+        if (brownDur > 0) return 'brown';
+        if (gammaDur > 0) return 'gamma';
+        return 'pink'; // Loop back if others are disabled
+      } else if (currentType === 'brown') {
+        // After brown, try gamma, then pink
+        if (gammaDur > 0) return 'gamma';
+        if (pinkDur > 0) return 'pink';
+        return 'brown'; // Loop back if others are disabled
+      } else {
+        // After gamma, try pink, then brown
+        if (pinkDur > 0) return 'pink';
+        if (brownDur > 0) return 'brown';
+        return 'gamma'; // Loop back if others are disabled
+      }
+    }
+
+    // Fallback
+    return 'pink';
+  }, []);
 
   // Timer logic - runs every 100ms for millisecond precision
   const startTimer = useCallback((session) => {
@@ -1154,37 +1347,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           // Check if delay is complete (using milliseconds for precision)
           if (elapsedMs >= delayDurationMs) {
             // Exit delay, play next variation
-            // Determine next type based on noise mode and durations
-            let nextType;
-            const mode = prev.settings.noiseMode || 'alternating';
+            // Determine next type based on alternation mode
+            const nextType = getNextType(prev.currentType, prev.settings);
 
-            if (mode === 'pink') {
-              // Pink only mode - always pink
-              nextType = 'pink';
-            } else if (mode === 'brown') {
-              // Brown only mode - always brown
-              nextType = 'brown';
-            } else {
-              // Alternating mode - check durations and alternate
-              const pinkDur = prev.settings.pinkDuration;
-              const brownDur = prev.settings.brownDuration;
-
-              if (pinkDur <= 0 && brownDur <= 0) {
-                console.error('❌ Both durations are 0, stopping session');
-                stopGeneration();
-                return prev;
-              }
-
-              if (pinkDur <= 0) {
-                // Skip pink, only brown
-                nextType = 'brown';
-              } else if (brownDur <= 0) {
-                // Skip brown, only pink
-                nextType = 'pink';
-              } else {
-                // Both valid, alternate normally
-                nextType = prev.currentType === 'pink' ? 'brown' : 'pink';
-              }
+            if (!nextType) {
+              console.error('❌ Cannot determine next type, stopping session');
+              stopGeneration();
+              return prev;
             }
 
             const nextVariationNumber = prev.variations.length + 1;
@@ -1200,29 +1369,57 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               return prev;
             }
 
-            // Generate next variation
-            const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
-            const variationObj = {
-              id: `${prev.id}-${nextVariationNumber}`,
-              type: nextType,
-              variationNumber: nextVariationNumber,
-              parameters: variation.parameters,
-              distanceFromPrevious: variation.distanceFromPrevious,
-              distanceMetrics: {
-                nearestVariation: variation.nearestVariation,
-                nearestDistance: variation.nearestDistance,
-                avgDistanceToAll: variation.avgDistanceToAll,
-              },
-              timestamp: new Date().toISOString(),
-              durationMinutes: nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration,
-            };
+            // Generate next variation (or create gamma entry)
+            let variationObj;
+            let nextDurationMin;
+
+            if (nextType === 'gamma') {
+              // For gamma, we don't generate variations
+              nextDurationMin = prev.settings.gammaDuration;
+              variationObj = {
+                id: `${prev.id}-${nextVariationNumber}`,
+                type: 'gamma',
+                variationNumber: nextVariationNumber,
+                parameters: null,
+                distanceFromPrevious: null,
+                distanceMetrics: null,
+                timestamp: new Date().toISOString(),
+                durationMinutes: nextDurationMin,
+              };
+            } else {
+              // For pink/brown, generate variation
+              const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
+              nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
+              variationObj = {
+                id: `${prev.id}-${nextVariationNumber}`,
+                type: nextType,
+                variationNumber: nextVariationNumber,
+                parameters: variation.parameters,
+                distanceFromPrevious: variation.distanceFromPrevious,
+                distanceMetrics: {
+                  nearestVariation: variation.nearestVariation,
+                  nearestDistance: variation.nearestDistance,
+                  avgDistanceToAll: variation.avgDistanceToAll,
+                },
+                timestamp: new Date().toISOString(),
+                durationMinutes: nextDurationMin,
+              };
+            }
 
             // Play new noise
             if (noiseGeneratorRef.current) {
               try {
-                const nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
-                noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
-                console.log(`🔊 Delay complete, playing ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
+                if (nextType === 'gamma') {
+                  noiseGeneratorRef.current.playGamma(
+                    alternatingGammaCarrierRef.current,
+                    40,
+                    alternatingGammaVolumeRef.current,
+                    nextDurationMin
+                  );
+                } else {
+                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                }
+                console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
                 // Auto-refresh check (prevent AudioContext corruption on long sessions)
                 if (autoRefreshEnabled && refreshInterval > 0) {
@@ -1262,18 +1459,32 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         }
 
         // Handle normal playback (not in delay)
-        const currentDurationMs = (prev.currentType === 'pink'
-          ? prev.settings.pinkDuration
-          : prev.settings.brownDuration) * 60 * 1000; // Convert minutes to ms
+        let currentDurationMs;
+        if (prev.currentType === 'pink') {
+          currentDurationMs = prev.settings.pinkDuration * 60 * 1000;
+        } else if (prev.currentType === 'brown') {
+          currentDurationMs = prev.settings.brownDuration * 60 * 1000;
+        } else {
+          currentDurationMs = prev.settings.gammaDuration * 60 * 1000;
+        }
 
         // Check if current variation is complete (using milliseconds for precision)
         if (elapsedMs >= currentDurationMs) {
           // TIMING DIAGNOSTIC: Log expected vs actual duration
-          const durationMin = prev.currentType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
-          console.log(`⏱️ Variation #${prev.currentVariation.variationNumber} complete:`);
+          let durationMin;
+          if (prev.currentType === 'pink') {
+            durationMin = prev.settings.pinkDuration;
+          } else if (prev.currentType === 'brown') {
+            durationMin = prev.settings.brownDuration;
+          } else {
+            durationMin = prev.settings.gammaDuration;
+          }
+
+          console.log(`⏱️ ${prev.currentType} variation #${prev.currentVariation.variationNumber} complete:`);
           console.log(`   Expected: ${(currentDurationMs / 1000).toFixed(3)}s (${durationMin.toFixed(4)} min)`);
           console.log(`   Actual: ${(elapsedMs / 1000).toFixed(3)}s`);
           console.log(`   Difference: ${((elapsedMs - currentDurationMs) / 1000).toFixed(3)}s`);
+
           // Check if we have a delay configured
           if (prev.settings.silenceDelay > 0) {
             // Enter delay mode (silence)
@@ -1292,37 +1503,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           }
 
           // No delay configured, immediately switch to next variation
-          // Determine next type based on noise mode and durations
-          let nextType;
-          const mode = prev.settings.noiseMode || 'alternating';
+          // Determine next type based on alternation mode
+          const nextType = getNextType(prev.currentType, prev.settings);
 
-          if (mode === 'pink') {
-            // Pink only mode - always pink
-            nextType = 'pink';
-          } else if (mode === 'brown') {
-            // Brown only mode - always brown
-            nextType = 'brown';
-          } else {
-            // Alternating mode - check durations and alternate
-            const pinkDur = prev.settings.pinkDuration;
-            const brownDur = prev.settings.brownDuration;
-
-            if (pinkDur <= 0 && brownDur <= 0) {
-              console.error('❌ Both durations are 0, stopping session');
-              stopGeneration();
-              return prev;
-            }
-
-            if (pinkDur <= 0) {
-              // Skip pink, only brown
-              nextType = 'brown';
-            } else if (brownDur <= 0) {
-              // Skip brown, only pink
-              nextType = 'pink';
-            } else {
-              // Both valid, alternate normally
-              nextType = prev.currentType === 'pink' ? 'brown' : 'pink';
-            }
+          if (!nextType) {
+            console.error('❌ Cannot determine next type, stopping session');
+            stopGeneration();
+            return prev;
           }
 
           const nextVariationNumber = prev.variations.length + 1;
@@ -1338,28 +1525,56 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             return prev;
           }
 
-          // Generate next variation
-          const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
-          const variationObj = {
-            id: `${prev.id}-${nextVariationNumber}`,
-            type: nextType,
-            variationNumber: nextVariationNumber,
-            parameters: variation.parameters,
-            distanceFromPrevious: variation.distanceFromPrevious,
-            distanceMetrics: {
-              nearestVariation: variation.nearestVariation,
-              nearestDistance: variation.nearestDistance,
-              avgDistanceToAll: variation.avgDistanceToAll,
-            },
-            timestamp: new Date().toISOString(),
-            durationMinutes: nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration,
-          };
+          // Generate next variation (or create gamma entry)
+          let variationObj;
+          let nextDurationMin;
+
+          if (nextType === 'gamma') {
+            // For gamma, we don't generate variations
+            nextDurationMin = prev.settings.gammaDuration;
+            variationObj = {
+              id: `${prev.id}-${nextVariationNumber}`,
+              type: 'gamma',
+              variationNumber: nextVariationNumber,
+              parameters: null,
+              distanceFromPrevious: null,
+              distanceMetrics: null,
+              timestamp: new Date().toISOString(),
+              durationMinutes: nextDurationMin,
+            };
+          } else {
+            // For pink/brown, generate variation
+            const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
+            nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
+            variationObj = {
+              id: `${prev.id}-${nextVariationNumber}`,
+              type: nextType,
+              variationNumber: nextVariationNumber,
+              parameters: variation.parameters,
+              distanceFromPrevious: variation.distanceFromPrevious,
+              distanceMetrics: {
+                nearestVariation: variation.nearestVariation,
+                nearestDistance: variation.nearestDistance,
+                avgDistanceToAll: variation.avgDistanceToAll,
+              },
+              timestamp: new Date().toISOString(),
+              durationMinutes: nextDurationMin,
+            };
+          }
 
           // Play new noise
           if (noiseGeneratorRef.current) {
             try {
-              const nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
-              noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
+              if (nextType === 'gamma') {
+                noiseGeneratorRef.current.playGamma(
+                  alternatingGammaCarrierRef.current,
+                  40,
+                  alternatingGammaVolumeRef.current,
+                  nextDurationMin
+                );
+              } else {
+                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+              }
               console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
               // Auto-refresh check (prevent AudioContext corruption on long sessions)
@@ -2044,45 +2259,67 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
             {showSettings && (
               <div className="space-y-4">
-                {/* Noise Mode Selection */}
+                {/* Alternation Mode Selection */}
                 <div className="space-y-2">
-                  <label className="block text-sm text-gray-400 mb-2">Noise Mode:</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Alternation Mode (Sequential):</label>
                   <div className="flex flex-col gap-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="radio"
-                        value="pink"
-                        checked={noiseMode === 'pink'}
-                        onChange={(e) => setNoiseMode(e.target.value)}
-                        className="w-4 h-4 accent-pink-500"
-                      />
-                      <span className="text-sm">🩷 Pink Only</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        value="brown"
-                        checked={noiseMode === 'brown'}
-                        onChange={(e) => setNoiseMode(e.target.value)}
-                        className="w-4 h-4 accent-amber-600"
-                      />
-                      <span className="text-sm">🤎 Brown Only</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        value="alternating"
-                        checked={noiseMode === 'alternating'}
-                        onChange={(e) => setNoiseMode(e.target.value)}
+                        value="two-way"
+                        checked={alternationMode === 'two-way'}
+                        onChange={(e) => setAlternationMode(e.target.value)}
                         className="w-4 h-4 accent-purple-500"
                       />
-                      <span className="text-sm">🔄 Alternating Pink/Brown</span>
+                      <span className="text-sm">🔄 Two-way (Pink ↔ Brown)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="three-way"
+                        checked={alternationMode === 'three-way'}
+                        onChange={(e) => setAlternationMode(e.target.value)}
+                        className="w-4 h-4 accent-indigo-500"
+                      />
+                      <span className="text-sm">🔄 Three-way (Pink → Brown → Gamma)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="pink-only"
+                        checked={alternationMode === 'pink-only'}
+                        onChange={(e) => setAlternationMode(e.target.value)}
+                        className="w-4 h-4 accent-pink-500"
+                      />
+                      <span className="text-sm">🩷 Pink only</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="brown-only"
+                        checked={alternationMode === 'brown-only'}
+                        onChange={(e) => setAlternationMode(e.target.value)}
+                        className="w-4 h-4 accent-amber-600"
+                      />
+                      <span className="text-sm">🤎 Brown only</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        value="gamma-only"
+                        checked={alternationMode === 'gamma-only'}
+                        onChange={(e) => setAlternationMode(e.target.value)}
+                        className="w-4 h-4 accent-blue-500"
+                      />
+                      <span className="text-sm">🌊 Gamma only</span>
                     </label>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    {noiseMode === 'pink' ? 'Only pink noise variations will play' :
-                     noiseMode === 'brown' ? 'Only brown noise variations will play' :
-                     'Alternates between pink and brown noise'}
+                    {alternationMode === 'pink-only' ? 'Only pink noise variations will play' :
+                     alternationMode === 'brown-only' ? 'Only brown noise variations will play' :
+                     alternationMode === 'gamma-only' ? 'Only 40Hz gamma waves will play' :
+                     alternationMode === 'two-way' ? 'Alternates between pink and brown noise' :
+                     'Cycles through pink → brown → gamma in sequence'}
                   </p>
                 </div>
 
@@ -2130,7 +2367,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm text-gray-400 mb-1">
                         Pink Duration (minutes)
@@ -2166,10 +2403,28 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                         className="neural-input disabled:opacity-50"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        Gamma Duration (minutes)
+                        <span className="text-xs text-gray-500 ml-2">
+                          = {(gammaDuration * 60).toFixed(2)}s
+                        </span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="180"
+                        step="0.001"
+                        value={gammaDuration}
+                        onChange={(e) => setGammaDuration(parseFloat(e.target.value))}
+                        disabled={useSameDuration}
+                        className="neural-input disabled:opacity-50"
+                      />
+                    </div>
                   </div>
-                  {noiseMode === 'alternating' && (
+                  {(alternationMode === 'two-way' || alternationMode === 'three-way') && (
                     <p className="text-xs text-gray-500 italic">
-                      💡 Tip: Set duration to 0 to skip that noise type
+                      💡 Tip: Set duration to 0 to skip that noise type in the rotation
                     </p>
                   )}
 
@@ -2253,39 +2508,90 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     onChange={(e) => setUseSameDuration(e.target.checked)}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm">Use same duration for both</span>
+                  <span className="text-sm">Use same duration for all types</span>
                 </label>
 
-                {/* Gamma Wave Settings */}
-                <div className="space-y-3 border-t border-gray-700 pt-4">
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={gammaEnabled}
-                        onChange={(e) => setGammaEnabled(e.target.checked)}
-                        className="w-4 h-4 accent-blue-500"
-                      />
-                      <span className="text-sm font-medium">🌊 Enable 40Hz Gamma Wave Overlay</span>
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Adds a continuous 40Hz binaural beat on top of the base noise. May enhance focus and cognition.
-                  </p>
-
-                  {gammaEnabled && (
-                    <div className="space-y-3 pl-6 border-l-2 border-blue-500/30">
+                {/* Alternating Gamma Settings (for three-way/gamma-only modes) */}
+                {(alternationMode === 'three-way' || alternationMode === 'gamma-only') && (
+                  <div className="space-y-3 border-t border-gray-700 pt-4">
+                    <h4 className="text-sm font-medium text-gray-300">Alternating Gamma Settings:</h4>
+                    <p className="text-xs text-gray-500">
+                      Settings for gamma wave when it plays as part of the rotation sequence (not continuous overlay).
+                    </p>
+                    <div className="space-y-3 pl-4 border-l-2 border-indigo-500/30">
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm text-gray-400">Gamma Wave Volume</label>
-                          <span className="text-sm font-medium">{gammaVolume}%</span>
+                          <label className="text-sm text-gray-400">Alternating Gamma Volume</label>
+                          <span className="text-sm font-medium">{alternatingGammaVolume}%</span>
                         </div>
                         <input
                           type="range"
                           min="0"
                           max="100"
-                          value={gammaVolume}
-                          onChange={(e) => setGammaVolume(parseInt(e.target.value))}
+                          value={alternatingGammaVolume}
+                          onChange={(e) => setAlternatingGammaVolume(parseInt(e.target.value))}
+                          className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                        />
+                        <div className="flex justify-between text-xs text-gray-500 mt-1">
+                          <span>Silent</span>
+                          <span>Loud</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-gray-400 mb-2">
+                          Carrier Frequency: {alternatingGammaCarrier} Hz
+                        </label>
+                        <input
+                          type="range"
+                          min="100"
+                          max="500"
+                          value={alternatingGammaCarrier}
+                          onChange={(e) => setAlternatingGammaCarrier(parseInt(e.target.value))}
+                          className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                        />
+                        <div className="flex justify-between text-xs text-gray-500 mt-1">
+                          <span>100 Hz</span>
+                          <span>500 Hz</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Left ear: {alternatingGammaCarrier} Hz | Right ear: {alternatingGammaCarrier + 40} Hz = 40 Hz beat
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Overlay Gamma Wave Settings */}
+                <div className="space-y-3 border-t border-gray-700 pt-4">
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={overlayGammaEnabled}
+                        onChange={(e) => setOverlayGammaEnabled(e.target.checked)}
+                        className="w-4 h-4 accent-blue-500"
+                      />
+                      <span className="text-sm font-medium">🌊 40Hz Gamma Wave Overlay (continuous on top)</span>
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Adds a continuous 40Hz binaural beat that plays on top of all noise types. Independent from alternating gamma.
+                  </p>
+
+                  {overlayGammaEnabled && (
+                    <div className="space-y-3 pl-6 border-l-2 border-blue-500/30">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm text-gray-400">Overlay Gamma Volume</label>
+                          <span className="text-sm font-medium">{overlayGammaVolume}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={overlayGammaVolume}
+                          onChange={(e) => setOverlayGammaVolume(parseInt(e.target.value))}
                           className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                         <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -2296,14 +2602,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
                       <div>
                         <label className="block text-sm text-gray-400 mb-2">
-                          Carrier Frequency: {gammaCarrierFreq} Hz
+                          Carrier Frequency: {overlayGammaCarrier} Hz
                         </label>
                         <input
                           type="range"
                           min="100"
                           max="500"
-                          value={gammaCarrierFreq}
-                          onChange={(e) => setGammaCarrierFreq(parseInt(e.target.value))}
+                          value={overlayGammaCarrier}
+                          onChange={(e) => setOverlayGammaCarrier(parseInt(e.target.value))}
                           className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-blue-500"
                         />
                         <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -2311,7 +2617,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                           <span>500 Hz</span>
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
-                          Left ear: {gammaCarrierFreq} Hz | Right ear: {gammaCarrierFreq + 40} Hz = 40 Hz beat
+                          Left ear: {overlayGammaCarrier} Hz | Right ear: {overlayGammaCarrier + 40} Hz = 40 Hz beat
                         </p>
                       </div>
                     </div>
