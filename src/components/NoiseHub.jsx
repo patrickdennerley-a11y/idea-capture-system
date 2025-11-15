@@ -24,7 +24,7 @@ const NOISE_TYPES = {
   },
 };
 
-export default function NoiseHub() {
+export default function NoiseHub({ audioContextRef, activeSession, setActiveSession }) {
   const [currentView, setCurrentView] = useState('simple'); // 'simple' or 'advanced'
   const [activeNoise, setActiveNoise] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -101,7 +101,11 @@ export default function NoiseHub() {
 
       {/* Conditional View Rendering */}
       {currentView === 'advanced' ? (
-        <AdvancedNoiseGenerator />
+        <AdvancedNoiseGenerator
+          audioContextRef={audioContextRef}
+          activeSession={activeSession}
+          setActiveSession={setActiveSession}
+        />
       ) : (
         <>
       {/* Quick Access Buttons */}

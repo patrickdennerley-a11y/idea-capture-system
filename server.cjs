@@ -129,10 +129,10 @@ app.post('/api/organize-ideas', async (req, res) => {
       return `${index + 1}. ${tags} ${idea.content}\n${context}`;
     }).join('\n\n');
 
-    // Call Claude API
+    // Call Claude API (using Haiku 3.5 for speed)
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 8192,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2048,
       messages: [{
         role: 'user',
         content: `You are an AI assistant helping someone with ADHD organize their captured ideas. Analyze these ideas and organize them intelligently.
@@ -220,7 +220,13 @@ Be encouraging and supportive in your tone. Focus on helping execute these ideas
     res.json(organizedData);
 
   } catch (error) {
-    console.error('Error organizing ideas:', error);
+    console.error('❌ Error organizing ideas:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
 
     if (error.status === 401) {
       return res.status(401).json({
@@ -260,8 +266,8 @@ app.post('/api/weekly-summary', async (req, res) => {
     }).join('\n');
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1024,
       messages: [{
         role: 'user',
         content: `Provide a weekly summary of these captured ideas. Focus on patterns, productivity insights, and suggestions for the week ahead.
@@ -320,8 +326,8 @@ app.post('/api/analyze-patterns', async (req, res) => {
     }).join('\n');
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 3072,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1536,
       messages: [{
         role: 'user',
         content: `Analyze these energy logs and captured ideas to find meaningful correlations and patterns for someone with ADHD.
@@ -401,10 +407,10 @@ app.post('/api/plan-activity', async (req, res) => {
       ? `Last review: Energy ${reviews[0].energy}/10, Accomplishments: ${reviews[0].accomplishments || 'none'}`
       : 'No reviews yet';
 
-    // Call Claude API using Sonnet 4.5 for high-quality planning
+    // Call Claude API using Haiku 3.5 for fast planning
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1536,
       messages: [{
         role: 'user',
         content: `You are a planning assistant for someone with ADHD. They want to plan this activity:
@@ -532,10 +538,10 @@ app.post('/api/generate-routine', async (req, res) => {
       })
       .join('\n');
 
-    // Call Claude API using Sonnet 4.5 for quality routine generation
+    // Call Claude API using Haiku 3.5 for fast routine generation
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 4096,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2048,
       messages: [{
         role: 'user',
         content: `You are an AI assistant helping someone with ADHD create an optimized daily routine.
@@ -619,7 +625,13 @@ IMPORTANT GUIDELINES:
     res.json(routine);
 
   } catch (error) {
-    console.error('Error generating routine:', error);
+    console.error('❌ Error generating routine:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
 
     if (error.status === 401) {
       return res.status(401).json({
@@ -885,8 +897,8 @@ app.post('/api/analyze-urgency', async (req, res) => {
     }).join('\n');
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929', // Quality analysis
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022', // Fast analysis
+      max_tokens: 1536,
       messages: [{
         role: 'user',
         content: `You are analyzing priorities for someone with ADHD.
@@ -1081,6 +1093,171 @@ app.post('/api/get-reminders', async (req, res) => {
   } catch (error) {
     console.error('Error generating reminders:', error);
     res.status(500).json({ error: 'Failed to generate reminders' });
+  }
+});
+
+// Smart Routines - Generate personalized routine suggestions
+app.post('/api/generate-smart-routines', async (req, res) => {
+  try {
+    const { ideas, logs, timetable, existingRoutines } = req.body;
+
+    console.log('Generating smart routines...');
+
+    // Prepare data summaries
+    const recentIdeas = (ideas || []).slice(0, 30).map((idea, idx) => {
+      const tags = idea.tags && idea.tags.length > 0 ? `[${idea.tags.join(', ')}]` : '';
+      const classification = idea.classificationType && idea.classificationType !== 'general'
+        ? ` (${idea.classificationType})` : '';
+      return `${idx + 1}. ${tags}${classification} ${idea.content}`;
+    }).join('\n');
+
+    const recentLogs = (logs || []).slice(-20).map(log => {
+      const activity = log.activity || 'Unknown';
+      const note = log.note ? ` - "${log.note}"` : '';
+      return `[${activity}] Energy: ${log.energy}/10, Motivation: ${log.motivation}/10${note}`;
+    }).join('\n');
+
+    const timetableInfo = (timetable || []).length > 0
+      ? timetable.slice(0, 10).map(event => `${event.time || ''}: ${event.title || event.content}`).join('\n')
+      : 'No scheduled events';
+
+    const routinesInfo = (existingRoutines || []).length > 0
+      ? existingRoutines.map(r => `- ${r.title || r.content} (${r.timeOfDay || 'any time'})`).join('\n')
+      : 'No existing routines';
+
+    // Call Claude API using Haiku 3.5 for fast generation
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: `You are a routine optimization assistant for someone with ADHD. Generate 5 personalized routine suggestions.
+
+CAPTURED IDEAS (potential routines):
+${recentIdeas || 'No ideas yet'}
+
+RECENT ACTIVITY LOGS (energy/behavior patterns):
+${recentLogs || 'No logs yet'}
+
+SCHEDULED EVENTS (timetable):
+${timetableInfo}
+
+EXISTING ROUTINES:
+${routinesInfo}
+
+Generate exactly 5 routine suggestions with this distribution:
+- 2-3 DIRECT routines: Pull from user's explicit routine-related ideas (look for ideas about daily activities, habits, time-of-day mentions)
+- 2-3 MASHUP routines: Synthesize patterns from multiple ideas/logs into new routines
+
+For DIRECT routines:
+- Use ideas that clearly mention routines, daily activities, or recurring tasks
+- Reference the original idea content closely
+- Mark type as "direct" and include source idea numbers
+
+For MASHUP routines:
+- Combine related ideas or patterns from logs
+- Create plausible, actionable routines based on their behavior
+- Mark type as "mashup" and list all contributing sources
+
+Consider:
+- Time of day based on energy patterns from logs
+- Avoid duplicating existing routines
+- Match their actual behavior patterns
+- Keep routines realistic for ADHD (not too ambitious)
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+
+Return pure JSON (no code fences):
+{
+  "routines": [
+    {
+      "type": "direct",
+      "title": "Short, clear routine title",
+      "description": "What this routine involves (1-2 sentences)",
+      "timeOfDay": "morning|afternoon|evening|anytime",
+      "frequency": "daily|weekdays|weekends|weekly",
+      "duration": "estimated duration (e.g., '15 minutes', '30-45 minutes')",
+      "sources": ["idea-3", "idea-7"],
+      "reasoning": "Why this routine fits their patterns (brief)"
+    },
+    {
+      "type": "mashup",
+      "title": "...",
+      "description": "...",
+      "timeOfDay": "...",
+      "frequency": "...",
+      "duration": "...",
+      "sources": ["idea-1", "idea-5", "log-pattern"],
+      "reasoning": "..."
+    }
+  ]
+}
+
+Be practical and supportive. Focus on routines they'll actually follow.`
+      }]
+    });
+
+    const responseText = message.content[0].text;
+
+    // Parse JSON response
+    let routinesData;
+    try {
+      let cleanedText = responseText.trim();
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      routinesData = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('Failed to parse smart routines response:', parseError);
+      console.error('Raw response:', responseText);
+      // Fallback
+      routinesData = {
+        routines: []
+      };
+    }
+
+    // Add unique IDs to routines
+    const routinesWithIds = routinesData.routines.map((routine, idx) => ({
+      id: `routine-${Date.now()}-${idx}`,
+      ...routine
+    }));
+
+    console.log(`Generated ${routinesWithIds.length} smart routines`);
+    res.json({
+      routines: routinesWithIds,
+      metadata: {
+        totalGenerated: routinesWithIds.length,
+        directCount: routinesWithIds.filter(r => r.type === 'direct').length,
+        mashupCount: routinesWithIds.filter(r => r.type === 'mashup').length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error generating smart routines:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+    console.error('   Type:', error.type || 'N/A');
+    if (process.env.NODE_ENV === 'development') {
+      console.error('   Stack:', error.stack);
+    }
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Failed to generate smart routines. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -1461,12 +1638,13 @@ app.listen(PORT, () => {
 ║   POST /api/analyze-patterns                   ║
 ║   POST /api/plan-activity                      ║
 ║   POST /api/generate-routine                   ║
+║   POST /api/generate-smart-routines [NEW]      ║
 ║   POST /api/classify-subject                   ║
 ║   POST /api/analyze-tags                       ║
 ║   POST /api/analyze-urgency                    ║
 ║   POST /api/get-reminders                      ║
-║   POST /api/classify-idea         [NEW]        ║
-║   POST /api/classify-ideas-batch  [NEW]        ║
+║   POST /api/classify-idea                      ║
+║   POST /api/classify-ideas-batch               ║
 ║                                                ║
 ║   Make sure ANTHROPIC_API_KEY is set!          ║
 ╚════════════════════════════════════════════════╝
@@ -1474,7 +1652,18 @@ app.listen(PORT, () => {
 
   // Check for API key
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('\n⚠️  WARNING: ANTHROPIC_API_KEY environment variable is not set!');
-    console.warn('   Add it to your .env file or set it in your environment.\n');
+    console.error('\n❌ ERROR: ANTHROPIC_API_KEY environment variable is not set!');
+    console.error('   1. Create a .env file in the project root');
+    console.error('   2. Add this line: ANTHROPIC_API_KEY=sk-ant-...');
+    console.error('   3. Get your key from: https://console.anthropic.com/settings/keys\n');
+  } else if (process.env.ANTHROPIC_API_KEY === 'your_api_key_here') {
+    console.error('\n❌ ERROR: ANTHROPIC_API_KEY is set to the placeholder value!');
+    console.error('   Replace "your_api_key_here" with your actual API key.\n');
+  } else if (!process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
+    console.warn('\n⚠️  WARNING: ANTHROPIC_API_KEY format looks incorrect!');
+    console.warn('   API keys should start with "sk-ant-"');
+    console.warn('   Current value starts with:', process.env.ANTHROPIC_API_KEY.substring(0, 10) + '...\n');
+  } else {
+    console.log('\n✓ ANTHROPIC_API_KEY is configured correctly\n');
   }
 });

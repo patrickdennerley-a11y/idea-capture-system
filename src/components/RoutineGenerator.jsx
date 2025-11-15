@@ -28,10 +28,11 @@
  */
 
 import { useState } from 'react';
-import { Sparkles, Calendar, Clock, Zap, RefreshCw, Save, Trash2, AlertCircle, TrendingUp, Eye, X } from 'lucide-react';
+import { Sparkles, Calendar, Clock, Zap, RefreshCw, Save, Trash2, AlertCircle, TrendingUp, Eye, X, Lightbulb } from 'lucide-react';
 import { generateDailyRoutine } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import CalendarView from './CalendarView';
+import SmartRoutines from './SmartRoutines';
 
 export default function RoutineGenerator({
   ideas,
@@ -43,7 +44,21 @@ export default function RoutineGenerator({
   generatedRoutine,
   setGeneratedRoutine,
   routineError,
-  setRoutineError
+  setRoutineError,
+  smartRoutines,
+  setSmartRoutines,
+  isGeneratingSmartRoutines,
+  setIsGeneratingSmartRoutines,
+  smartRoutinesError,
+  setSmartRoutinesError,
+  showSmartRoutines,
+  setShowSmartRoutines,
+  smartRoutinesMetadata,
+  setSmartRoutinesMetadata,
+  smartRoutineStates,
+  setSmartRoutineStates,
+  generationHistory,
+  setGenerationHistory
 }) {
   const [currentView, setCurrentView] = useState('generator'); // 'generator' or 'calendar'
   const [savedRoutines, setSavedRoutines] = useLocalStorage('neural-saved-routines', []);
@@ -300,6 +315,17 @@ export default function RoutineGenerator({
           AI Generator
         </button>
         <button
+          onClick={() => setCurrentView('smart-routines')}
+          className={`px-4 py-2 font-medium transition-colors border-b-2 ${
+            currentView === 'smart-routines'
+              ? 'text-neural-purple border-neural-purple'
+              : 'text-gray-400 border-transparent hover:text-gray-300'
+          }`}
+        >
+          <Lightbulb className="w-4 h-4 inline mr-2" />
+          Smart Routines
+        </button>
+        <button
           onClick={() => setCurrentView('calendar')}
           className={`px-4 py-2 font-medium transition-colors border-b-2 ${
             currentView === 'calendar'
@@ -314,6 +340,45 @@ export default function RoutineGenerator({
 
       {/* Calendar View */}
       {currentView === 'calendar' && <CalendarView routineToLoad={generatedRoutine} />}
+
+      {/* Smart Routines View */}
+      {currentView === 'smart-routines' && (
+        <SmartRoutines
+          ideas={ideas}
+          logs={logs}
+          timetable={[]} // TODO: Pass actual timetable data
+          routines={checklist?.items || []}
+          suggestions={smartRoutines}
+          setSuggestions={setSmartRoutines}
+          loading={isGeneratingSmartRoutines}
+          setLoading={setIsGeneratingSmartRoutines}
+          error={smartRoutinesError}
+          setError={setSmartRoutinesError}
+          showSuggestions={showSmartRoutines}
+          setShowSuggestions={setShowSmartRoutines}
+          metadata={smartRoutinesMetadata}
+          setMetadata={setSmartRoutinesMetadata}
+          suggestionStates={smartRoutineStates}
+          setSuggestionStates={setSmartRoutineStates}
+          generationHistory={generationHistory}
+          setGenerationHistory={setGenerationHistory}
+          onRoutineAdded={(routine) => {
+            // Add routine to checklist items
+            if (checklist && checklist.items) {
+              const newChecklistItem = {
+                id: routine.id,
+                text: routine.title,
+                description: routine.description,
+                completed: false,
+                timeOfDay: routine.timeOfDay,
+                frequency: routine.frequency
+              };
+              // This would need to be handled by parent component's state management
+              console.log('New routine to add:', newChecklistItem);
+            }
+          }}
+        />
+      )}
 
       {/* AI Generator View */}
       {currentView === 'generator' && (

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
@@ -55,11 +55,52 @@ function App() {
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [organizedData, setOrganizedData] = useState(null);
   const [organizationError, setOrganizationError] = useState(null);
+  const [showOrganized, setShowOrganized] = useState(false);
 
   // Planning state (persists across tab switches)
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [plan, setPlan] = useState(null);
   const [planError, setPlanError] = useState(null);
+
+  // Smart Routines state (persists across tab switches)
+  const [smartRoutines, setSmartRoutines] = useState([]);
+  const [isGeneratingSmartRoutines, setIsGeneratingSmartRoutines] = useState(false);
+  const [smartRoutinesError, setSmartRoutinesError] = useState(null);
+  const [showSmartRoutines, setShowSmartRoutines] = useState(false);
+  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState(null);
+  const [smartRoutineStates, setSmartRoutineStates] = useState({});
+
+  // History for all AI generations
+  const [generationHistory, setGenerationHistory] = useLocalStorage('neural-generation-history', {
+    routines: [],
+    smartRoutines: [],
+    ideas: [],
+    plans: []
+  });
+
+  // Noise Generator state (persists across tab switches)
+  const audioContextRef = useRef(null);
+  const [activeSession, setActiveSession] = useState(null);
+
+  // Initialize audio context once at app level (never destroyed)
+  useEffect(() => {
+    if (!audioContextRef.current && typeof window !== 'undefined') {
+      try {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('🔊 Audio context initialized at app level');
+      } catch (err) {
+        console.error('Failed to initialize audio context:', err);
+      }
+    }
+
+    // Important: Don't cleanup in development (React StrictMode unmounts/remounts)
+    // Only cleanup on actual app unmount
+    return () => {
+      // Don't close AudioContext here - it causes issues with React StrictMode
+      // The browser will clean it up when the page unloads
+      console.log('🔊 Audio context cleanup skipped (preserving for tab switches)');
+    };
+  }, []);
 
   // Helper to check if a tab has AI work in progress
   const isTabProcessing = (tabId) => {
@@ -68,8 +109,10 @@ function App() {
         return isOrganizing;
       case 'plan':
         return isAnalyzing;
+      case 'checklist':
+        return isGeneratingSmartRoutines;
       case 'routine':
-        return isGeneratingRoutine;
+        return isGeneratingRoutine || isGeneratingSmartRoutines;
       default:
         return false;
     }
@@ -89,6 +132,8 @@ function App() {
             setOrganizedData={setOrganizedData}
             organizationError={organizationError}
             setOrganizationError={setOrganizationError}
+            showOrganized={showOrganized}
+            setShowOrganized={setShowOrganized}
           />
         );
       case 'checklist':
@@ -123,6 +168,20 @@ function App() {
             setGeneratedRoutine={setGeneratedRoutine}
             routineError={routineError}
             setRoutineError={setRoutineError}
+            smartRoutines={smartRoutines}
+            setSmartRoutines={setSmartRoutines}
+            isGeneratingSmartRoutines={isGeneratingSmartRoutines}
+            setIsGeneratingSmartRoutines={setIsGeneratingSmartRoutines}
+            smartRoutinesError={smartRoutinesError}
+            setSmartRoutinesError={setSmartRoutinesError}
+            showSmartRoutines={showSmartRoutines}
+            setShowSmartRoutines={setShowSmartRoutines}
+            smartRoutinesMetadata={smartRoutinesMetadata}
+            setSmartRoutinesMetadata={setSmartRoutinesMetadata}
+            smartRoutineStates={smartRoutineStates}
+            setSmartRoutineStates={setSmartRoutineStates}
+            generationHistory={generationHistory}
+            setGenerationHistory={setGenerationHistory}
           />
         );
       case 'review':
@@ -135,7 +194,13 @@ function App() {
           />
         );
       case 'noise':
-        return <NoiseHub />;
+        return (
+          <NoiseHub
+            audioContextRef={audioContextRef}
+            activeSession={activeSession}
+            setActiveSession={setActiveSession}
+          />
+        );
       default:
         return <IdeaCapture ideas={ideas} setIdeas={setIdeas} />;
     }
@@ -155,6 +220,8 @@ function App() {
     setOrganizedData,
     organizationError,
     setOrganizationError,
+    showOrganized,
+    setShowOrganized,
     isAnalyzing,
     setIsAnalyzing,
     plan,
@@ -167,6 +234,23 @@ function App() {
     setGeneratedRoutine,
     routineError,
     setRoutineError,
+    smartRoutines,
+    setSmartRoutines,
+    isGeneratingSmartRoutines,
+    setIsGeneratingSmartRoutines,
+    smartRoutinesError,
+    setSmartRoutinesError,
+    showSmartRoutines,
+    setShowSmartRoutines,
+    smartRoutinesMetadata,
+    setSmartRoutinesMetadata,
+    smartRoutineStates,
+    setSmartRoutineStates,
+    generationHistory,
+    setGenerationHistory,
+    audioContextRef,
+    activeSession,
+    setActiveSession,
   ]);
 
   return (
