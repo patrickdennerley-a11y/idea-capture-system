@@ -821,6 +821,19 @@ const generateBrownNoiseParameters = () => {
   };
 };
 
+// Generate varied gamma carrier frequency (150-400 Hz range)
+const generateVariedGammaCarrier = (variationNumber) => {
+  // Update seed with timestamp and variation number for randomness
+  randomSeed = Date.now() + variationNumber * 1000;
+
+  // Generate carrier frequency between 150-400 Hz
+  const carrierFreq = Math.floor(rand() * (400 - 150 + 1)) + 150;
+
+  return {
+    carrierFreq: carrierFreq,
+  };
+};
+
 const generateMaximallyDifferentVariation = (type, previousVariations, variationNumber) => {
   // Update seed with timestamp and variation number for extra randomness
   randomSeed = Date.now() + variationNumber * 1000;
@@ -930,6 +943,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Alternating gamma wave settings (one-shot playback in rotation)
   const [alternatingGammaVolume, setAlternatingGammaVolume] = useLocalStorage('neural-noise-alternating-gamma-volume', 40);
   const [alternatingGammaCarrier, setAlternatingGammaCarrier] = useLocalStorage('neural-noise-alternating-gamma-carrier', 200);
+  const [varyGammaCarrier, setVaryGammaCarrier] = useLocalStorage('neural-noise-vary-gamma-carrier', false);
 
   // Auto-refresh settings for overnight sessions
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useLocalStorage('neural-noise-auto-refresh', true);
@@ -941,6 +955,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
   const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
+  const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
   const lastRefreshVariation = useRef(0); // Track when we last refreshed
 
   // Memory management: keep only last 100 variations for distance calculation
@@ -999,6 +1014,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   useEffect(() => {
     alternatingGammaCarrierRef.current = alternatingGammaCarrier;
   }, [alternatingGammaCarrier]);
+
+  useEffect(() => {
+    varyGammaCarrierRef.current = varyGammaCarrier;
+  }, [varyGammaCarrier]);
 
   // Sync brown duration with pink when "use same duration" is enabled
   useEffect(() => {
@@ -1191,14 +1210,21 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     // Generate first variation (or create gamma entry)
     let variationObj;
+    let gammaCarrierToUse = alternatingGammaCarrier; // Default to user setting
 
     if (firstType === 'gamma') {
-      // For gamma, we don't generate variations with parameters
+      // For gamma, optionally generate varied carrier frequency
+      let gammaParams = null;
+      if (varyGammaCarrier) {
+        gammaParams = generateVariedGammaCarrier(1);
+        gammaCarrierToUse = gammaParams.carrierFreq;
+      }
+
       variationObj = {
         id: `${session.id}-1`,
         type: 'gamma',
         variationNumber: 1,
-        parameters: null, // Gamma doesn't use variation algorithm
+        parameters: gammaParams, // null if no variation, or {carrierFreq} if varied
         distanceFromPrevious: null,
         distanceMetrics: null,
         timestamp: new Date().toISOString(),
@@ -1234,7 +1260,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         if (firstType === 'gamma') {
           // Play alternating gamma (one-shot)
           await noiseGeneratorRef.current.playGamma(
-            alternatingGammaCarrier,
+            gammaCarrierToUse,
             40,
             alternatingGammaVolume,
             actualGammaDuration
@@ -1372,15 +1398,22 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             // Generate next variation (or create gamma entry)
             let variationObj;
             let nextDurationMin;
+            let gammaCarrierToUse = alternatingGammaCarrierRef.current; // Default to user setting
 
             if (nextType === 'gamma') {
-              // For gamma, we don't generate variations
+              // For gamma, optionally generate varied carrier frequency
               nextDurationMin = prev.settings.gammaDuration;
+              let gammaParams = null;
+              if (varyGammaCarrierRef.current) {
+                gammaParams = generateVariedGammaCarrier(nextVariationNumber);
+                gammaCarrierToUse = gammaParams.carrierFreq;
+              }
+
               variationObj = {
                 id: `${prev.id}-${nextVariationNumber}`,
                 type: 'gamma',
                 variationNumber: nextVariationNumber,
-                parameters: null,
+                parameters: gammaParams, // null if no variation, or {carrierFreq} if varied
                 distanceFromPrevious: null,
                 distanceMetrics: null,
                 timestamp: new Date().toISOString(),
@@ -1411,7 +1444,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               try {
                 if (nextType === 'gamma') {
                   noiseGeneratorRef.current.playGamma(
-                    alternatingGammaCarrierRef.current,
+                    gammaCarrierToUse,
                     40,
                     alternatingGammaVolumeRef.current,
                     nextDurationMin
@@ -2556,6 +2589,22 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                         </div>
                         <p className="text-xs text-gray-500 mt-1">
                           Left ear: {alternatingGammaCarrier} Hz | Right ear: {alternatingGammaCarrier + 40} Hz = 40 Hz beat
+                        </p>
+                      </div>
+
+                      {/* Gamma Variation Toggle */}
+                      <div className="pt-3 border-t border-gray-700">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={varyGammaCarrier}
+                            onChange={(e) => setVaryGammaCarrier(e.target.checked)}
+                            className="w-4 h-4 accent-indigo-500"
+                          />
+                          <span className="text-sm">🎲 Vary carrier frequency (150-400 Hz)</span>
+                        </label>
+                        <p className="text-xs text-gray-500 mt-1 ml-6">
+                          When enabled, each gamma iteration uses a randomly varied carrier frequency while maintaining the 40Hz beat. Disabled uses the fixed carrier above.
                         </p>
                       </div>
                     </div>
