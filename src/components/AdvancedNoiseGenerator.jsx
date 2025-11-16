@@ -2067,7 +2067,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     {activeSession.inDelay ? (
                       <>🔇 Silence Delay</>
                     ) : (
-                      <>{activeSession.currentType === 'pink' ? '🩷' : '🤎'} {activeSession.currentType === 'pink' ? 'Pink' : 'Brown'} Noise #{activeSession.currentVariation.variationNumber}</>
+                      <>
+                        {activeSession.currentType === 'pink' && '🩷 Pink Noise'}
+                        {activeSession.currentType === 'brown' && '🤎 Brown Noise'}
+                        {activeSession.currentType === 'gamma' && '🌊 Gamma Wave'}
+                        {' #'}{activeSession.currentVariation.variationNumber}
+                      </>
                     )}
                   </h3>
                   <p className="text-sm text-gray-400">
