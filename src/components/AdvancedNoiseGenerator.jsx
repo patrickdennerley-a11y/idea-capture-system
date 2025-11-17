@@ -2067,7 +2067,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     {activeSession.inDelay ? (
                       <>🔇 Silence Delay</>
                     ) : (
-                      <>{activeSession.currentType === 'pink' ? '🩷' : '🤎'} {activeSession.currentType === 'pink' ? 'Pink' : 'Brown'} Noise #{activeSession.currentVariation.variationNumber}</>
+                      <>
+                        {activeSession.currentType === 'pink' && '🩷 Pink Noise'}
+                        {activeSession.currentType === 'brown' && '🤎 Brown Noise'}
+                        {activeSession.currentType === 'gamma' && '🌊 Gamma Wave'}
+                        {' #'}{activeSession.currentVariation.variationNumber}
+                      </>
                     )}
                   </h3>
                   <p className="text-sm text-gray-400">
@@ -2205,7 +2210,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm">
-                      {variation.type === 'pink' ? '🩷' : '🤎'} {variation.type === 'pink' ? 'Pink' : 'Brown'} #{variation.variationNumber}
+                      {variation.type === 'pink' && '🩷 Pink'}
+                      {variation.type === 'brown' && '🤎 Brown'}
+                      {variation.type === 'gamma' && '🌊 Gamma'}
+                      {' #'}{variation.variationNumber}
                     </span>
                     {variation.distanceFromPrevious !== null && (
                       <span className="text-xs text-gray-500">
