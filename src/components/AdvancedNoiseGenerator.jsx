@@ -2210,7 +2210,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm">
-                      {variation.type === 'pink' ? '🩷' : '🤎'} {variation.type === 'pink' ? 'Pink' : 'Brown'} #{variation.variationNumber}
+                      {variation.type === 'pink' && '🩷 Pink'}
+                      {variation.type === 'brown' && '🤎 Brown'}
+                      {variation.type === 'gamma' && '🌊 Gamma'}
+                      {' #'}{variation.variationNumber}
                     </span>
                     {variation.distanceFromPrevious !== null && (
                       <span className="text-xs text-gray-500">
