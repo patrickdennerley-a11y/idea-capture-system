@@ -30,20 +30,35 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(50);
   const [showHub, setShowHub] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0); // Force iframe recreation on each start
+  const iframeRef = useRef(null);
 
   const startNoise = (type) => {
     setActiveNoise(type);
     setIsPlaying(true);
+    setIframeKey(prev => prev + 1); // Force new iframe instance
   };
 
   const stopNoise = () => {
     setActiveNoise(null);
     setIsPlaying(false);
+    // iframeKey will force new instance on next start
   };
 
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
   };
+
+  // Cleanup effect for iframe
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (iframeRef.current) {
+        iframeRef.current.src = 'about:blank';
+        iframeRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="neural-card">
@@ -180,6 +195,8 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
         <div className="mb-6">
           <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
             <iframe
+              key={iframeKey}
+              ref={iframeRef}
               className="absolute top-0 left-0 w-full h-full rounded-lg"
               src={NOISE_TYPES[activeNoise].url}
               title={NOISE_TYPES[activeNoise].name}

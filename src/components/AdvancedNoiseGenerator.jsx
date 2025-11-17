@@ -614,6 +614,52 @@ class NoiseGenerator {
     }
   }
 
+  /**
+   * AUDIO DEGRADATION FIX: Complete reset method
+   * Destroys all audio nodes to prevent accumulation across stop/start cycles
+   * This ensures a fresh audio state on every start, preventing degradation
+   */
+  reset() {
+    console.log('🔄 Resetting NoiseGenerator - destroying all audio nodes');
+
+    // Stop all audio immediately (no release envelope)
+    this.stop(false);
+    this.stopGammaWave();
+
+    // Clear any pending cleanup timeouts
+    if (this.stopTimeout) {
+      clearTimeout(this.stopTimeout);
+      this.stopTimeout = null;
+    }
+
+    // CRITICAL: Disconnect and destroy the gainNode
+    // This prevents gain automation accumulation across cycles
+    if (this.gainNode) {
+      try {
+        this.gainNode.disconnect();
+        console.log('  ✅ GainNode disconnected and destroyed');
+      } catch (e) {
+        console.warn('  ⚠️ Error disconnecting gainNode:', e);
+      }
+      this.gainNode = null; // Allow garbage collection
+    }
+
+    // Clear all filter references (they should already be null from stop())
+    this.bassFilter = null;
+    this.midFilter = null;
+    this.trebleFilter = null;
+    this.resonanceFilter = null;
+    this.brownLowpass = null;
+
+    // Clear all other state
+    this.sourceNode = null;
+    this.currentParams = null;
+    this.isPlaying = false;
+    this.intentionallyStopping = false;
+
+    console.log('✅ NoiseGenerator reset complete - ready for fresh start');
+  }
+
   // Play one-shot gamma wave for alternating mode (not looping)
   async playGamma(carrierFreq, gammaOffset, volume, durationMinutes) {
     console.log(`🌊 Playing alternating gamma wave: ${carrierFreq}Hz carrier, ${gammaOffset}Hz offset, ${volume}% volume, ${durationMinutes.toFixed(4)} min (${(durationMinutes * 60).toFixed(2)}s)`);
@@ -979,14 +1025,20 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       console.log('🔊 Noise generator created with app-level audio context');
     }
 
-    // Important: Don't destroy audio on unmount!
-    // The audioContext lives at app level, so we keep it running
+    // AUDIO DEGRADATION FIX: Cleanup on unmount
+    // The audioContext lives at app level, so we don't close it, but we do
+    // need to reset the generator to prevent audio node accumulation
     return () => {
-      // Only clean up the interval, not the audio
+      // Clean up the interval
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
-      // Audio continues playing even when component unmounts
+      // Reset the noise generator to clean up all audio nodes
+      // This prevents degradation if component remounts
+      if (noiseGeneratorRef.current) {
+        noiseGeneratorRef.current.reset();
+        console.log('🧹 Noise generator reset on component unmount');
+      }
     };
   }, [audioContextRef]);
 
@@ -1662,12 +1714,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.stop();
-      console.log('  ✅ Audio stopped');
-
-      // Stop gamma wave if playing
-      noiseGeneratorRef.current.stopGammaWave();
-      console.log('  ✅ Gamma wave stopped');
+      // AUDIO DEGRADATION FIX: Call reset() instead of just stop()
+      // This ensures complete cleanup of all audio nodes including gainNode
+      // preventing accumulation and degradation across stop/start cycles
+      noiseGeneratorRef.current.reset();
+      console.log('  ✅ Audio fully reset (all nodes destroyed)');
     }
 
     if (activeSession) {
