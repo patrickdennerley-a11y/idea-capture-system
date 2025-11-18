@@ -1523,6 +1523,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
                   if (variationsSinceLastRefresh >= refreshInterval) {
                     console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
+                    console.log(`🔄 BEFORE auto-refresh - overlayGammaEnabled: ${overlayGammaEnabledRef.current}, carrier: ${overlayGammaCarrierRef.current}Hz, volume: ${overlayGammaVolumeRef.current}%`);
                     lastRefreshVariation.current = nextVariationNumber;
                     // Perform refresh asynchronously without blocking
                     performAutoRefresh();
@@ -1679,6 +1680,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
                 if (variationsSinceLastRefresh >= refreshInterval) {
                   console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
+                  console.log(`🔄 BEFORE auto-refresh - overlayGammaEnabled: ${overlayGammaEnabledRef.current}, carrier: ${overlayGammaCarrierRef.current}Hz, volume: ${overlayGammaVolumeRef.current}%`);
                   lastRefreshVariation.current = nextVariationNumber;
                   // Perform refresh asynchronously without blocking
                   performAutoRefresh();
@@ -1815,12 +1817,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     const overlayGammaCarrierValue = overlayGammaCarrierRef.current;
     const overlayGammaVolumeValue = overlayGammaVolumeRef.current;
 
-    console.log('  Overlay gamma enabled:', overlayGammaWasEnabled);
+    console.log('  Overlay gamma settings - Enabled:', overlayGammaWasEnabled, 'Carrier:', overlayGammaCarrierValue, 'Volume:', overlayGammaVolumeValue);
+    console.log('  Current gamma source exists:', !!noiseGeneratorRef.current?.gammaSource);
 
     // Stop audio (brief silence)
     if (noiseGeneratorRef.current) {
       noiseGeneratorRef.current.stop();
       noiseGeneratorRef.current.stopGammaWave();
+      console.log('  ✅ Stopped all audio (main + overlay gamma)');
     }
 
     // Close old AudioContext
@@ -1834,7 +1838,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     // Brief pause to ensure clean context switch
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 150));
 
     // Create fresh AudioContext
     audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
@@ -1845,33 +1849,46 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
     console.log('  ✅ Noise generator recreated');
 
+    // Get latest session state using updater function
+    let latestSession = null;
+    setActiveSession(prev => {
+      latestSession = prev;
+      return prev; // Don't modify state
+    });
+
     // Resume playback if session is active
-    if (activeSession && !activeSession.completedAt && !activeSession.isPaused && activeSession.currentVariation) {
+    if (latestSession && !latestSession.completedAt && !latestSession.isPaused && latestSession.currentVariation) {
       try {
         await noiseGeneratorRef.current.playNoise(
-          activeSession.currentType,
-          activeSession.currentVariation.parameters,
+          latestSession.currentType,
+          latestSession.currentVariation.parameters,
           masterVolumeRef.current
         );
-        console.log('  ✅ Resumed current variation');
+        console.log(`  ✅ Resumed current variation (${latestSession.currentType} #${latestSession.currentVariation.variationNumber})`);
 
-        // OVERLAY GAMMA BUG FIX: Resume overlay gamma if it was ENABLED (not just playing)
-        // Use ref values to get current user settings
+        // CRITICAL: Always restart overlay gamma if it's enabled, regardless of previous state
+        // This ensures it persists through auto-refresh
         if (overlayGammaWasEnabled) {
+          console.log(`  🌊 RESTARTING overlay gamma wave - Enabled: ${overlayGammaWasEnabled}, Carrier: ${overlayGammaCarrierValue}Hz, Volume: ${overlayGammaVolumeValue}%`);
           noiseGeneratorRef.current.startGammaWave(
             overlayGammaCarrierValue,
             40,
             overlayGammaVolumeValue
           );
-          console.log(`  ✅ Resumed overlay gamma wave (${overlayGammaCarrierValue}Hz, ${overlayGammaVolumeValue}%)`);
+          console.log(`  ✅✅✅ OVERLAY GAMMA RESTARTED SUCCESSFULLY (${overlayGammaCarrierValue}Hz, ${overlayGammaVolumeValue}%)`);
+        } else {
+          console.log(`  ⚠️ Overlay gamma NOT enabled, skipping restart (overlayGammaEnabledRef.current = ${overlayGammaWasEnabled})`);
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
+        alert(`Auto-refresh failed: ${error.message}`);
       }
+    } else {
+      console.warn('  ⚠️ No active session to resume');
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession]);
+  }, []);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
