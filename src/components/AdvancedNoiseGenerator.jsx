@@ -1848,12 +1848,27 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     // Resume playback if session is active
     if (activeSession && !activeSession.completedAt && !activeSession.isPaused && activeSession.currentVariation) {
       try {
-        await noiseGeneratorRef.current.playNoise(
-          activeSession.currentType,
-          activeSession.currentVariation.parameters,
-          masterVolumeRef.current
-        );
-        console.log('  ✅ Resumed current variation');
+        // Check if current variation is gamma or noise type
+        if (activeSession.currentType === 'gamma') {
+          // Resume gamma variation
+          const gammaCarrier = activeSession.currentVariation.parameters?.carrierFreq || alternatingGammaCarrierRef.current;
+          const gammaDuration = activeSession.currentVariation.durationMinutes;
+          await noiseGeneratorRef.current.playGamma(
+            gammaCarrier,
+            40,
+            alternatingGammaVolumeRef.current,
+            gammaDuration
+          );
+          console.log(`  ✅ Resumed gamma variation (${gammaCarrier}Hz, ${gammaDuration}min)`);
+        } else {
+          // Resume pink/brown noise
+          await noiseGeneratorRef.current.playNoise(
+            activeSession.currentType,
+            activeSession.currentVariation.parameters,
+            masterVolumeRef.current
+          );
+          console.log('  ✅ Resumed current variation');
+        }
 
         // OVERLAY GAMMA BUG FIX: Resume overlay gamma if it was ENABLED (not just playing)
         // Use ref values to get current user settings
@@ -1916,12 +1931,27 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
       if (activeSession.currentVariation) {
         try {
-          await noiseGeneratorRef.current.playNoise(
-            activeSession.currentType,
-            activeSession.currentVariation.parameters,
-            masterVolumeRef.current
-          );
-          console.log('  ✅ Resumed current variation');
+          // Check if current variation is gamma or noise type
+          if (activeSession.currentType === 'gamma') {
+            // Resume gamma variation
+            const gammaCarrier = activeSession.currentVariation.parameters?.carrierFreq || alternatingGammaCarrierRef.current;
+            const gammaDuration = activeSession.currentVariation.durationMinutes;
+            await noiseGeneratorRef.current.playGamma(
+              gammaCarrier,
+              40,
+              alternatingGammaVolumeRef.current,
+              gammaDuration
+            );
+            console.log(`  ✅ Resumed gamma variation (${gammaCarrier}Hz, ${gammaDuration}min)`);
+          } else {
+            // Resume pink/brown noise
+            await noiseGeneratorRef.current.playNoise(
+              activeSession.currentType,
+              activeSession.currentVariation.parameters,
+              masterVolumeRef.current
+            );
+            console.log('  ✅ Resumed current variation');
+          }
 
           // Resume gamma if it was enabled (use ref values)
           if (wasGammaEnabled) {
