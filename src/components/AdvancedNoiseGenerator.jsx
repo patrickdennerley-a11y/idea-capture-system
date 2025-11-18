@@ -999,6 +999,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
+  const overlayGammaCarrierRef = useRef(overlayGammaCarrier); // Track overlay gamma carrier for timer callbacks
+  const overlayGammaEnabledRef = useRef(overlayGammaEnabled); // Track overlay gamma enabled state for timer callbacks
   const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
@@ -1057,6 +1059,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       noiseGeneratorRef.current.setGammaVolume(overlayGammaVolume);
     }
   }, [overlayGammaVolume]);
+
+  // Update overlay gamma carrier ref when changed
+  useEffect(() => {
+    overlayGammaCarrierRef.current = overlayGammaCarrier;
+  }, [overlayGammaCarrier]);
+
+  // Update overlay gamma enabled ref when changed
+  useEffect(() => {
+    overlayGammaEnabledRef.current = overlayGammaEnabled;
+  }, [overlayGammaEnabled]);
 
   // Update alternating gamma settings refs when changed
   useEffect(() => {
@@ -1797,8 +1809,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const performAutoRefresh = useCallback(async () => {
     console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
 
-    // Store current state
-    const wasGammaPlaying = !!noiseGeneratorRef.current?.gammaSource;
+    // OVERLAY GAMMA BUG FIX: Check if overlay gamma is ENABLED (user setting)
+    // instead of just checking if it was playing at this exact moment
+    const overlayGammaWasEnabled = overlayGammaEnabledRef.current;
+    const overlayGammaCarrierValue = overlayGammaCarrierRef.current;
+    const overlayGammaVolumeValue = overlayGammaVolumeRef.current;
+
+    console.log('  Overlay gamma enabled:', overlayGammaWasEnabled);
 
     // Stop audio (brief silence)
     if (noiseGeneratorRef.current) {
@@ -1838,10 +1855,15 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         );
         console.log('  ✅ Resumed current variation');
 
-        // Resume gamma if it was playing
-        if (wasGammaPlaying) {
-          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave');
+        // OVERLAY GAMMA BUG FIX: Resume overlay gamma if it was ENABLED (not just playing)
+        // Use ref values to get current user settings
+        if (overlayGammaWasEnabled) {
+          noiseGeneratorRef.current.startGammaWave(
+            overlayGammaCarrierValue,
+            40,
+            overlayGammaVolumeValue
+          );
+          console.log(`  ✅ Resumed overlay gamma wave (${overlayGammaCarrierValue}Hz, ${overlayGammaVolumeValue}%)`);
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
@@ -1849,11 +1871,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, overlayGammaCarrier]);
+  }, [activeSession]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
     console.log('🔧 FORCE RESTARTING AUDIO SYSTEM (manual trigger)...');
+
+    // OVERLAY GAMMA BUG FIX: Use ref values
+    const overlayGammaWasEnabled = overlayGammaEnabledRef.current;
+    const overlayGammaCarrierValue = overlayGammaCarrierRef.current;
+    const overlayGammaVolumeValue = overlayGammaVolumeRef.current;
 
     // Stop everything
     if (intervalRef.current) {
@@ -1885,7 +1912,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     // If there's an active session, resume it
     if (activeSession && !activeSession.completedAt) {
-      const wasGammaEnabled = activeSession.gammaWasEnabled || overlayGammaEnabled;
+      const wasGammaEnabled = activeSession.gammaWasEnabled || overlayGammaWasEnabled;
 
       if (activeSession.currentVariation) {
         try {
@@ -1896,10 +1923,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           );
           console.log('  ✅ Resumed current variation');
 
-          // Resume gamma if it was enabled
+          // Resume gamma if it was enabled (use ref values)
           if (wasGammaEnabled) {
-            noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-            console.log('  ✅ Resumed gamma wave');
+            noiseGeneratorRef.current.startGammaWave(
+              overlayGammaCarrierValue,
+              40,
+              overlayGammaVolumeValue
+            );
+            console.log(`  ✅ Resumed overlay gamma wave (${overlayGammaCarrierValue}Hz, ${overlayGammaVolumeValue}%)`);
           }
 
           // Restart timer if not paused
@@ -1916,7 +1947,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     alert('✅ Audio system restarted! You should hear audio now.');
     console.log('🔧 FORCE RESTART COMPLETE');
-  }, [activeSession, overlayGammaEnabled, overlayGammaCarrier, startTimer]);
+  }, [activeSession, startTimer]);
 
   // Save to history
   const saveToHistory = useCallback((title) => {
