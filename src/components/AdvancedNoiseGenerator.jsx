@@ -590,22 +590,52 @@ class NoiseGenerator {
   }
 
   stopGammaWave() {
+    console.log('🛑 stopGammaWave() called');
+    console.log('  gammaSource exists:', !!this.gammaSource);
+    console.log('  gammaGain exists:', !!this.gammaGain);
+
+    // Disconnect and stop gamma source first (before gain)
     if (this.gammaSource) {
+      const sourceToStop = this.gammaSource;
+      this.gammaSource = null; // Clear reference immediately to prevent reuse
+
       try {
-        this.gammaSource.stop();
-        this.gammaSource.disconnect();
+        console.log('  Attempting to stop and disconnect gammaSource...');
+        // Stop first, then disconnect
+        sourceToStop.stop();
+        console.log('  ✅ gammaSource.stop() succeeded');
+        sourceToStop.disconnect();
+        console.log('  ✅ gammaSource.disconnect() succeeded');
       } catch (e) {
-        // Already stopped
+        console.log('  ⚠️ Error stopping/disconnecting gammaSource:', e.message);
+        // Try disconnect even if stop failed
+        try {
+          sourceToStop.disconnect();
+          console.log('  ✅ gammaSource.disconnect() succeeded after stop() error');
+        } catch (e2) {
+          console.log('  ⚠️ Error disconnecting gammaSource:', e2.message);
+        }
       }
-      this.gammaSource = null;
-      console.log('🛑 Stopped gamma wave');
+    } else {
+      console.log('  ℹ️ No gammaSource to stop');
     }
+
+    // Disconnect gamma gain
     if (this.gammaGain) {
+      const gainToStop = this.gammaGain;
+      this.gammaGain = null; // Clear reference immediately
+
       try {
-        this.gammaGain.disconnect();
-      } catch (e) {}
-      this.gammaGain = null;
+        gainToStop.disconnect();
+        console.log('  ✅ gammaGain disconnected');
+      } catch (e) {
+        console.log('  ⚠️ Error disconnecting gammaGain:', e.message);
+      }
+    } else {
+      console.log('  ℹ️ No gammaGain to disconnect');
     }
+
+    console.log('🏁 stopGammaWave() complete');
   }
 
   setGammaVolume(volume) {
@@ -1650,10 +1680,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Stop generation
   const stopGeneration = useCallback(() => {
-    console.log('🛑 Stopping session...');
+    console.log('🛑 ========== STOPPING SESSION ==========');
     console.log('  Variations played:', activeSession?.variations?.length || 0);
     console.log('  Total elapsed:', activeSession?.totalElapsedMs ? `${(activeSession.totalElapsedMs / 1000).toFixed(1)}s` : '0s');
     console.log('  AudioContext state:', audioContextRef.current?.state);
+    console.log('  noiseGeneratorRef.current exists:', !!noiseGeneratorRef.current);
+    console.log('  Gamma source before stop:', !!noiseGeneratorRef.current?.gammaSource);
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -1662,24 +1694,33 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     if (noiseGeneratorRef.current) {
+      console.log('  🔇 Stopping noise...');
       noiseGeneratorRef.current.stop();
-      console.log('  ✅ Audio stopped');
+      console.log('  ✅ Noise stopped');
 
       // Stop gamma wave if playing
+      console.log('  🔇 Stopping gamma wave...');
+      console.log('  Gamma source exists?', !!noiseGeneratorRef.current.gammaSource);
       noiseGeneratorRef.current.stopGammaWave();
       console.log('  ✅ Gamma wave stopped');
+      console.log('  Gamma source after stop:', !!noiseGeneratorRef.current?.gammaSource);
+    } else {
+      console.log('  ⚠️ noiseGeneratorRef.current is null, cannot stop audio or gamma');
     }
 
     if (activeSession) {
+      console.log('  📝 Marking session as completed...');
       const completedSession = {
         ...activeSession,
         completedAt: new Date().toISOString(),
       };
+      console.log('  Completed session object:', { completedAt: completedSession.completedAt });
       setActiveSession(completedSession);
       console.log('  ✅ Session marked complete');
     }
 
-    console.log('🏁 Session stopped, AudioContext final state:', audioContextRef.current?.state);
+    console.log('🏁 ========== SESSION STOP COMPLETE ==========');
+    console.log('  AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession]);
 
   // Pause/Resume
