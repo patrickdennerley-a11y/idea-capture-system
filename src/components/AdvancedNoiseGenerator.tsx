@@ -1000,23 +1000,34 @@ export default function AdvancedNoiseGenerator({
 
   // Monitor overlay gamma enabled state during active sessions
   useEffect(() => {
+    console.log('🔍 OVERLAY GAMMA EFFECT TRIGGERED:', {
+      hasSession: !!activeSession,
+      isPaused: activeSession?.isPaused,
+      completedAt: activeSession?.completedAt,
+      overlayGammaEnabled,
+      hasGenerator: !!noiseGeneratorRef.current,
+      hasGammaSource: !!noiseGeneratorRef.current?.['gammaSource']
+    });
+
     // Only react to changes during an active session (not paused, not completed)
     if (activeSession && !activeSession.isPaused && !activeSession.completedAt && noiseGeneratorRef.current) {
       if (overlayGammaEnabled) {
         // User turned on gamma overlay during session - start it
         const isGammaPlaying = !!noiseGeneratorRef.current['gammaSource'];
         if (!isGammaPlaying) {
+          console.log('🌊 STARTING gamma overlay during session');
           noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-          console.log('🌊 Gamma overlay enabled during session');
         }
       } else {
         // User turned off gamma overlay during session - stop it
         const isGammaPlaying = !!noiseGeneratorRef.current['gammaSource'];
         if (isGammaPlaying) {
+          console.log('⏹️ STOPPING gamma overlay during session');
           noiseGeneratorRef.current.stopGammaWave();
-          console.log('⏹️ Gamma overlay disabled during session');
         }
       }
+    } else {
+      console.log('🔍 Overlay gamma effect skipped - session not active or completed');
     }
   }, [overlayGammaEnabled, activeSession, overlayGammaCarrier]);
 
@@ -1601,10 +1612,11 @@ export default function AdvancedNoiseGenerator({
 
   // Stop generation
   const stopGeneration = useCallback(() => {
-    console.log('🛑 Stopping session...');
+    console.log('🛑 ========== STOPPING SESSION ==========');
     console.log('  Variations played:', activeSession?.variations?.length || 0);
     console.log('  Total elapsed:', activeSession?.totalElapsedMs ? `${(activeSession.totalElapsedMs / 1000).toFixed(1)}s` : '0s');
     console.log('  AudioContext state:', audioContextRef.current?.state);
+    console.log('  Gamma source before stop:', !!noiseGeneratorRef.current?.['gammaSource']);
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -1613,23 +1625,30 @@ export default function AdvancedNoiseGenerator({
     }
 
     if (noiseGeneratorRef.current) {
+      console.log('  🔇 Stopping noise...');
       noiseGeneratorRef.current.stop();
-      console.log('  ✅ Audio stopped');
+      console.log('  ✅ Noise stopped');
 
+      console.log('  🔇 Stopping gamma wave...');
+      console.log('  Gamma source exists?', !!noiseGeneratorRef.current['gammaSource']);
       noiseGeneratorRef.current.stopGammaWave();
       console.log('  ✅ Gamma wave stopped');
+      console.log('  Gamma source after stop:', !!noiseGeneratorRef.current?.['gammaSource']);
     }
 
     if (activeSession) {
+      console.log('  📝 Marking session as completed...');
       const completedSession: Session = {
         ...activeSession,
         completedAt: new Date().toISOString(),
       };
+      console.log('  Completed session object:', { completedAt: completedSession.completedAt });
       setActiveSession(completedSession);
-      console.log('  ✅ Session marked complete');
+      console.log('  ✅ Session marked complete - this will trigger overlay gamma effect');
     }
 
-    console.log('🏁 Session stopped, AudioContext final state:', audioContextRef.current?.state);
+    console.log('🏁 ========== SESSION STOP COMPLETE ==========');
+    console.log('  AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession, audioContextRef, setActiveSession]);
 
   // Pause/Resume
