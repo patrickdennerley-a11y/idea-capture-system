@@ -86,8 +86,13 @@ function App() {
   useEffect(() => {
     if (!audioContextRef.current && typeof window !== 'undefined') {
       try {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('🔊 Audio context initialized at app level');
+        // FIX: Add latencyHint: 'playback' to prevent crackling under heavy CPU load
+        // This gives the browser a larger audio buffer to survive CPU spikes (e.g., switching to heavy tabs)
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+          latencyHint: 'playback',
+          sampleRate: 44100 // Optional: locks rate to standard to reduce resampling overhead
+        });
+        console.log('🔊 Audio context initialized at app level with playback latency hint');
       } catch (err) {
         console.error('Failed to initialize audio context:', err);
       }

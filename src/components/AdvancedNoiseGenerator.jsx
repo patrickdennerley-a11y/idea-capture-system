@@ -86,7 +86,7 @@ class NoiseGenerator {
   }
 
   generatePinkNoise(params) {
-    console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
+    // console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
@@ -144,8 +144,8 @@ class NoiseGenerator {
   }
 
   generateBrownNoise(params) {
-    console.log('═══ BROWN NOISE DEBUG START ═══');
-    console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
+    // console.log('═══ BROWN NOISE DEBUG START ═══');
+    // console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
 
     // Verify audioContext exists
     if (!this.audioContext) {
@@ -153,15 +153,15 @@ class NoiseGenerator {
       return null;
     }
 
-    console.log('AudioContext state:', this.audioContext.state);
-    console.log('AudioContext sample rate:', this.audioContext.sampleRate);
+    // console.log('AudioContext state:', this.audioContext.state);
+    // console.log('AudioContext sample rate:', this.audioContext.sampleRate);
 
     const sampleRate = this.audioContext.sampleRate;
     const bufferSize = Math.floor(sampleRate * 2); // 2 seconds buffer
 
-    console.log('Sample rate:', sampleRate);
-    console.log('Duration: 2 seconds');
-    console.log('Buffer size:', bufferSize);
+    // console.log('Sample rate:', sampleRate);
+    // console.log('Duration: 2 seconds');
+    // console.log('Buffer size:', bufferSize);
 
     const buffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
 
@@ -177,6 +177,7 @@ class NoiseGenerator {
     const rate = params.rate || 5;
     const stereoWidth = params.stereoWidth || 50;
 
+    /*
     console.log('CALCULATED VALUES:', {
       integrationConst,
       leakFactor,
@@ -189,6 +190,7 @@ class NoiseGenerator {
       rate,
       stereoWidth
     });
+    */
 
     let globalMaxValue = 0;
     let globalNonZeroCount = 0;
@@ -260,38 +262,41 @@ class NoiseGenerator {
       }
     }
 
+    /*
     console.log('═══ BROWN NOISE GENERATION STATS ═══');
     console.log('Total samples:', totalSamples);
     console.log('Non-zero samples:', globalNonZeroCount);
     console.log('Percent non-zero:', (globalNonZeroCount / totalSamples * 100).toFixed(2) + '%');
     console.log('Max absolute value:', globalMaxValue.toFixed(6));
+    */
 
     if (globalMaxValue === 0) {
       console.error('❌ CRITICAL: ALL SAMPLES ARE ZERO - NO AUDIO WILL PLAY');
       console.error('This means brown noise is generating SILENCE');
-      console.error('Check these values:');
-      console.error('  integrationConst:', integrationConst);
-      console.error('  leakFactor:', leakFactor);
-      console.error('  depthMod:', depth / 100);
-      console.error('  rateMod:', rate / 10);
-      console.error('  volume:', volume);
+      // Keep this critical error but comment out the detailed parameter dump
+      // console.error('Check these values:');
+      // console.error('  integrationConst:', integrationConst);
+      // console.error('  leakFactor:', leakFactor);
+      // console.error('  depthMod:', depth / 100);
+      // console.error('  rateMod:', rate / 10);
+      // console.error('  volume:', volume);
     } else if (globalMaxValue < 0.001) {
-      console.warn('⚠️ WARNING: Samples are very quiet (max:', globalMaxValue, ')');
-      console.warn('Audio might be inaudible at this level');
+      // console.warn('⚠️ WARNING: Samples are very quiet (max:', globalMaxValue, ')');
+      // console.warn('Audio might be inaudible at this level');
     } else {
-      console.log('✅ Audio samples look good (max:', globalMaxValue, ')');
+      // console.log('✅ Audio samples look good (max:', globalMaxValue, ')');
     }
 
-    console.log('═══ BROWN NOISE DEBUG END ═══');
+    // console.log('═══ BROWN NOISE DEBUG END ═══');
     return buffer;
   }
 
   async playNoise(type, params, volume = 50) {
     try {
-      console.log('═══ PLAY NOISE DEBUG START ═══');
-      console.log('Type:', type);
-      console.log('Volume param:', volume);
-      console.log('Params object keys:', Object.keys(params));
+      // console.log('═══ PLAY NOISE DEBUG START ═══');
+      // console.log('Type:', type);
+      // console.log('Volume param:', volume);
+      // console.log('Params object keys:', Object.keys(params));
 
       this.initialize(volume);
 
@@ -302,18 +307,18 @@ class NoiseGenerator {
       }
 
       if (this.audioContext.state === 'suspended') {
-        console.warn('⚠️ AudioContext suspended, resuming...');
+        // console.warn('⚠️ AudioContext suspended, resuming...');
         await this.audioContext.resume(); // CRITICAL: Must await resume!
-        console.log('✅ AudioContext resumed, state:', this.audioContext.state);
+        // console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
-      // Stop immediately without release envelope (we're switching variations)
-      this.stop(false);
+      // Stop ONLY noise (not gamma) immediately without release envelope (we're switching variations)
+      this.stopNoiseOnly(false);
 
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
 
-      console.log(`→ Generating ${type} noise buffer...`);
+      // console.log(`→ Generating ${type} noise buffer...`);
       const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
 
       if (!buffer) {
@@ -321,28 +326,32 @@ class NoiseGenerator {
         throw new Error('Buffer generation returned null');
       }
 
+      /*
       console.log('✓ Buffer received:', {
         channels: buffer.numberOfChannels,
         length: buffer.length,
         duration: buffer.duration.toFixed(2) + 's',
         sampleRate: buffer.sampleRate
       });
+      */
 
       // CRITICAL: Check if buffer has actual audio data
       const channel0 = buffer.getChannelData(0);
       let maxInBuffer = 0;
-      let nonZeroInBuffer = 0;
+      // let nonZeroInBuffer = 0;
       const samplesToCheck = Math.min(1000, channel0.length);
       for (let i = 0; i < samplesToCheck; i++) {
         const abs = Math.abs(channel0[i]);
-        if (abs > 0.0001) nonZeroInBuffer++;
+        // if (abs > 0.0001) nonZeroInBuffer++;
         maxInBuffer = Math.max(maxInBuffer, abs);
       }
+      /*
       console.log(`Buffer sample check (first ${samplesToCheck} samples):`, {
         max: maxInBuffer.toFixed(6),
         nonZero: nonZeroInBuffer,
         percentNonZero: ((nonZeroInBuffer / samplesToCheck) * 100).toFixed(1) + '%'
       });
+      */
 
       if (maxInBuffer === 0) {
         console.error('❌❌❌ BUFFER CONTAINS ONLY ZEROS - THIS IS WHY YOU HEAR NOTHING ❌❌❌');
@@ -359,7 +368,7 @@ class NoiseGenerator {
       const currentNode = this.sourceNode;
       this.sourceNode.onended = () => {
         if (this.intentionallyStopping) {
-          console.log('✓ Source node stopped as expected (switching variations)');
+          // console.log('✓ Source node stopped as expected (switching variations)');
           this.intentionallyStopping = false;
         } else if (currentNode.loop && currentNode === this.sourceNode) {
           // Only warn if this node was looped AND is still the current node
@@ -378,7 +387,7 @@ class NoiseGenerator {
         this.brownLowpass.type = 'lowpass';
         this.brownLowpass.frequency.value = 1800; // Cut frequencies above 1800Hz (was 1200Hz - too aggressive)
         this.brownLowpass.Q.value = 0.7;
-        console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
+        // console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
 
         // Create audio chain with brown filter: source -> brownLowpass -> bass -> mid -> treble -> resonance -> gain -> destination
         this.sourceNode.connect(this.brownLowpass);
@@ -394,17 +403,16 @@ class NoiseGenerator {
       this.trebleFilter.connect(this.resonanceFilter);
       this.resonanceFilter.connect(this.gainNode);
 
-      console.log('✓ Audio node chain connected:', type === 'brown' ?
-        'source → brownLowpass → bass → mid → treble → resonance → gain → destination' :
-        'source → bass → mid → treble → resonance → gain → destination'
-      );
+      // console.log('✓ Audio node chain connected');
 
+      /*
       // Verify gainNode exists and is connected
       console.log('GainNode state:', {
         exists: !!this.gainNode,
         currentValue: this.gainNode?.gain?.value,
         connected: !!this.gainNode
       });
+      */
 
       // Apply envelope (attack)
       const now = this.audioContext.currentTime;
@@ -415,7 +423,7 @@ class NoiseGenerator {
       this.gainNode.gain.setValueAtTime(0, now);
       this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-      console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+      // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
 
       // Warn if attack time seems excessive (should not happen with new 20-100ms range)
       if (attackTime > 0.15) {
@@ -424,24 +432,24 @@ class NoiseGenerator {
 
       // Note: Release will be applied in stop() method when explicitly stopped
 
-      console.log('→ Starting playback NOW...');
+      // console.log('→ Starting playback NOW...');
       this.sourceNode.start(0);
       this.isPlaying = true;
 
-      console.log(`✅ PLAYBACK STARTED - ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
-      console.log('═══ PLAY NOISE DEBUG END ═══');
+      // console.log(`✅ PLAYBACK STARTED - ${type} noise...`);
+      // console.log('═══ PLAY NOISE DEBUG END ═══');
     } catch (error) {
       console.error(`❌ Error playing ${type} noise:`, error);
       throw error;
     }
   }
 
-  stop(applyRelease = true) {
-    // Clear any pending cleanup timeout
-    if (this.stopTimeout) {
-      clearTimeout(this.stopTimeout);
-      this.stopTimeout = null;
-    }
+  // NEW: Stops ONLY Pink/Brown noise, leaves Gamma running
+  // This enables ultra-fast noise switching (even 0.00001s) without affecting gamma
+  stopNoiseOnly(applyRelease = true) {
+    // FIX: Removed clearTimeout(this.stopTimeout) logic.
+    // Previously, rapid switching canceled the cleanup of the previous node, causing audio node leaks.
+    // Now, every node gets its own independent cleanup timer that won't be cancelled.
 
     if (this.sourceNode) {
       if (applyRelease && this.currentParams && this.gainNode) {
@@ -472,7 +480,8 @@ class NoiseGenerator {
         this.resonanceFilter = null;
 
         // Schedule cleanup of OLD nodes after release time
-        this.stopTimeout = setTimeout(() => {
+        // NOTE: We do NOT assign this to this.stopTimeout because we want independent cleanup for each node
+        setTimeout(() => {
           if (oldSourceNode) {
             try {
               this.intentionallyStopping = true; // Mark as intentional before stopping
@@ -499,7 +508,6 @@ class NoiseGenerator {
           if (oldResonanceFilter) {
             try { oldResonanceFilter.disconnect(); } catch (e) {}
           }
-          this.stopTimeout = null;
         }, releaseTime * 1000);
       } else {
         // No release envelope - stop immediately (when switching variations)
@@ -536,6 +544,13 @@ class NoiseGenerator {
         }
       }
     }
+    this.isPlaying = false;
+  }
+
+  // NEW: Stops EVERYTHING (Noise + Gamma) - Used when user clicks Stop
+  stopEverything() {
+    this.stopNoiseOnly(false);
+    this.stopGammaWave();
     this.isPlaying = false;
   }
 
@@ -975,10 +990,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [alternatingGammaCarrier, setAlternatingGammaCarrier] = useLocalStorage('neural-noise-alternating-gamma-carrier', 200);
   const [varyGammaCarrier, setVaryGammaCarrier] = useLocalStorage('neural-noise-vary-gamma-carrier', false);
 
-  // Auto-refresh settings for overnight sessions
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useLocalStorage('neural-noise-auto-refresh', true);
-  const [refreshInterval, setRefreshInterval] = useLocalStorage('neural-noise-refresh-interval', 1500);
-
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
@@ -988,7 +999,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
-  const lastRefreshVariation = useRef(0); // Track when we last refreshed
 
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
@@ -1159,10 +1169,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     if (audioContextRef.current.state === 'closed') {
       console.error('❌ AudioContext is closed! Recreating...');
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // FIX: Add latencyHint: 'playback' to prevent crackling under heavy CPU load
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        latencyHint: 'playback',
+        sampleRate: 44100
+      });
       // Recreate noise generator with new context
       noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
-      console.log('✅ New AudioContext created');
+      console.log('✅ New AudioContext created with playback latency hint');
     }
 
     if (audioContextRef.current.state === 'suspended') {
@@ -1497,22 +1511,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 } else {
                   noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
                 }
-                console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
-
-                // Gamma wave refresh (prevent corruption on long continuous playback)
-                // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
-                if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
-                  console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
-                  if (noiseGeneratorRef.current) {
-                    noiseGeneratorRef.current.stopGammaWave();
-                    noiseGeneratorRef.current.startGammaWave(
-                      overlayGammaCarrierRef.current,
-                      40,
-                      overlayGammaVolumeRef.current
-                    );
-                  }
-                  console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
-                }
+                // console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
                 alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
@@ -1553,6 +1552,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         // Check if current variation is complete (using milliseconds for precision)
         if (elapsedMs >= currentDurationMs) {
           // TIMING DIAGNOSTIC: Log expected vs actual duration
+          /*
           let durationMin;
           if (prev.currentType === 'pink') {
             durationMin = prev.settings.pinkDuration;
@@ -1566,13 +1566,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           console.log(`   Expected: ${(currentDurationMs / 1000).toFixed(3)}s (${durationMin.toFixed(4)} min)`);
           console.log(`   Actual: ${(elapsedMs / 1000).toFixed(3)}s`);
           console.log(`   Difference: ${((elapsedMs - currentDurationMs) / 1000).toFixed(3)}s`);
+          */
 
           // Check if we have a delay configured
           if (prev.settings.silenceDelay > 0) {
             // Enter delay mode (silence)
             if (noiseGeneratorRef.current) {
               noiseGeneratorRef.current.stop();
-              console.log(`🔇 Entering silence delay for ${prev.settings.silenceDelay * 60}s`);
+              // console.log(`🔇 Entering silence delay for ${prev.settings.silenceDelay * 60}s`);
             }
 
             return {
@@ -1657,22 +1658,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               } else {
                 noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
               }
-              console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
-
-              // Gamma wave refresh (prevent corruption on long continuous playback)
-              // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
-              if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
-                console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
-                if (noiseGeneratorRef.current) {
-                  noiseGeneratorRef.current.stopGammaWave();
-                  noiseGeneratorRef.current.startGammaWave(
-                    overlayGammaCarrierRef.current,
-                    40,
-                    overlayGammaVolumeRef.current
-                  );
-                }
-                console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
-              }
+              // console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}`);
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
               alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
@@ -1699,7 +1685,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         };
       });
     }, 100); // Update every 100ms for millisecond precision
-  }, [autoRefreshEnabled, refreshInterval]);
+  }, []);
 
   // Stop generation
   const stopGeneration = useCallback(() => {
@@ -1717,15 +1703,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     if (noiseGeneratorRef.current) {
-      console.log('  🔇 Stopping noise...');
-      noiseGeneratorRef.current.stop();
-      console.log('  ✅ Noise stopped');
-
-      // Stop gamma wave if playing
-      console.log('  🔇 Stopping gamma wave...');
-      console.log('  Gamma source exists?', !!noiseGeneratorRef.current.gammaSource);
-      noiseGeneratorRef.current.stopGammaWave();
-      console.log('  ✅ Gamma wave stopped');
+      console.log('  🔇 Stopping EVERYTHING (noise + gamma)...');
+      console.log('  Gamma source before stop:', !!noiseGeneratorRef.current.gammaSource);
+      noiseGeneratorRef.current.stopEverything();
+      console.log('  ✅ Everything stopped (noise + gamma)');
       console.log('  Gamma source after stop:', !!noiseGeneratorRef.current?.gammaSource);
     } else {
       console.log('  ⚠️ noiseGeneratorRef.current is null, cannot stop audio or gamma');
@@ -1806,64 +1787,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     });
   }, [startTimer, overlayGammaCarrier]);
 
-  // Automatic AudioContext refresh for overnight sessions
-  const performAutoRefresh = useCallback(async () => {
-    console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
-
-    // Use user's overlay gamma preference (ref), not physical state
-    const shouldRestoreGamma = overlayGammaEnabledRef.current;
-
-    // Stop audio (brief silence)
-    if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.stop();
-      noiseGeneratorRef.current.stopGammaWave();
-    }
-
-    // Close old AudioContext
-    if (audioContextRef.current) {
-      try {
-        await audioContextRef.current.close();
-        console.log('  ✅ Old AudioContext closed');
-      } catch (e) {
-        console.warn('  ⚠️ Error closing old AudioContext:', e);
-      }
-    }
-
-    // Brief pause to ensure clean context switch
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Create fresh AudioContext
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    await audioContextRef.current.resume();
-    console.log('  ✅ New AudioContext created, state:', audioContextRef.current.state);
-
-    // Recreate noise generator
-    noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
-    console.log('  ✅ Noise generator recreated');
-
-    // Resume playback if session is active
-    if (activeSession && !activeSession.completedAt && !activeSession.isPaused && activeSession.currentVariation) {
-      try {
-        await noiseGeneratorRef.current.playNoise(
-          activeSession.currentType,
-          activeSession.currentVariation.parameters,
-          masterVolumeRef.current
-        );
-        console.log('  ✅ Resumed current variation');
-
-        // Resume gamma overlay if user has it enabled
-        if (shouldRestoreGamma) {
-          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrierRef.current, 40, overlayGammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave overlay');
-        }
-      } catch (error) {
-        console.error('  ❌ Failed to resume audio after auto-refresh:', error);
-      }
-    }
-
-    console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession]);
-
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
     console.log('🔧 FORCE RESTARTING AUDIO SYSTEM (manual trigger)...');
@@ -1889,8 +1812,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     // Create fresh AudioContext
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('  ✅ New AudioContext created, state:', audioContextRef.current.state);
+    // FIX: Add latencyHint: 'playback' to prevent crackling under heavy CPU load
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'playback',
+      sampleRate: 44100
+    });
+    console.log('  ✅ New AudioContext created with playback latency hint, state:', audioContextRef.current.state);
 
     // Recreate noise generator
     noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
@@ -1966,7 +1893,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       pinkCount: pinkVariations.length,
       brownCount: brownVariations.length,
     };
-  }, [activeSession]);
+  }, [activeSession?.variations]); // FIX: Only recalculate when variations change, not on every timer tick
 
   // Current progress - uses milliseconds for precise tracking
   const currentProgress = useMemo(() => {
@@ -2732,87 +2659,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                         <p className="text-xs text-gray-500 mt-1">
                           Left ear: {overlayGammaCarrier} Hz | Right ear: {overlayGammaCarrier + 40} Hz = 40 Hz beat
                         </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Auto-Refresh Settings for Overnight Sessions */}
-                <div className="space-y-3 border-t border-gray-700 pt-4">
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autoRefreshEnabled}
-                        onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
-                        className="w-4 h-4 accent-green-500"
-                      />
-                      <span className="text-sm font-medium">🔄 Auto-Refresh AudioContext (Recommended for overnight sessions)</span>
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Automatically recreates the audio system every N variations to prevent corruption during long sessions.
-                    Creates a brief (100ms) silence but prevents audio from dying after several hours.
-                  </p>
-
-                  {autoRefreshEnabled && (
-                    <div className="space-y-3 pl-6 border-l-2 border-green-500/30">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">
-                          Refresh Interval: Every {refreshInterval} variations
-                        </label>
-                        <input
-                          type="range"
-                          min="500"
-                          max="5000"
-                          step="100"
-                          value={refreshInterval}
-                          onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
-                          className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-green-500"
-                        />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1">
-                          <span>500 (~17 min)</span>
-                          <span>5000 (~2.8 hrs)</span>
-                        </div>
-                      </div>
-
-                      <div className="bg-neural-darker rounded-lg p-3 text-xs text-gray-400">
-                        <p className="mb-1"><strong>Recommended intervals:</strong></p>
-                        <ul className="space-y-1 ml-4">
-                          <li>• <strong>1000-1500 variations</strong> (~30-50 min) - Best for overnight sessions</li>
-                          <li>• <strong>2000-3000 variations</strong> (~1-1.5 hrs) - Balanced</li>
-                          <li>• <strong>500 variations</strong> (~17 min) - Very frequent (safest but more interruptions)</li>
-                        </ul>
-                        <p className="mt-2 text-xs text-gray-500">
-                          At {refreshInterval} variations (2s each), refresh happens every <strong>~{Math.round(refreshInterval * 2 / 60)} minutes</strong>
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setRefreshInterval(1000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          1000 (33min)
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(1500)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          1500 (50min) ⭐
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(2000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          2000 (67min)
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(3000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          3000 (100min)
-                        </button>
                       </div>
                     </div>
                   )}
