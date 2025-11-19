@@ -291,7 +291,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  async playNoise(type, params, volume = 50) {
+  async playNoise(type, params, volume = 50, durationMinutes = 3) {
     try {
       // console.log('═══ PLAY NOISE DEBUG START ═══');
       // console.log('Type:', type);
@@ -312,11 +312,17 @@ class NoiseGenerator {
         // console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
+      // RAPID MODE: Disable envelopes if duration is shorter than envelope times
+      const durationMs = durationMinutes * 60 * 1000;
+      const totalEnvelopeMs = params.attackTime + params.releaseTime;
+      const useRapidMode = durationMs < totalEnvelopeMs || durationMs < 100; // If duration < 100ms OR < envelope time
+
       // Stop ONLY noise (not gamma) immediately without release envelope (we're switching variations)
       this.stopNoiseOnly(false);
 
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
+      this.rapidMode = useRapidMode;
 
       // console.log(`→ Generating ${type} noise buffer...`);
       const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
@@ -414,20 +420,29 @@ class NoiseGenerator {
       });
       */
 
-      // Apply envelope (attack)
+      // Apply envelope (attack) - SKIP in rapid mode
       const now = this.audioContext.currentTime;
-      const attackTime = params.attackTime / 1000; // Convert ms to seconds
 
-      // Attack: fade in from 0 to target volume
-      this.gainNode.gain.cancelScheduledValues(now);
-      this.gainNode.gain.setValueAtTime(0, now);
-      this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+      if (useRapidMode) {
+        // RAPID MODE: No envelope, instant volume
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(volume / 100, now);
+        console.log(`⚡ RAPID MODE: Instant transition (duration: ${durationMs.toFixed(2)}ms < 100ms)`);
+      } else {
+        // NORMAL MODE: Use attack envelope
+        const attackTime = params.attackTime / 1000; // Convert ms to seconds
 
-      // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+        // Attack: fade in from 0 to target volume
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(0, now);
+        this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-      // Warn if attack time seems excessive (should not happen with new 20-100ms range)
-      if (attackTime > 0.15) {
-        console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
+        // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+
+        // Warn if attack time seems excessive (should not happen with new 20-100ms range)
+        if (attackTime > 0.15) {
+          console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
+        }
       }
 
       // Note: Release will be applied in stop() method when explicitly stopped
@@ -1323,7 +1338,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           );
         } else {
           // Play pink or brown noise
-          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
+          const firstDuration = firstType === 'pink' ? actualPinkDuration : actualBrownDuration;
+          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume, firstDuration);
         }
         console.log('✅ Session started successfully');
 
@@ -1509,7 +1525,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     nextDurationMin
                   );
                 } else {
-                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, nextDurationMin);
                 }
                 // console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
@@ -1656,7 +1672,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   nextDurationMin
                 );
               } else {
-                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, nextDurationMin);
               }
               // console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}`);
             } catch (error) {
@@ -1739,7 +1755,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         const newCurrentVariationStart = prev.currentVariationStart + pausedDuration;
 
         if (noiseGeneratorRef.current && prev.currentVariation) {
-          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current);
+          const resumeDuration = prev.currentType === 'pink'
+            ? prev.settings.pinkDuration
+            : prev.currentType === 'brown'
+            ? prev.settings.brownDuration
+            : prev.settings.gammaDuration || 3;
+          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current, resumeDuration);
 
           // Resume gamma wave if it was enabled before pause
           if (prev.gammaWasEnabled) {
@@ -1829,10 +1850,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
       if (activeSession.currentVariation) {
         try {
+          const resumeDuration = activeSession.currentType === 'pink'
+            ? activeSession.settings.pinkDuration
+            : activeSession.currentType === 'brown'
+            ? activeSession.settings.brownDuration
+            : activeSession.settings.gammaDuration || 3;
           await noiseGeneratorRef.current.playNoise(
             activeSession.currentType,
             activeSession.currentVariation.parameters,
-            masterVolumeRef.current
+            masterVolumeRef.current,
+            resumeDuration
           );
           console.log('  ✅ Resumed current variation');
 
