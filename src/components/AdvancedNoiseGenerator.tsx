@@ -637,22 +637,41 @@ class NoiseGenerator {
   }
 
   stopGammaWave(): void {
-    if (this.gammaSource) {
-      try {
-        this.gammaSource.stop();
-        this.gammaSource.disconnect();
-      } catch (e) {
-        // Already stopped
-      }
-      this.gammaSource = null;
-      console.log('🛑 Stopped gamma wave');
-    }
+    console.log('🛑 stopGammaWave() called');
+    console.log('  gammaSource exists:', !!this.gammaSource);
+    console.log('  gammaGain exists:', !!this.gammaGain);
+
+    // CRITICAL: Disconnect gain node FIRST before stopping source
+    // This ensures the audio path is broken before stopping playback
     if (this.gammaGain) {
       try {
+        console.log('  Disconnecting gammaGain...');
         this.gammaGain.disconnect();
-      } catch (e) {}
+        console.log('  ✅ gammaGain disconnected');
+      } catch (e) {
+        console.log('  ⚠️ Error disconnecting gammaGain:', e);
+      }
       this.gammaGain = null;
+    } else {
+      console.log('  ℹ️ No gammaGain to disconnect');
     }
+
+    // Then stop and disconnect the source
+    if (this.gammaSource) {
+      try {
+        console.log('  Stopping gammaSource...');
+        this.gammaSource.stop();
+        this.gammaSource.disconnect();
+        console.log('  ✅ gammaSource stopped and disconnected');
+      } catch (e) {
+        console.log('  ⚠️ Error stopping gammaSource:', e);
+      }
+      this.gammaSource = null;
+    } else {
+      console.log('  ℹ️ No gammaSource to stop');
+    }
+
+    console.log('🛑 stopGammaWave() complete');
   }
 
   setGammaVolume(volume: number): void {
