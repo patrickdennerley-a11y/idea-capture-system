@@ -590,22 +590,52 @@ class NoiseGenerator {
   }
 
   stopGammaWave() {
+    console.log('🛑 stopGammaWave() called');
+    console.log('  gammaSource exists:', !!this.gammaSource);
+    console.log('  gammaGain exists:', !!this.gammaGain);
+
+    // Disconnect and stop gamma source first (before gain)
     if (this.gammaSource) {
+      const sourceToStop = this.gammaSource;
+      this.gammaSource = null; // Clear reference immediately to prevent reuse
+
       try {
-        this.gammaSource.stop();
-        this.gammaSource.disconnect();
+        console.log('  Attempting to stop and disconnect gammaSource...');
+        // Stop first, then disconnect
+        sourceToStop.stop();
+        console.log('  ✅ gammaSource.stop() succeeded');
+        sourceToStop.disconnect();
+        console.log('  ✅ gammaSource.disconnect() succeeded');
       } catch (e) {
-        // Already stopped
+        console.log('  ⚠️ Error stopping/disconnecting gammaSource:', e.message);
+        // Try disconnect even if stop failed
+        try {
+          sourceToStop.disconnect();
+          console.log('  ✅ gammaSource.disconnect() succeeded after stop() error');
+        } catch (e2) {
+          console.log('  ⚠️ Error disconnecting gammaSource:', e2.message);
+        }
       }
-      this.gammaSource = null;
-      console.log('🛑 Stopped gamma wave');
+    } else {
+      console.log('  ℹ️ No gammaSource to stop');
     }
+
+    // Disconnect gamma gain
     if (this.gammaGain) {
+      const gainToStop = this.gammaGain;
+      this.gammaGain = null; // Clear reference immediately
+
       try {
-        this.gammaGain.disconnect();
-      } catch (e) {}
-      this.gammaGain = null;
+        gainToStop.disconnect();
+        console.log('  ✅ gammaGain disconnected');
+      } catch (e) {
+        console.log('  ⚠️ Error disconnecting gammaGain:', e.message);
+      }
+    } else {
+      console.log('  ℹ️ No gammaGain to disconnect');
     }
+
+    console.log('🏁 stopGammaWave() complete');
   }
 
   setGammaVolume(volume) {
@@ -952,7 +982,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
+  const overlayGammaEnabledRef = useRef(overlayGammaEnabled); // Track overlay gamma enabled state for timer callbacks
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
+  const overlayGammaCarrierRef = useRef(overlayGammaCarrier); // Track overlay gamma carrier for timer callbacks
   const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
@@ -998,6 +1030,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
   }, [masterVolume]);
 
+  // Update overlay gamma enabled when changed
+  useEffect(() => {
+    overlayGammaEnabledRef.current = overlayGammaEnabled; // Update ref
+  }, [overlayGammaEnabled]);
+
   // Update overlay gamma volume when changed
   useEffect(() => {
     overlayGammaVolumeRef.current = overlayGammaVolume; // Update ref
@@ -1005,6 +1042,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       noiseGeneratorRef.current.setGammaVolume(overlayGammaVolume);
     }
   }, [overlayGammaVolume]);
+
+  // Update overlay gamma carrier when changed
+  useEffect(() => {
+    overlayGammaCarrierRef.current = overlayGammaCarrier; // Update ref
+  }, [overlayGammaCarrier]);
 
   // Update alternating gamma settings refs when changed
   useEffect(() => {
@@ -1270,6 +1312,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
         }
         console.log('✅ Session started successfully');
+
+        // Update audio context state indicator
+        setAudioContextState(audioContextRef.current.state);
       } catch (error) {
         console.error('❌ Failed to start audio:', error);
         alert(`Failed to start audio: ${error.message}`);
@@ -1454,15 +1499,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 }
                 console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-                // Auto-refresh check (prevent AudioContext corruption on long sessions)
-                if (autoRefreshEnabled && refreshInterval > 0) {
-                  const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                  if (variationsSinceLastRefresh >= refreshInterval) {
-                    console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                    lastRefreshVariation.current = nextVariationNumber;
-                    // Perform refresh asynchronously without blocking
-                    performAutoRefresh();
+                // Gamma wave refresh (prevent corruption on long continuous playback)
+                // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
+                if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                  console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
+                  if (noiseGeneratorRef.current) {
+                    noiseGeneratorRef.current.stopGammaWave();
+                    noiseGeneratorRef.current.startGammaWave(
+                      overlayGammaCarrierRef.current,
+                      40,
+                      overlayGammaVolumeRef.current
+                    );
                   }
+                  console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
                 }
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
@@ -1610,15 +1659,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
               console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-              // Auto-refresh check (prevent AudioContext corruption on long sessions)
-              if (autoRefreshEnabled && refreshInterval > 0) {
-                const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                if (variationsSinceLastRefresh >= refreshInterval) {
-                  console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                  lastRefreshVariation.current = nextVariationNumber;
-                  // Perform refresh asynchronously without blocking
-                  performAutoRefresh();
+              // Gamma wave refresh (prevent corruption on long continuous playback)
+              // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
+              if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
+                if (noiseGeneratorRef.current) {
+                  noiseGeneratorRef.current.stopGammaWave();
+                  noiseGeneratorRef.current.startGammaWave(
+                    overlayGammaCarrierRef.current,
+                    40,
+                    overlayGammaVolumeRef.current
+                  );
                 }
+                console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
               }
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
@@ -1650,10 +1703,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Stop generation
   const stopGeneration = useCallback(() => {
-    console.log('🛑 Stopping session...');
+    console.log('🛑 ========== STOPPING SESSION ==========');
     console.log('  Variations played:', activeSession?.variations?.length || 0);
     console.log('  Total elapsed:', activeSession?.totalElapsedMs ? `${(activeSession.totalElapsedMs / 1000).toFixed(1)}s` : '0s');
     console.log('  AudioContext state:', audioContextRef.current?.state);
+    console.log('  noiseGeneratorRef.current exists:', !!noiseGeneratorRef.current);
+    console.log('  Gamma source before stop:', !!noiseGeneratorRef.current?.gammaSource);
 
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -1662,24 +1717,33 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     if (noiseGeneratorRef.current) {
+      console.log('  🔇 Stopping noise...');
       noiseGeneratorRef.current.stop();
-      console.log('  ✅ Audio stopped');
+      console.log('  ✅ Noise stopped');
 
       // Stop gamma wave if playing
+      console.log('  🔇 Stopping gamma wave...');
+      console.log('  Gamma source exists?', !!noiseGeneratorRef.current.gammaSource);
       noiseGeneratorRef.current.stopGammaWave();
       console.log('  ✅ Gamma wave stopped');
+      console.log('  Gamma source after stop:', !!noiseGeneratorRef.current?.gammaSource);
+    } else {
+      console.log('  ⚠️ noiseGeneratorRef.current is null, cannot stop audio or gamma');
     }
 
     if (activeSession) {
+      console.log('  📝 Marking session as completed...');
       const completedSession = {
         ...activeSession,
         completedAt: new Date().toISOString(),
       };
+      console.log('  Completed session object:', { completedAt: completedSession.completedAt });
       setActiveSession(completedSession);
       console.log('  ✅ Session marked complete');
     }
 
-    console.log('🏁 Session stopped, AudioContext final state:', audioContextRef.current?.state);
+    console.log('🏁 ========== SESSION STOP COMPLETE ==========');
+    console.log('  AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession]);
 
   // Pause/Resume
@@ -1746,8 +1810,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const performAutoRefresh = useCallback(async () => {
     console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
 
-    // Store current state
-    const wasGammaPlaying = !!noiseGeneratorRef.current?.gammaSource;
+    // Use user's overlay gamma preference (ref), not physical state
+    const shouldRestoreGamma = overlayGammaEnabledRef.current;
 
     // Stop audio (brief silence)
     if (noiseGeneratorRef.current) {
@@ -1787,10 +1851,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         );
         console.log('  ✅ Resumed current variation');
 
-        // Resume gamma if it was playing
-        if (wasGammaPlaying) {
-          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave');
+        // Resume gamma overlay if user has it enabled
+        if (shouldRestoreGamma) {
+          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrierRef.current, 40, overlayGammaVolumeRef.current);
+          console.log('  ✅ Resumed gamma wave overlay');
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
@@ -1798,7 +1862,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, overlayGammaCarrier]);
+  }, [activeSession]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
