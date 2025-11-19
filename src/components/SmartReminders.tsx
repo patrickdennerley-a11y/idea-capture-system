@@ -1,28 +1,78 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, FC } from 'react';
 import { Bell, X, Volume2, VolumeX, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { Idea, ActivityLog, Checklist, EndOfDayReview } from '../utils/apiService';
+
+// ========== TYPE DEFINITIONS ==========
+
+interface ReminderHistoryItem {
+  ideaId: number;
+  lastShown: string;
+  showCount: number;
+  dismissCount: number;
+  actionTaken: boolean;
+}
+
+interface Reminder {
+  id: number;
+  content: string;
+  tags?: string[];
+  dueDate?: string | null;
+  daysUntilDue?: number | null;
+  importance: number;
+  urgency: number;
+  urgencyLabel: string;
+  timesShown: number;
+  shouldPlaySound: boolean;
+}
+
+interface RemindersResponse {
+  reminders: Reminder[];
+  profile: {
+    forgetfulnessScore: number;
+    category: string;
+    recommendedFrequency: number;
+  };
+  metadata: {
+    hasHighPriority: boolean;
+    selectedCount: number;
+    totalCandidates: number;
+  };
+}
+
+interface SmartRemindersProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: EndOfDayReview[];
+}
+
+// ========== AUDIO CONTEXT SINGLETON ==========
 
 // Create AudioContext once at module level to avoid memory leaks
-let audioContext = null;
-const getAudioContext = () => {
-  if (!audioContext && (window.AudioContext || window.webkitAudioContext)) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext: AudioContext | null = null;
+
+const getAudioContext = (): AudioContext | null => {
+  if (!audioContext && (window.AudioContext || (window as any).webkitAudioContext)) {
+    audioContext = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
   }
   return audioContext;
 };
 
-const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
-  const [reminders, setReminders] = useState([]);
-  const [profile, setProfile] = useState(null);
-  const [metadata, setMetadata] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showReminders, setShowReminders] = useState(false);
-  const [reminderHistory, setReminderHistory] = useLocalStorage('neural-reminder-history', []);
+// ========== COMPONENT ==========
+
+const SmartReminders: FC<SmartRemindersProps> = ({ ideas, logs, checklist, reviews }) => {
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [profile, setProfile] = useState<RemindersResponse['profile'] | null>(null);
+  const [metadata, setMetadata] = useState<RemindersResponse['metadata'] | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [showReminders, setShowReminders] = useState<boolean>(false);
+  const [reminderHistory, setReminderHistory] = useLocalStorage<ReminderHistoryItem[]>('neural-reminder-history', []);
 
   // Play notification sound for high priority reminders (reuses audio context)
-  const playNotificationSound = () => {
+  const playNotificationSound = (): void => {
     if (!soundEnabled) return;
 
     const context = getAudioContext();
@@ -44,7 +94,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     oscillator.stop(context.currentTime + 0.5);
   };
 
-  const fetchReminders = async () => {
+  const fetchReminders = async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
@@ -65,7 +115,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
         throw new Error('Failed to fetch reminders');
       }
 
-      const data = await response.json();
+      const data: RemindersResponse = await response.json();
       setReminders(data.reminders);
       setProfile(data.profile);
       setMetadata(data.metadata);
@@ -83,10 +133,13 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
       data.reminders.forEach(reminder => {
         const existingIndex = updatedHistory.findIndex(h => h.ideaId === reminder.id);
         if (existingIndex >= 0) {
+          const existing = updatedHistory[existingIndex]!;
           updatedHistory[existingIndex] = {
-            ...updatedHistory[existingIndex],
+            ideaId: existing.ideaId,
             lastShown: now,
-            showCount: updatedHistory[existingIndex].showCount + 1
+            showCount: existing.showCount + 1,
+            dismissCount: existing.dismissCount,
+            actionTaken: existing.actionTaken
           };
         } else {
           updatedHistory.push({
@@ -103,13 +156,13 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
 
     } catch (err) {
       console.error('Error fetching reminders:', err);
-      setError(err.message);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   };
 
-  const dismissReminder = (reminderId) => {
+  const dismissReminder = (reminderId: number): void => {
     // Update history to track dismissal
     const updatedHistory = reminderHistory.map(h =>
       h.ideaId === reminderId
@@ -127,7 +180,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     }
   };
 
-  const getUrgencyColor = (urgencyLabel) => {
+  const getUrgencyColor = (urgencyLabel: string): string => {
     switch (urgencyLabel) {
       case 'Critical': return 'text-red-400 bg-red-950 border-red-800';
       case 'High': return 'text-orange-400 bg-orange-950 border-orange-800';
@@ -136,7 +189,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     }
   };
 
-  const getProfileColor = (category) => {
+  const getProfileColor = (category: string): string => {
     if (category === 'High Forgetfulness') return 'text-red-400';
     if (category === 'Average') return 'text-yellow-400';
     return 'text-green-400';
@@ -211,7 +264,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
           </div>
 
           {/* Profile Summary */}
-          {profile && (
+          {profile && metadata && (
             <div className="p-3 bg-neural-darker rounded-lg border border-gray-800 text-sm">
               <div className="flex items-center gap-4 text-gray-400">
                 <div className="flex items-center gap-2">
@@ -220,7 +273,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
                 </div>
                 <div className="flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
-                  <span>Showing {metadata?.selectedCount} of {metadata?.totalCandidates} candidates</span>
+                  <span>Showing {metadata.selectedCount} of {metadata.totalCandidates} candidates</span>
                 </div>
               </div>
             </div>
@@ -264,7 +317,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
 
                   {/* Metadata */}
                   <div className="flex items-center gap-4 text-xs text-gray-400">
-                    {reminder.dueDate && (
+                    {reminder.dueDate && reminder.daysUntilDue !== undefined && reminder.daysUntilDue !== null && (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         <span>

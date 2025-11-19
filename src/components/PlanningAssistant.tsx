@@ -41,12 +41,42 @@
  * - Backend endpoint: POST /api/plan-activity in server.cjs
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Compass, Sparkles, Clock, MapPin, Repeat, Zap, Lightbulb, X, History, Trash2, Save, BookmarkPlus } from 'lucide-react';
-import { getPlanningAdvice } from '../utils/apiService';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { formatDateTime } from '../utils/dateUtils';
+import { getPlanningAdvice } from '@/utils/apiService';
+import type { ActivityLog, Checklist, EndOfDayReview, Idea as ApiIdea } from '@/utils/apiService';
+import type { Idea } from './IdeaEditModal';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { formatDateTime } from '@/utils/dateUtils';
 import SmartReminders from './SmartReminders';
+
+// Type definitions
+interface PlanData {
+  summary?: string;
+  bestTime?: string;
+  duration?: string;
+  location?: string;
+  recurring?: string;
+  tips?: string[];
+  activity?: string;
+  timestamp?: string;
+  id?: number;
+  name?: string;
+  savedAt?: string;
+}
+
+interface PlanningAssistantProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: EndOfDayReview[];
+  isAnalyzing: boolean;
+  setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>;
+  plan: PlanData | null;
+  setPlan: React.Dispatch<React.SetStateAction<PlanData | null>>;
+  planError: string | null;
+  setPlanError: React.Dispatch<React.SetStateAction<string | null>>;
+}
 
 export default function PlanningAssistant({
   ideas,
@@ -59,14 +89,14 @@ export default function PlanningAssistant({
   setPlan,
   planError,
   setPlanError,
-}) {
+}: PlanningAssistantProps): JSX.Element {
   const [activity, setActivity] = useState('');
-  const [planHistory, setPlanHistory] = useLocalStorage('neural-plan-history', []);
+  const [planHistory, setPlanHistory] = useLocalStorage<PlanData[]>('neural-plan-history', []);
   const [showHistory, setShowHistory] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [planName, setPlanName] = useState('');
 
-  const handlePlan = async () => {
+  const handlePlan = async (): Promise<void> => {
     if (!activity.trim()) return;
 
     setIsAnalyzing(true);
@@ -107,16 +137,28 @@ export default function PlanningAssistant({
         return dueDate >= today;
       });
 
+      // Transform ideas to API format
+      const apiIdeas: ApiIdea[] = relevantIdeas.map(idea => ({
+        id: idea.id,
+        text: idea.content,
+        timestamp: idea.lastModified || new Date().toISOString(),
+        classification: idea.classificationType,
+        tags: idea.tags,
+        priority: idea.priority,
+        recurrence: idea.recurrence,
+        timeOfDay: idea.timeOfDay === null ? undefined : idea.timeOfDay,
+      }));
+
       const result = await getPlanningAdvice(
         currentActivity,
-        relevantIdeas,
+        apiIdeas,
         logs,
         checklist,
         reviews
       );
 
       if (result.success) {
-        const planWithMetadata = {
+        const planWithMetadata: PlanData = {
           ...result.data,
           activity: currentActivity,
           timestamp: new Date().toISOString(),
@@ -137,13 +179,13 @@ export default function PlanningAssistant({
     }
   };
 
-  const handleSavePlanWithName = () => {
+  const handleSavePlanWithName = (): void => {
     if (!plan || !planName.trim()) {
       alert('Please enter a name for this plan');
       return;
     }
 
-    const namedPlan = {
+    const namedPlan: PlanData = {
       ...plan,
       name: planName.trim(),
       savedAt: new Date().toISOString(),
@@ -165,19 +207,19 @@ export default function PlanningAssistant({
     alert('Plan named and saved!');
   };
 
-  const deletePlanFromHistory = (id) => {
+  const deletePlanFromHistory = (id: number): void => {
     if (confirm('Delete this plan from history?')) {
       setPlanHistory(prev => prev.filter(p => p.id !== id));
     }
   };
 
-  const loadPlanFromHistory = (historicalPlan) => {
+  const loadPlanFromHistory = (historicalPlan: PlanData): void => {
     setPlan(historicalPlan);
-    setActivity(historicalPlan.activity);
+    setActivity(historicalPlan.activity || '');
     setShowHistory(false);
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handlePlan();
@@ -231,7 +273,7 @@ export default function PlanningAssistant({
                       </div>
                     )}
                     <div className="text-xs text-gray-500">
-                      {formatDateTime(historicalPlan.savedAt || historicalPlan.timestamp)}
+                      {formatDateTime(historicalPlan.savedAt || historicalPlan.timestamp || '')}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -242,7 +284,7 @@ export default function PlanningAssistant({
                       View
                     </button>
                     <button
-                      onClick={() => deletePlanFromHistory(historicalPlan.id)}
+                      onClick={() => historicalPlan.id && deletePlanFromHistory(historicalPlan.id)}
                       className="text-gray-600 hover:text-red-400 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />

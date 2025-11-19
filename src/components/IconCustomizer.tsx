@@ -12,25 +12,52 @@
  * - Saved in localStorage
  */
 
-import { useState } from 'react';
+import { useState, FC, SVGProps, ChangeEvent } from 'react';
 import { X, Palette, RotateCcw, Brain as LucideBrain } from 'lucide-react';
 
+// ========== TYPE DEFINITIONS ==========
+
+export interface IconTheme {
+  icon: string;
+  strokeColor: string;
+  bgType: 'solid' | 'gradient';
+  bgColor: string;
+  bgGradientEnd: string;
+}
+
+interface IconOption {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface IconCustomizerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  theme: IconTheme;
+  setTheme: (theme: IconTheme) => void;
+}
+
+type IconComponent = FC<SVGProps<SVGSVGElement>>;
+
+// ========== CONSTANTS ==========
+
 // Default theme
-const DEFAULT_THEME = {
+export const DEFAULT_THEME: IconTheme = {
   icon: 'brain-lucide',
   strokeColor: '#ffffff',
-  bgType: 'gradient', // 'solid' or 'gradient'
-  bgColor: '#a855f7', // solid bg or gradient start
-  bgGradientEnd: '#ec4899', // gradient end
+  bgType: 'gradient',
+  bgColor: '#a855f7',
+  bgGradientEnd: '#ec4899',
 };
 
 // Icon SVG components
-const ICONS = {
-  'brain-lucide': (props) => (
+export const ICONS: Record<string, IconComponent> = {
+  'brain-lucide': (props: SVGProps<SVGSVGElement>) => (
     <LucideBrain {...props} />
   ),
 
-  brain: (props) => (
+  brain: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path
         d="M12 5c-2.5 0-4 2-4 4 0 1 .5 2 1 2.5C8 12 7 13 7 14.5c0 1.5 1 3 2.5 3 .5 0 1-.2 1.5-.5.5 1.5 2 2.5 3.5 2.5s3-1 3.5-2.5c.5.3 1 .5 1.5.5 1.5 0 2.5-1.5 2.5-3 0-1.5-1-2.5-2-3 .5-.5 1-1.5 1-2.5 0-2-1.5-4-4-4-1 0-2 .5-2.5 1-.5-.5-1.5-1-2.5-1z"
@@ -41,7 +68,7 @@ const ICONS = {
     </svg>
   ),
 
-  sine: (props) => (
+  sine: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* X-axis */}
       <path
@@ -61,7 +88,7 @@ const ICONS = {
     </svg>
   ),
 
-  neuralink: (props) => (
+  neuralink: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="8" strokeWidth="2" />
       <circle cx="12" cy="8" r="1.5" fill="currentColor" />
@@ -73,7 +100,7 @@ const ICONS = {
     </svg>
   ),
 
-  rocket: (props) => (
+  rocket: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Rocket body */}
       <path
@@ -91,7 +118,7 @@ const ICONS = {
     </svg>
   ),
 
-  wind: (props) => (
+  wind: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path d="M9 6h10a3 3 0 0 1 0 6H9" strokeWidth="2" strokeLinecap="round" />
       <path d="M5 12h14a3 3 0 0 1 0 6H5" strokeWidth="2" strokeLinecap="round" />
@@ -99,7 +126,7 @@ const ICONS = {
     </svg>
   ),
 
-  meditation: (props) => (
+  meditation: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Head */}
       <circle cx="12" cy="8" r="2.5" strokeWidth="2" />
@@ -117,7 +144,7 @@ const ICONS = {
     </svg>
   ),
 
-  angel: (props) => (
+  angel: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Halo */}
       <circle cx="12" cy="4" r="2" strokeWidth="1.5" />
@@ -175,7 +202,7 @@ const ICONS = {
     </svg>
   ),
 
-  uni: (props) => (
+  uni: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path
         d="M12 3l9 4.5v5.5c0 4-2.5 6.5-9 9.5-6.5-3-9-5.5-9-9.5V7.5z"
@@ -188,7 +215,7 @@ const ICONS = {
   ),
 
   // Neuralink-style icons
-  constellation: (props) => (
+  constellation: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Constellation nodes */}
@@ -203,7 +230,7 @@ const ICONS = {
     </svg>
   ),
 
-  molecule: (props) => (
+  molecule: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Central node */}
@@ -221,7 +248,7 @@ const ICONS = {
     </svg>
   ),
 
-  network: (props) => (
+  network: (props: SVGProps<SVGSVGElement>) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Neural network nodes - 3 layers */}
@@ -238,7 +265,7 @@ const ICONS = {
   ),
 };
 
-const ICON_OPTIONS = [
+const ICON_OPTIONS: IconOption[] = [
   { id: 'brain-lucide', name: 'Brain (Original)', description: 'Lucide brain icon' },
   { id: 'brain', name: 'Brain (Alt)', description: 'Neural network style' },
   { id: 'sine', name: 'Sine Wave', description: 'Mathematics & flow' },
@@ -253,21 +280,23 @@ const ICON_OPTIONS = [
   { id: 'uni', name: 'University', description: 'Melbourne Uni shield' },
 ];
 
-export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
-  const [localTheme, setLocalTheme] = useState(theme);
+// ========== COMPONENT ==========
+
+const IconCustomizer: FC<IconCustomizerProps> = ({ isOpen, onClose, theme, setTheme }) => {
+  const [localTheme, setLocalTheme] = useState<IconTheme>(theme);
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
+  const handleSave = (): void => {
     setTheme(localTheme);
     onClose();
   };
 
-  const handleReset = () => {
+  const handleReset = (): void => {
     setLocalTheme(DEFAULT_THEME);
   };
 
-  const SelectedIcon = ICONS[localTheme.icon];
+  const SelectedIcon = (ICONS[localTheme.icon] || ICONS['brain-lucide']) as IconComponent;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -313,7 +342,7 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
             <h3 className="text-lg font-bold mb-3">Choose Icon</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {ICON_OPTIONS.map((option) => {
-                const Icon = ICONS[option.id];
+                const Icon = (ICONS[option.id] || ICONS['brain-lucide']) as IconComponent;
                 return (
                   <button
                     key={option.id}
@@ -342,13 +371,13 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
               <input
                 type="color"
                 value={localTheme.strokeColor}
-                onChange={(e) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
                 className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
               />
               <input
                 type="text"
                 value={localTheme.strokeColor}
-                onChange={(e) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
                 className="neural-input flex-1"
                 placeholder="#ffffff"
               />
@@ -391,13 +420,13 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                   <input
                     type="color"
                     value={localTheme.bgColor}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
                     className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
                   />
                   <input
                     type="text"
                     value={localTheme.bgColor}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
                     className="neural-input flex-1"
                     placeholder="#a855f7"
                   />
@@ -409,13 +438,13 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                   <input
                     type="color"
                     value={localTheme.bgGradientEnd}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
                     className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
                   />
                   <input
                     type="text"
                     value={localTheme.bgGradientEnd}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
                     className="neural-input flex-1"
                     placeholder="#ec4899"
                   />
@@ -429,13 +458,13 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                 <input
                   type="color"
                   value={localTheme.bgColor}
-                  onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
                   className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
                 />
                 <input
                   type="text"
                   value={localTheme.bgColor}
-                  onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
                   className="neural-input flex-1"
                   placeholder="#a855f7"
                 />
@@ -463,7 +492,6 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
       </div>
     </div>
   );
-}
+};
 
-// Export the ICONS object for use in App.jsx
-export { ICONS, DEFAULT_THEME };
+export default IconCustomizer;

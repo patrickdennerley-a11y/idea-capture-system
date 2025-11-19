@@ -1,14 +1,68 @@
-import { useState, useEffect } from 'react';
+import { useState, FormEvent, KeyboardEvent, ChangeEvent } from 'react';
 import { X, Save, Trash2, Sparkles, Loader } from 'lucide-react';
+import type {
+  Idea,
+  ClassificationType,
+  RecurrenceType,
+  TimeOfDayType,
+  PriorityType,
+  ClassificationResult
+} from '../types';
 
-const CLASSIFICATION_TYPES = [
+// Re-export for backward compatibility
+export type {
+  ClassificationType,
+  RecurrenceType,
+  TimeOfDayType,
+  PriorityType,
+  Idea
+};
+
+// ============================================================================
+// Type Definitions (Local)
+// ============================================================================
+
+interface ClassificationTypeOption {
+  value: ClassificationType;
+  label: string;
+  description: string;
+}
+
+interface RecurrenceOption {
+  value: RecurrenceType;
+  label: string;
+}
+
+interface TimeOfDayOption {
+  value: TimeOfDayType;
+  label: string;
+}
+
+interface PriorityOption {
+  value: PriorityType;
+  label: string;
+}
+
+interface IdeaEditModalProps {
+  idea: Idea;
+  onSave: (idea: Idea) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+  onClassify: (content: string, context: string, tags: string[]) => Promise<ClassificationResult | null>;
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+export const CLASSIFICATION_TYPES: ClassificationTypeOption[] = [
   { value: 'general', label: 'General Idea', description: 'Default - not used for automated planning' },
   { value: 'routine', label: 'Routine Activity', description: 'Recurring patterns for daily routine generation' },
   { value: 'checklist', label: 'Checklist Item', description: 'One-time tasks for daily checklist' },
   { value: 'timetable', label: 'Timetable Event', description: 'Specific date/time events' }
 ];
 
-const IDEA_TAGS = [
+export const IDEA_TAGS: string[] = [
   'business',
   'study',
   'personal',
@@ -20,14 +74,14 @@ const IDEA_TAGS = [
   'someday-maybe'
 ];
 
-const RECURRENCE_OPTIONS = [
+export const RECURRENCE_OPTIONS: RecurrenceOption[] = [
   { value: 'none', label: 'None' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' }
 ];
 
-const TIME_OF_DAY_OPTIONS = [
+export const TIME_OF_DAY_OPTIONS: TimeOfDayOption[] = [
   { value: null, label: 'Any time' },
   { value: 'morning', label: 'Morning (6am-12pm)' },
   { value: 'afternoon', label: 'Afternoon (12pm-5pm)' },
@@ -35,41 +89,46 @@ const TIME_OF_DAY_OPTIONS = [
   { value: 'night', label: 'Night (9pm-6am)' }
 ];
 
-const PRIORITY_OPTIONS = [
+export const PRIORITY_OPTIONS: PriorityOption[] = [
   { value: 'low', label: 'Low Priority' },
   { value: 'medium', label: 'Medium Priority' },
   { value: 'high', label: 'High Priority' }
 ];
 
-const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
-  const [editedIdea, setEditedIdea] = useState({
+// ============================================================================
+// Component
+// ============================================================================
+
+const IdeaEditModal: React.FC<IdeaEditModalProps> = ({ idea, onSave, onDelete, onClose, onClassify }) => {
+  const [editedIdea, setEditedIdea] = useState<Idea>({
+    ...idea,
     content: idea.content || '',
     tags: idea.tags || [],
     context: idea.context || '',
     dueDate: idea.dueDate || '',
     classificationType: idea.classificationType || 'general',
-    duration: idea.duration || null,
+    duration: idea.duration ?? null,
     recurrence: idea.recurrence || 'none',
-    timeOfDay: idea.timeOfDay || null,
+    timeOfDay: idea.timeOfDay ?? null,
     priority: idea.priority || 'medium',
     autoClassified: idea.autoClassified || false
   });
 
-  const [customTag, setCustomTag] = useState('');
-  const [isClassifying, setIsClassifying] = useState(false);
+  const [customTag, setCustomTag] = useState<string>('');
+  const [isClassifying, setIsClassifying] = useState<boolean>(false);
 
-  const handleAutoClassify = async () => {
+  const handleAutoClassify = async (): Promise<void> => {
     setIsClassifying(true);
     try {
-      const result = await onClassify(editedIdea.content, editedIdea.context, editedIdea.tags);
+      const result = await onClassify(editedIdea.content, editedIdea.context ?? '', editedIdea.tags);
       if (result) {
         setEditedIdea(prev => ({
           ...prev,
-          classificationType: result.classificationType || prev.classificationType,
-          duration: result.duration || prev.duration,
-          recurrence: result.recurrence || prev.recurrence,
-          timeOfDay: result.timeOfDay || prev.timeOfDay,
-          priority: result.priority || prev.priority,
+          classificationType: result.classificationType ?? prev.classificationType,
+          duration: result.duration ?? prev.duration,
+          recurrence: result.recurrence ?? prev.recurrence,
+          timeOfDay: result.timeOfDay ?? prev.timeOfDay,
+          priority: result.priority ?? prev.priority,
           autoClassified: true
         }));
       }
@@ -80,7 +139,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }
   };
 
-  const toggleTag = (tag) => {
+  const toggleTag = (tag: string): void => {
     setEditedIdea(prev => ({
       ...prev,
       tags: prev.tags.includes(tag)
@@ -89,7 +148,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }));
   };
 
-  const addCustomTag = () => {
+  const addCustomTag = (): void => {
     if (customTag.trim() && !editedIdea.tags.includes(customTag.trim().toLowerCase())) {
       setEditedIdea(prev => ({
         ...prev,
@@ -99,20 +158,20 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }
   };
 
-  const removeTag = (tagToRemove) => {
+  const removeTag = (tagToRemove: string): void => {
     setEditedIdea(prev => ({
       ...prev,
       tags: prev.tags.filter(t => t !== tagToRemove)
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = (): void => {
     if (!editedIdea.content.trim()) {
       alert('Idea content cannot be empty');
       return;
     }
 
-    const updatedIdea = {
+    const updatedIdea: Idea = {
       ...idea,
       ...editedIdea,
       lastModified: new Date().toISOString()
@@ -121,13 +180,13 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     onSave(updatedIdea);
   };
 
-  const handleDelete = () => {
+  const handleDelete = (): void => {
     if (confirm('Are you sure you want to delete this idea? This cannot be undone.')) {
       onDelete(idea.id);
     }
   };
 
-  const getClassificationColor = (type) => {
+  const getClassificationColor = (type: ClassificationType): string => {
     switch (type) {
       case 'routine': return 'bg-purple-950 border-purple-700 text-purple-300';
       case 'checklist': return 'bg-blue-950 border-blue-700 text-blue-300';
@@ -152,7 +211,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
         </div>
 
         {/* Content */}
-        <form onSubmit={(e) => {
+        <form onSubmit={(e: FormEvent) => {
           e.preventDefault();
           handleSave();
         }}>
@@ -164,7 +223,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             </label>
             <textarea
               value={editedIdea.content}
-              onChange={(e) => setEditedIdea(prev => ({ ...prev, content: e.target.value }))}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setEditedIdea(prev => ({ ...prev, content: e.target.value }))}
               className="neural-input min-h-[100px]"
               placeholder="What's your idea?"
             />
@@ -248,8 +307,8 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
               <input
                 type="text"
                 value={customTag}
-                onChange={(e) => setCustomTag(e.target.value)}
-                onKeyPress={(e) => {
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setCustomTag(e.target.value)}
+                onKeyPress={(e: KeyboardEvent<HTMLInputElement>) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     addCustomTag();
@@ -296,7 +355,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             </label>
             <textarea
               value={editedIdea.context}
-              onChange={(e) => setEditedIdea(prev => ({ ...prev, context: e.target.value }))}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setEditedIdea(prev => ({ ...prev, context: e.target.value }))}
               className="neural-input min-h-[60px]"
               placeholder="Additional context or notes..."
             />
@@ -310,7 +369,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             <input
               type="date"
               value={editedIdea.dueDate}
-              onChange={(e) => setEditedIdea(prev => ({ ...prev, dueDate: e.target.value }))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEditedIdea(prev => ({ ...prev, dueDate: e.target.value }))}
               className="neural-input"
             />
             {editedIdea.dueDate && (
@@ -331,10 +390,10 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
             </label>
             <input
               type="number"
-              value={editedIdea.duration || ''}
-              onChange={(e) => setEditedIdea(prev => ({
+              value={editedIdea.duration ?? ''}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEditedIdea(prev => ({
                 ...prev,
-                duration: e.target.value ? parseInt(e.target.value) : null
+                duration: e.target.value ? parseInt(e.target.value, 10) : null
               }))}
               className="neural-input"
               placeholder="e.g., 30"
@@ -350,7 +409,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
               </label>
               <select
                 value={editedIdea.recurrence}
-                onChange={(e) => setEditedIdea(prev => ({ ...prev, recurrence: e.target.value }))}
+                onChange={(e: ChangeEvent<HTMLSelectElement>) => setEditedIdea(prev => ({ ...prev, recurrence: e.target.value as RecurrenceType }))}
                 className="neural-input pr-10"
               >
                 {RECURRENCE_OPTIONS.map(option => (
@@ -368,15 +427,15 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
               Preferred Time of Day
             </label>
             <select
-              value={editedIdea.timeOfDay || ''}
-              onChange={(e) => setEditedIdea(prev => ({
+              value={editedIdea.timeOfDay ?? ''}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setEditedIdea(prev => ({
                 ...prev,
-                timeOfDay: e.target.value || null
+                timeOfDay: (e.target.value || null) as TimeOfDayType
               }))}
               className="neural-input pr-10"
             >
               {TIME_OF_DAY_OPTIONS.map(option => (
-                <option key={option.label} value={option.value || ''}>
+                <option key={option.label} value={option.value ?? ''}>
                   {option.label}
                 </option>
               ))}

@@ -10,12 +10,87 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3 } from 'lucide-react';
+import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, ChevronDown, ChevronUp, Trash2, BarChart3 } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+
+// Type definitions
+interface NoiseParams {
+  bassBand: number;
+  midBand: number;
+  trebleBand: number;
+  resonanceFreq: number;
+  resonanceQ: number;
+  resonanceGain: number;
+  spectralTilt: number;
+  carrierFreq?: number;
+  volume?: number;
+}
+
+interface Variation {
+  id: string;
+  type: string;
+  variationNumber: number;
+  parameters: NoiseParams | null;
+  distanceFromPrevious: number | null;
+  distanceMetrics: DistanceMetrics | null;
+  timestamp: string;
+  durationMinutes: number;
+}
+
+interface DistanceMetrics {
+  parameterDistance: number;
+  spectralDistance: number;
+  totalDistance: number;
+}
+
+interface NoiseSession {
+  id: number;
+  title: string;
+  createdAt: string;
+  completedAt: string | null;
+  variations: Variation[];
+  currentType: string;
+  currentVariationStart: number;
+  sessionStartTime: number;
+  totalElapsed: number;
+  totalElapsedMs: number;
+  isIndefinite: boolean;
+  inDelay: boolean;
+  settings: {
+    durationMinutes: number;
+    delaySeconds: number;
+    noiseTypes: string[];
+    volume: number;
+    gammaVolume: number;
+  };
+  isPaused: boolean;
+}
+
+interface PlaylistEntry {
+  id: number;
+  timestamp: string;
+  data: NoiseSession;
+  ideaCount: number;
+}
 
 // Web Audio API Noise Generation
 class NoiseGenerator {
-  constructor(audioContext = null) {
+  audioContext: AudioContext | null;
+  sourceNode: AudioBufferSourceNode | null;
+  gainNode: GainNode | null;
+  bassFilter: BiquadFilterNode | null;
+  midFilter: BiquadFilterNode | null;
+  trebleFilter: BiquadFilterNode | null;
+  resonanceFilter: BiquadFilterNode | null;
+  brownLowpass: BiquadFilterNode | null;
+  currentParams: NoiseParams | null;
+  stopTimeout: NodeJS.Timeout | null;
+  isPlaying: boolean;
+  intentionallyStopping: boolean;
+  gammaSource: AudioBufferSourceNode | null;
+  gammaGain: GainNode | null;
+
+  constructor(audioContext: AudioContext | null = null) {
     this.audioContext = audioContext;
     this.sourceNode = null;
     this.gainNode = null;
@@ -23,6 +98,7 @@ class NoiseGenerator {
     this.midFilter = null;
     this.trebleFilter = null;
     this.resonanceFilter = null;
+    this.brownLowpass = null;
     this.currentParams = null; // Store current parameters for release envelope
     this.stopTimeout = null; // Track pending cleanup timeout
     this.isPlaying = false;
@@ -32,7 +108,7 @@ class NoiseGenerator {
     this.gammaGain = null;
   }
 
-  initialize(initialVolume = 50) {
+  initialize(initialVolume: number = 50) {
     if (!this.audioContext) {
       throw new Error('AudioContext must be provided to NoiseGenerator');
     }
@@ -55,7 +131,9 @@ class NoiseGenerator {
     }
   }
 
-  createEQFilters(params) {
+  createEQFilters(params: NoiseParams) {
+    if (!this.audioContext) throw new Error('AudioContext is null');
+
     // Bass filter (20-250 Hz)
     this.bassFilter = this.audioContext.createBiquadFilter();
     this.bassFilter.type = 'peaking';
@@ -85,7 +163,9 @@ class NoiseGenerator {
     this.resonanceFilter.gain.value = 6; // Fixed gain for resonance peak
   }
 
-  generatePinkNoise(params) {
+  generatePinkNoise(params: any) {
+    if (!this.audioContext) throw new Error('AudioContext is null');
+
     console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
@@ -143,7 +223,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  generateBrownNoise(params) {
+  generateBrownNoise(params: any) {
     console.log('═══ BROWN NOISE DEBUG START ═══');
     console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
 
@@ -286,7 +366,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  async playNoise(type, params, volume = 50) {
+  async playNoise(type: string, params: any, volume: number = 50) {
     try {
       console.log('═══ PLAY NOISE DEBUG START ═══');
       console.log('Type:', type);
@@ -296,6 +376,11 @@ class NoiseGenerator {
       this.initialize(volume);
 
       // Check AudioContext state before playing
+      if (!this.audioContext) {
+        console.error('❌ Cannot play - AudioContext is null');
+        throw new Error('AudioContext is null');
+      }
+
       if (this.audioContext.state === 'closed') {
         console.error('❌ Cannot play - AudioContext is closed');
         throw new Error('AudioContext is closed');
@@ -381,39 +466,45 @@ class NoiseGenerator {
         console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
 
         // Create audio chain with brown filter: source -> brownLowpass -> bass -> mid -> treble -> resonance -> gain -> destination
-        this.sourceNode.connect(this.brownLowpass);
-        this.brownLowpass.connect(this.bassFilter);
+        if (this.sourceNode && this.brownLowpass && this.bassFilter) {
+          this.sourceNode.connect(this.brownLowpass);
+          this.brownLowpass.connect(this.bassFilter);
+        }
       } else {
         // Pink noise: standard chain without extra low-pass
-        this.sourceNode.connect(this.bassFilter);
+        if (this.sourceNode && this.bassFilter) {
+          this.sourceNode.connect(this.bassFilter);
+        }
       }
-
-      // Rest of chain (same for both):
-      this.bassFilter.connect(this.midFilter);
-      this.midFilter.connect(this.trebleFilter);
-      this.trebleFilter.connect(this.resonanceFilter);
-      this.resonanceFilter.connect(this.gainNode);
-
-      console.log('✓ Audio node chain connected:', type === 'brown' ?
-        'source → brownLowpass → bass → mid → treble → resonance → gain → destination' :
-        'source → bass → mid → treble → resonance → gain → destination'
-      );
-
-      // Verify gainNode exists and is connected
-      console.log('GainNode state:', {
-        exists: !!this.gainNode,
-        currentValue: this.gainNode?.gain?.value,
-        connected: !!this.gainNode
-      });
 
       // Apply envelope (attack)
       const now = this.audioContext.currentTime;
       const attackTime = params.attackTime / 1000; // Convert ms to seconds
 
-      // Attack: fade in from 0 to target volume
-      this.gainNode.gain.cancelScheduledValues(now);
-      this.gainNode.gain.setValueAtTime(0, now);
-      this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+      // Rest of chain (same for both):
+      if (this.bassFilter && this.midFilter && this.trebleFilter && this.resonanceFilter && this.gainNode) {
+        this.bassFilter.connect(this.midFilter);
+        this.midFilter.connect(this.trebleFilter);
+        this.trebleFilter.connect(this.resonanceFilter);
+        this.resonanceFilter.connect(this.gainNode);
+
+        console.log('✓ Audio node chain connected:', type === 'brown' ?
+          'source → brownLowpass → bass → mid → treble → resonance → gain → destination' :
+          'source → bass → mid → treble → resonance → gain → destination'
+        );
+
+        // Verify gainNode exists and is connected
+        console.log('GainNode state:', {
+          exists: !!this.gainNode,
+          currentValue: this.gainNode?.gain?.value,
+          connected: !!this.gainNode
+        });
+
+        // Attack: fade in from 0 to target volume
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(0, now);
+        this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+      }
 
       console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
 
@@ -425,8 +516,10 @@ class NoiseGenerator {
       // Note: Release will be applied in stop() method when explicitly stopped
 
       console.log('→ Starting playback NOW...');
-      this.sourceNode.start(0);
-      this.isPlaying = true;
+      if (this.sourceNode) {
+        this.sourceNode.start(0);
+        this.isPlaying = true;
+      }
 
       console.log(`✅ PLAYBACK STARTED - ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
       console.log('═══ PLAY NOISE DEBUG END ═══');
@@ -436,7 +529,7 @@ class NoiseGenerator {
     }
   }
 
-  stop(applyRelease = true) {
+  stop(applyRelease: boolean = true) {
     // Clear any pending cleanup timeout
     if (this.stopTimeout) {
       clearTimeout(this.stopTimeout);
@@ -539,14 +632,16 @@ class NoiseGenerator {
     this.isPlaying = false;
   }
 
-  setVolume(volume) {
+  setVolume(volume: number) {
     if (this.gainNode) {
       this.gainNode.gain.value = volume / 100;
     }
   }
 
   // Gamma Wave Generation - 40Hz Binaural Beat
-  generateGammaWave(duration, carrierFreq = 200, gammaOffset = 40) {
+  generateGammaWave(duration: number, carrierFreq: number = 200, gammaOffset: number = 40) {
+    if (!this.audioContext) throw new Error('AudioContext is null');
+
     const sampleRate = this.audioContext.sampleRate;
     const bufferSize = sampleRate * duration;
     const buffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
@@ -567,7 +662,9 @@ class NoiseGenerator {
     return buffer;
   }
 
-  startGammaWave(carrierFreq, gammaOffset, volume) {
+  startGammaWave(carrierFreq: number, gammaOffset: number, volume: number) {
+    if (!this.audioContext) throw new Error('AudioContext is null');
+
     if (this.gammaSource) {
       this.stopGammaWave();
     }
@@ -608,7 +705,7 @@ class NoiseGenerator {
     }
   }
 
-  setGammaVolume(volume) {
+  setGammaVolume(volume: number) {
     if (this.gammaGain) {
       this.gammaGain.gain.value = volume / 100;
     }

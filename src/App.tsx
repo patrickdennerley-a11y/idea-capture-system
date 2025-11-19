@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
@@ -8,6 +8,7 @@ import NoiseHub from './components/NoiseHub';
 import PlanningAssistant from './components/PlanningAssistant';
 import RoutineGenerator from './components/RoutineGenerator';
 import IconCustomizer, { ICONS, DEFAULT_THEME } from './components/IconCustomizer';
+import type { SuggestionState } from './components/SmartRoutines';
 import {
   Lightbulb,
   CheckCircle2,
@@ -37,10 +38,10 @@ function App() {
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
 
   // State with localStorage persistence
-  const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
-  const [logs, setLogs] = useLocalStorage('neural-logs', []);
-  const [reviews, setReviews] = useLocalStorage('neural-reviews', []);
-  const [checklist, setChecklist] = useLocalStorage('neural-checklist', {
+  const [ideas, setIdeas] = useLocalStorage<any[]>('neural-ideas', []);
+  const [logs, setLogs] = useLocalStorage<any[]>('neural-logs', []);
+  const [reviews, setReviews] = useLocalStorage<any[]>('neural-reviews', []);
+  const [checklist, setChecklist] = useLocalStorage<any>('neural-checklist', {
     date: getTodayString(),
     items: [],
   });
@@ -48,30 +49,30 @@ function App() {
 
   // Routine generation state (persists across tab switches)
   const [isGeneratingRoutine, setIsGeneratingRoutine] = useState(false);
-  const [generatedRoutine, setGeneratedRoutine] = useState(null);
-  const [routineError, setRoutineError] = useState(null);
+  const [generatedRoutine, setGeneratedRoutine] = useState<any>(null);
+  const [routineError, setRoutineError] = useState<string | null>(null);
 
   // Idea organization state (persists across tab switches)
   const [isOrganizing, setIsOrganizing] = useState(false);
-  const [organizedData, setOrganizedData] = useState(null);
-  const [organizationError, setOrganizationError] = useState(null);
+  const [organizedData, setOrganizedData] = useState<any>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(null);
   const [showOrganized, setShowOrganized] = useState(false);
 
   // Planning state (persists across tab switches)
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [plan, setPlan] = useState(null);
-  const [planError, setPlanError] = useState(null);
+  const [plan, setPlan] = useState<any>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   // Smart Routines state (persists across tab switches)
-  const [smartRoutines, setSmartRoutines] = useState([]);
+  const [smartRoutines, setSmartRoutines] = useState<any[]>([]);
   const [isGeneratingSmartRoutines, setIsGeneratingSmartRoutines] = useState(false);
-  const [smartRoutinesError, setSmartRoutinesError] = useState(null);
+  const [smartRoutinesError, setSmartRoutinesError] = useState<string | null>(null);
   const [showSmartRoutines, setShowSmartRoutines] = useState(false);
-  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState(null);
-  const [smartRoutineStates, setSmartRoutineStates] = useState({});
+  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState<any>(null);
+  const [smartRoutineStates, setSmartRoutineStates] = useState<Record<number, SuggestionState>>({});
 
   // History for all AI generations
-  const [generationHistory, setGenerationHistory] = useLocalStorage('neural-generation-history', {
+  const [generationHistory, setGenerationHistory] = useLocalStorage<any>('neural-generation-history', {
     routines: [],
     smartRoutines: [],
     ideas: [],
@@ -79,14 +80,14 @@ function App() {
   });
 
   // Noise Generator state (persists across tab switches)
-  const audioContextRef = useRef(null);
-  const [activeSession, setActiveSession] = useState(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const [activeSession, setActiveSession] = useState<any>(null);
 
   // Initialize audio context once at app level (never destroyed)
   useEffect(() => {
     if (!audioContextRef.current && typeof window !== 'undefined') {
       try {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         console.log('🔊 Audio context initialized at app level');
       } catch (err) {
         console.error('Failed to initialize audio context:', err);
@@ -103,7 +104,7 @@ function App() {
   }, []);
 
   // Helper to check if a tab has AI work in progress
-  const isTabProcessing = (tabId) => {
+  const isTabProcessing = (tabId: string) => {
     switch (tabId) {
       case 'capture':
         return isOrganizing;
@@ -202,7 +203,20 @@ function App() {
           />
         );
       default:
-        return <IdeaCapture ideas={ideas} setIdeas={setIdeas} />;
+        return (
+          <IdeaCapture
+            ideas={ideas}
+            setIdeas={setIdeas}
+            isOrganizing={isOrganizing}
+            setIsOrganizing={setIsOrganizing}
+            organizedData={organizedData}
+            setOrganizedData={setOrganizedData}
+            organizationError={organizationError}
+            setOrganizationError={setOrganizationError}
+            showOrganized={showOrganized}
+            setShowOrganized={setShowOrganized}
+          />
+        );
     }
   }, [
     activeTab,
@@ -274,6 +288,7 @@ function App() {
               >
                 {(() => {
                   const IconComponent = ICONS[iconTheme.icon];
+                  if (!IconComponent) return null;
                   return (
                     <IconComponent
                       className="w-6 h-6"

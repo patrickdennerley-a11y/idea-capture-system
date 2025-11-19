@@ -27,12 +27,73 @@
  * - Breaks and buffer time
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Sparkles, Calendar, Clock, Zap, RefreshCw, Save, Trash2, AlertCircle, TrendingUp, Eye, X, Lightbulb } from 'lucide-react';
-import { generateDailyRoutine } from '../utils/apiService';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { generateDailyRoutine } from '@/utils/apiService';
+import type { ActivityLog, Checklist, EndOfDayReview, Idea as ApiIdea } from '@/utils/apiService';
+import type { Idea } from './IdeaEditModal';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import CalendarView from './CalendarView';
 import SmartRoutines from './SmartRoutines';
+
+// Type definitions
+type Priority = 'high' | 'medium' | 'low';
+type SuggestionState = 'pending' | 'confirmed' | 'skipped' | 'discarded';
+
+interface ScheduleBlock {
+  time: string;
+  activity: string;
+  description?: string;
+  priority?: Priority;
+  reasoning?: string;
+}
+
+interface GeneratedRoutine {
+  id?: number | null;
+  timestamp?: string;
+  date?: string;
+  summary?: string;
+  schedule?: ScheduleBlock[];
+  energyTips?: string[];
+  name?: string;
+  savedAt?: string;
+}
+
+interface SuggestionMetadata {
+  directCount: number;
+  mashupCount: number;
+}
+
+interface GenerationHistory {
+  smartRoutines?: any[];
+}
+
+interface RoutineGeneratorProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: EndOfDayReview[];
+  isGeneratingRoutine: boolean;
+  setIsGeneratingRoutine: React.Dispatch<React.SetStateAction<boolean>>;
+  generatedRoutine: GeneratedRoutine | null;
+  setGeneratedRoutine: React.Dispatch<React.SetStateAction<GeneratedRoutine | null>>;
+  routineError: string | null;
+  setRoutineError: React.Dispatch<React.SetStateAction<string | null>>;
+  smartRoutines: any[];
+  setSmartRoutines: React.Dispatch<React.SetStateAction<any[]>>;
+  isGeneratingSmartRoutines: boolean;
+  setIsGeneratingSmartRoutines: React.Dispatch<React.SetStateAction<boolean>>;
+  smartRoutinesError: string | null;
+  setSmartRoutinesError: React.Dispatch<React.SetStateAction<string | null>>;
+  showSmartRoutines: boolean;
+  setShowSmartRoutines: React.Dispatch<React.SetStateAction<boolean>>;
+  smartRoutinesMetadata: SuggestionMetadata | null;
+  setSmartRoutinesMetadata: React.Dispatch<React.SetStateAction<SuggestionMetadata | null>>;
+  smartRoutineStates: Record<number, SuggestionState>;
+  setSmartRoutineStates: React.Dispatch<React.SetStateAction<Record<number, SuggestionState>>>;
+  generationHistory: GenerationHistory;
+  setGenerationHistory: React.Dispatch<React.SetStateAction<GenerationHistory>>;
+}
 
 export default function RoutineGenerator({
   ideas,
@@ -59,15 +120,15 @@ export default function RoutineGenerator({
   setSmartRoutineStates,
   generationHistory,
   setGenerationHistory
-}) {
-  const [currentView, setCurrentView] = useState('generator'); // 'generator' or 'calendar'
-  const [savedRoutines, setSavedRoutines] = useLocalStorage('neural-saved-routines', []);
+}: RoutineGeneratorProps): JSX.Element {
+  const [currentView, setCurrentView] = useState<'generator' | 'smart-routines' | 'calendar'>('generator');
+  const [savedRoutines, setSavedRoutines] = useLocalStorage<GeneratedRoutine[]>('neural-saved-routines', []);
   const [showHistory, setShowHistory] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [routineName, setRoutineName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (): Promise<void> => {
     setIsGeneratingRoutine(true);
     setRoutineError(null);
     setGeneratedRoutine(null);
@@ -99,10 +160,22 @@ export default function RoutineGenerator({
         return dueDate >= today;
       });
 
-      const result = await generateDailyRoutine(relevantIdeas, logs, checklist, reviews);
+      // Transform ideas to API format
+      const apiIdeas: ApiIdea[] = relevantIdeas.map(idea => ({
+        id: idea.id,
+        text: idea.content,
+        timestamp: idea.lastModified || new Date().toISOString(),
+        classification: idea.classificationType,
+        tags: idea.tags,
+        priority: idea.priority,
+        recurrence: idea.recurrence,
+        timeOfDay: idea.timeOfDay === null ? undefined : idea.timeOfDay,
+      }));
+
+      const result = await generateDailyRoutine(apiIdeas, logs, checklist, reviews);
 
       if (result.success) {
-        const routineWithTimestamp = {
+        const routineWithTimestamp: GeneratedRoutine = {
           ...result.data,
           id: null, // No ID yet - will get one when saved
           timestamp: new Date().toISOString(),
@@ -119,13 +192,13 @@ export default function RoutineGenerator({
     }
   };
 
-  const handleSaveClick = () => {
+  const handleSaveClick = (): void => {
     if (!generatedRoutine) return;
     setRoutineName('');
     setShowSaveDialog(true);
   };
 
-  const handleDeleteBlock = (indexToDelete) => {
+  const handleDeleteBlock = (indexToDelete: number): void => {
     if (!generatedRoutine?.schedule) return;
 
     const updatedSchedule = generatedRoutine.schedule.filter((_, index) => index !== indexToDelete);
@@ -135,13 +208,13 @@ export default function RoutineGenerator({
     });
   };
 
-  const handleSaveConfirm = () => {
+  const handleSaveConfirm = (): void => {
     if (!generatedRoutine || !routineName.trim()) {
       alert('Please enter a routine name');
       return;
     }
 
-    const saved = {
+    const saved: GeneratedRoutine = {
       id: Date.now(), // Always create new ID when saving
       ...generatedRoutine,
       name: routineName.trim(),
@@ -154,13 +227,13 @@ export default function RoutineGenerator({
     alert('Routine saved! Check History to view.');
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = (id: number): void => {
     if (confirm('Delete this saved routine?')) {
       setSavedRoutines(prev => prev.filter(r => r.id !== id));
     }
   };
 
-  const handleLoad = (routine) => {
+  const handleLoad = (routine: GeneratedRoutine): void => {
     // Remove ID so if user saves after modifying, it creates new routine
     const { id, ...routineWithoutId } = routine;
     setGeneratedRoutine(routineWithoutId);
@@ -173,7 +246,7 @@ export default function RoutineGenerator({
     routine.date?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority: string | undefined): string => {
     switch (priority?.toLowerCase()) {
       case 'high':
         return 'text-red-400 bg-red-500/20 border-red-500/50';
@@ -243,7 +316,7 @@ export default function RoutineGenerator({
                     <div className="font-bold text-lg mb-1 text-neural-purple">{routine.name}</div>
                     <div className="text-sm text-gray-400 mb-1">{routine.date}</div>
                     <div className="text-xs text-gray-500">
-                      Saved {new Date(routine.savedAt).toLocaleString()}
+                      Saved {routine.savedAt && new Date(routine.savedAt).toLocaleString()}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -255,7 +328,7 @@ export default function RoutineGenerator({
                       View
                     </button>
                     <button
-                      onClick={() => handleDelete(routine.id)}
+                      onClick={() => routine.id && handleDelete(routine.id)}
                       className="text-gray-600 hover:text-red-400 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />

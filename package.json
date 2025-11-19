@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
     "server": "node server.cjs",
     "start": "npm run server"
   },
@@ -23,12 +25,23 @@
     "react-window": "^2.2.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.1",
     "@types/react": "^18.3.12",
+    "@types/react-big-calendar": "^1.16.3",
     "@types/react-dom": "^18.3.1",
+    "@types/react-window": "^1.8.8",
+    "@typescript-eslint/eslint-plugin": "^8.47.0",
+    "@typescript-eslint/parser": "^8.47.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
+    "typescript": "^5.9.3",
     "vite": "^6.0.1"
   }
 }
