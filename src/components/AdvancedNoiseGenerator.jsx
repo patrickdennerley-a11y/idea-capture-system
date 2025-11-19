@@ -86,7 +86,7 @@ class NoiseGenerator {
   }
 
   generatePinkNoise(params) {
-    console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
+    // console.log('🎵 Generating PINK noise with params:', { frequency: params.frequency, depth: params.depth, rate: params.rate });
     const bufferSize = this.audioContext.sampleRate * 2; // 2 seconds buffer
     const buffer = this.audioContext.createBuffer(2, bufferSize, this.audioContext.sampleRate);
 
@@ -144,8 +144,8 @@ class NoiseGenerator {
   }
 
   generateBrownNoise(params) {
-    console.log('═══ BROWN NOISE DEBUG START ═══');
-    console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
+    // console.log('═══ BROWN NOISE DEBUG START ═══');
+    // console.log('PARAMS RECEIVED:', JSON.stringify(params, null, 2));
 
     // Verify audioContext exists
     if (!this.audioContext) {
@@ -153,15 +153,15 @@ class NoiseGenerator {
       return null;
     }
 
-    console.log('AudioContext state:', this.audioContext.state);
-    console.log('AudioContext sample rate:', this.audioContext.sampleRate);
+    // console.log('AudioContext state:', this.audioContext.state);
+    // console.log('AudioContext sample rate:', this.audioContext.sampleRate);
 
     const sampleRate = this.audioContext.sampleRate;
     const bufferSize = Math.floor(sampleRate * 2); // 2 seconds buffer
 
-    console.log('Sample rate:', sampleRate);
-    console.log('Duration: 2 seconds');
-    console.log('Buffer size:', bufferSize);
+    // console.log('Sample rate:', sampleRate);
+    // console.log('Duration: 2 seconds');
+    // console.log('Buffer size:', bufferSize);
 
     const buffer = this.audioContext.createBuffer(2, bufferSize, sampleRate);
 
@@ -177,6 +177,7 @@ class NoiseGenerator {
     const rate = params.rate || 5;
     const stereoWidth = params.stereoWidth || 50;
 
+    /*
     console.log('CALCULATED VALUES:', {
       integrationConst,
       leakFactor,
@@ -189,6 +190,7 @@ class NoiseGenerator {
       rate,
       stereoWidth
     });
+    */
 
     let globalMaxValue = 0;
     let globalNonZeroCount = 0;
@@ -260,38 +262,41 @@ class NoiseGenerator {
       }
     }
 
+    /*
     console.log('═══ BROWN NOISE GENERATION STATS ═══');
     console.log('Total samples:', totalSamples);
     console.log('Non-zero samples:', globalNonZeroCount);
     console.log('Percent non-zero:', (globalNonZeroCount / totalSamples * 100).toFixed(2) + '%');
     console.log('Max absolute value:', globalMaxValue.toFixed(6));
+    */
 
     if (globalMaxValue === 0) {
       console.error('❌ CRITICAL: ALL SAMPLES ARE ZERO - NO AUDIO WILL PLAY');
       console.error('This means brown noise is generating SILENCE');
-      console.error('Check these values:');
-      console.error('  integrationConst:', integrationConst);
-      console.error('  leakFactor:', leakFactor);
-      console.error('  depthMod:', depth / 100);
-      console.error('  rateMod:', rate / 10);
-      console.error('  volume:', volume);
+      // Keep this critical error but comment out the detailed parameter dump
+      // console.error('Check these values:');
+      // console.error('  integrationConst:', integrationConst);
+      // console.error('  leakFactor:', leakFactor);
+      // console.error('  depthMod:', depth / 100);
+      // console.error('  rateMod:', rate / 10);
+      // console.error('  volume:', volume);
     } else if (globalMaxValue < 0.001) {
-      console.warn('⚠️ WARNING: Samples are very quiet (max:', globalMaxValue, ')');
-      console.warn('Audio might be inaudible at this level');
+      // console.warn('⚠️ WARNING: Samples are very quiet (max:', globalMaxValue, ')');
+      // console.warn('Audio might be inaudible at this level');
     } else {
-      console.log('✅ Audio samples look good (max:', globalMaxValue, ')');
+      // console.log('✅ Audio samples look good (max:', globalMaxValue, ')');
     }
 
-    console.log('═══ BROWN NOISE DEBUG END ═══');
+    // console.log('═══ BROWN NOISE DEBUG END ═══');
     return buffer;
   }
 
   async playNoise(type, params, volume = 50) {
     try {
-      console.log('═══ PLAY NOISE DEBUG START ═══');
-      console.log('Type:', type);
-      console.log('Volume param:', volume);
-      console.log('Params object keys:', Object.keys(params));
+      // console.log('═══ PLAY NOISE DEBUG START ═══');
+      // console.log('Type:', type);
+      // console.log('Volume param:', volume);
+      // console.log('Params object keys:', Object.keys(params));
 
       this.initialize(volume);
 
@@ -302,9 +307,9 @@ class NoiseGenerator {
       }
 
       if (this.audioContext.state === 'suspended') {
-        console.warn('⚠️ AudioContext suspended, resuming...');
+        // console.warn('⚠️ AudioContext suspended, resuming...');
         await this.audioContext.resume(); // CRITICAL: Must await resume!
-        console.log('✅ AudioContext resumed, state:', this.audioContext.state);
+        // console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
       // Stop ONLY noise (not gamma) immediately without release envelope (we're switching variations)
@@ -313,7 +318,7 @@ class NoiseGenerator {
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
 
-      console.log(`→ Generating ${type} noise buffer...`);
+      // console.log(`→ Generating ${type} noise buffer...`);
       const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
 
       if (!buffer) {
@@ -321,28 +326,32 @@ class NoiseGenerator {
         throw new Error('Buffer generation returned null');
       }
 
+      /*
       console.log('✓ Buffer received:', {
         channels: buffer.numberOfChannels,
         length: buffer.length,
         duration: buffer.duration.toFixed(2) + 's',
         sampleRate: buffer.sampleRate
       });
+      */
 
       // CRITICAL: Check if buffer has actual audio data
       const channel0 = buffer.getChannelData(0);
       let maxInBuffer = 0;
-      let nonZeroInBuffer = 0;
+      // let nonZeroInBuffer = 0;
       const samplesToCheck = Math.min(1000, channel0.length);
       for (let i = 0; i < samplesToCheck; i++) {
         const abs = Math.abs(channel0[i]);
-        if (abs > 0.0001) nonZeroInBuffer++;
+        // if (abs > 0.0001) nonZeroInBuffer++;
         maxInBuffer = Math.max(maxInBuffer, abs);
       }
+      /*
       console.log(`Buffer sample check (first ${samplesToCheck} samples):`, {
         max: maxInBuffer.toFixed(6),
         nonZero: nonZeroInBuffer,
         percentNonZero: ((nonZeroInBuffer / samplesToCheck) * 100).toFixed(1) + '%'
       });
+      */
 
       if (maxInBuffer === 0) {
         console.error('❌❌❌ BUFFER CONTAINS ONLY ZEROS - THIS IS WHY YOU HEAR NOTHING ❌❌❌');
@@ -359,7 +368,7 @@ class NoiseGenerator {
       const currentNode = this.sourceNode;
       this.sourceNode.onended = () => {
         if (this.intentionallyStopping) {
-          console.log('✓ Source node stopped as expected (switching variations)');
+          // console.log('✓ Source node stopped as expected (switching variations)');
           this.intentionallyStopping = false;
         } else if (currentNode.loop && currentNode === this.sourceNode) {
           // Only warn if this node was looped AND is still the current node
@@ -378,7 +387,7 @@ class NoiseGenerator {
         this.brownLowpass.type = 'lowpass';
         this.brownLowpass.frequency.value = 1800; // Cut frequencies above 1800Hz (was 1200Hz - too aggressive)
         this.brownLowpass.Q.value = 0.7;
-        console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
+        // console.log('🟤 Applied brown noise low-pass filter (1800Hz cutoff) for deeper bass');
 
         // Create audio chain with brown filter: source -> brownLowpass -> bass -> mid -> treble -> resonance -> gain -> destination
         this.sourceNode.connect(this.brownLowpass);
@@ -394,17 +403,16 @@ class NoiseGenerator {
       this.trebleFilter.connect(this.resonanceFilter);
       this.resonanceFilter.connect(this.gainNode);
 
-      console.log('✓ Audio node chain connected:', type === 'brown' ?
-        'source → brownLowpass → bass → mid → treble → resonance → gain → destination' :
-        'source → bass → mid → treble → resonance → gain → destination'
-      );
+      // console.log('✓ Audio node chain connected');
 
+      /*
       // Verify gainNode exists and is connected
       console.log('GainNode state:', {
         exists: !!this.gainNode,
         currentValue: this.gainNode?.gain?.value,
         connected: !!this.gainNode
       });
+      */
 
       // Apply envelope (attack)
       const now = this.audioContext.currentTime;
@@ -415,7 +423,7 @@ class NoiseGenerator {
       this.gainNode.gain.setValueAtTime(0, now);
       this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-      console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+      // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
 
       // Warn if attack time seems excessive (should not happen with new 20-100ms range)
       if (attackTime > 0.15) {
@@ -424,12 +432,12 @@ class NoiseGenerator {
 
       // Note: Release will be applied in stop() method when explicitly stopped
 
-      console.log('→ Starting playback NOW...');
+      // console.log('→ Starting playback NOW...');
       this.sourceNode.start(0);
       this.isPlaying = true;
 
-      console.log(`✅ PLAYBACK STARTED - ${type} noise - Context: ${this.audioContext.state}, Volume: ${volume}%, Buffer: ${buffer.duration.toFixed(2)}s, Attack: ${(attackTime * 1000).toFixed(1)}ms`);
-      console.log('═══ PLAY NOISE DEBUG END ═══');
+      // console.log(`✅ PLAYBACK STARTED - ${type} noise...`);
+      // console.log('═══ PLAY NOISE DEBUG END ═══');
     } catch (error) {
       console.error(`❌ Error playing ${type} noise:`, error);
       throw error;
@@ -1505,7 +1513,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 } else {
                   noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
                 }
-                console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
+                // console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
                 alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
@@ -1546,6 +1554,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         // Check if current variation is complete (using milliseconds for precision)
         if (elapsedMs >= currentDurationMs) {
           // TIMING DIAGNOSTIC: Log expected vs actual duration
+          /*
           let durationMin;
           if (prev.currentType === 'pink') {
             durationMin = prev.settings.pinkDuration;
@@ -1559,13 +1568,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           console.log(`   Expected: ${(currentDurationMs / 1000).toFixed(3)}s (${durationMin.toFixed(4)} min)`);
           console.log(`   Actual: ${(elapsedMs / 1000).toFixed(3)}s`);
           console.log(`   Difference: ${((elapsedMs - currentDurationMs) / 1000).toFixed(3)}s`);
+          */
 
           // Check if we have a delay configured
           if (prev.settings.silenceDelay > 0) {
             // Enter delay mode (silence)
             if (noiseGeneratorRef.current) {
               noiseGeneratorRef.current.stop();
-              console.log(`🔇 Entering silence delay for ${prev.settings.silenceDelay * 60}s`);
+              // console.log(`🔇 Entering silence delay for ${prev.settings.silenceDelay * 60}s`);
             }
 
             return {
@@ -1650,7 +1660,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               } else {
                 noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
               }
-              console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
+              // console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}`);
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
               alert(`⚠️ AUDIO STOPPED!\n\nError: ${error.message}\n\nClick OK to attempt restart, or refresh the page.`);
