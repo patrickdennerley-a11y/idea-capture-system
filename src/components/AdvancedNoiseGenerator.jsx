@@ -985,8 +985,10 @@ const generateMaximallyDifferentVariation = (type, previousVariations, variation
 
 // Format time display with milliseconds for better bug detection
 const formatTime = (milliseconds) => {
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const ms = Math.floor((milliseconds % 1000) / 10); // Show centiseconds (0-99)
+  // Handle negative values (clamp to 0) - happens in Rapid Mode when switching is faster than render updates
+  const clampedMs = Math.max(0, milliseconds);
+  const totalSeconds = Math.floor(clampedMs / 1000);
+  const ms = Math.floor((clampedMs % 1000) / 10); // Show centiseconds (0-99)
   const mins = Math.floor(totalSeconds / 60);
   const secs = totalSeconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
@@ -1027,6 +1029,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
+  const refreshSessionRef = useRef(null); // Track refreshSession for auto-refresh in timer callbacks
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
   const overlayGammaEnabledRef = useRef(overlayGammaEnabled); // Track overlay gamma enabled state for timer callbacks
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
@@ -1507,7 +1510,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
             if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
               console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
-              setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+              if (refreshSessionRef.current) {
+                setTimeout(() => refreshSessionRef.current(), 0); // Async to avoid state update conflicts
+              }
               return prev; // Don't continue with this variation
             }
 
@@ -1672,7 +1677,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
           if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
             console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
-            setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+            if (refreshSessionRef.current) {
+              setTimeout(() => refreshSessionRef.current(), 0); // Async to avoid state update conflicts
+            }
             return prev; // Don't continue with this variation
           }
 
@@ -1834,6 +1841,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     console.log('✅ Session refreshed - starting new session');
   }, [startGeneration]);
+
+  // Update ref whenever refreshSession changes
+  useEffect(() => {
+    refreshSessionRef.current = refreshSession;
+  }, [refreshSession]);
 
   // Pause/Resume
   const togglePause = useCallback(() => {
