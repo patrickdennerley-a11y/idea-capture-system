@@ -1038,6 +1038,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Memory management: keep only last 100 variations to prevent unbounded growth
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
+  // Auto-refresh threshold for Rapid Mode (100-2500 switches/second)
+  // Automatically restart session at 2500 variations to prevent memory buildup and stuttering
+  const AUTO_REFRESH_THRESHOLD = 2500;
+
   // Force re-renders for progress display when session is active
   // PERFORMANCE: Throttle updates heavily in Rapid Mode to prevent UI lag
   useEffect(() => {
@@ -1500,6 +1504,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
             const nextVariationNumber = prev.totalVariationCount + 1;
 
+            // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
+            if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+              console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
+              setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+              return prev; // Don't continue with this variation
+            }
+
             // Check if we should stop
             if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
               stopGeneration();
@@ -1657,6 +1668,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           }
 
           const nextVariationNumber = prev.totalVariationCount + 1;
+
+          // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
+          if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+            console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
+            setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+            return prev; // Don't continue with this variation
+          }
 
           // Check if we should stop
           if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
