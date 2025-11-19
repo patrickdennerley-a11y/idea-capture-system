@@ -694,6 +694,46 @@ class NoiseGenerator {
     }
   }
 
+  // Full cleanup and reset - use this for session refresh in Rapid Mode
+  // Clears ALL audio resources including buffer cache to prevent memory/resource buildup
+  fullReset() {
+    console.log('🧹 FULL AUDIO ENGINE RESET - Clearing all resources');
+
+    // Stop all playback
+    this.stopEverything();
+
+    // Clear buffer cache (critical for Rapid Mode memory management)
+    if (this.bufferCache.size > 0) {
+      console.log(`  💾 Clearing ${this.bufferCache.size} cached buffers`);
+      this.bufferCache.clear();
+    }
+    this.bufferCacheEnabled = false;
+
+    // Disconnect and recreate gainNode for fresh state
+    if (this.gainNode) {
+      try {
+        this.gainNode.disconnect();
+        console.log('  🔌 Disconnected old gainNode');
+      } catch (e) {
+        console.warn('  ⚠️ Error disconnecting gainNode:', e.message);
+      }
+    }
+
+    // Recreate gainNode with current volume
+    const currentVolume = this.gainNode ? this.gainNode.gain.value * 100 : 50;
+    this.gainNode = this.audioContext.createGain();
+    this.gainNode.gain.value = currentVolume / 100;
+    this.gainNode.connect(this.audioContext.destination);
+    console.log(`  ✅ Created fresh gainNode (${currentVolume}% volume)`);
+
+    // Reset state flags
+    this.isPlaying = false;
+    this.intentionallyStopping = false;
+    this.currentParams = null;
+
+    console.log('✅ Full audio reset complete - engine ready for new session');
+  }
+
   // Play one-shot gamma wave for alternating mode (not looping)
   async playGamma(carrierFreq, gammaOffset, volume, durationMinutes) {
     console.log(`🌊 Playing alternating gamma wave: ${carrierFreq}Hz carrier, ${gammaOffset}Hz offset, ${volume}% volume, ${durationMinutes.toFixed(4)} min (${(durationMinutes * 60).toFixed(2)}s)`);
@@ -729,20 +769,17 @@ class NoiseGenerator {
     source.buffer = gammaBuffer;
     source.loop = false; // One-shot playback
 
-    const gain = this.audioContext.createGain();
-    gain.gain.value = volume / 100;
-
-    // Attack envelope (consistent with pink/brown)
+    // Apply attack envelope using the MAIN gainNode (don't create temporary one)
+    // This ensures we don't lose the persistent gainNode created in initialize()
     const attackTime = (Math.random() * 80 + 20) / 1000; // 20-100ms
-    gain.gain.setValueAtTime(0, this.audioContext.currentTime);
-    gain.gain.linearRampToValueAtTime(volume / 100, this.audioContext.currentTime + attackTime);
+    this.gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+    this.gainNode.gain.linearRampToValueAtTime(volume / 100, this.audioContext.currentTime + attackTime);
 
-    source.connect(gain);
-    gain.connect(this.audioContext.destination);
+    // Connect source directly to main gainNode
+    source.connect(this.gainNode);
 
-    // Store references
+    // Store reference to source node
     this.sourceNode = source;
-    this.gainNode = gain;
     this.isPlaying = true;
     this.intentionallyStopping = false;
 
@@ -1827,19 +1864,22 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       intervalRef.current = null;
     }
 
+    // CRITICAL: Use fullReset() instead of stopEverything() to clear buffer cache
+    // and reset audio engine state - prevents stuttering in Rapid Mode
     if (noiseGeneratorRef.current) {
-      noiseGeneratorRef.current.stopEverything();
+      noiseGeneratorRef.current.fullReset();
     }
 
     // Clear active session
     setActiveSession(null);
 
-    // Start new session immediately
+    // INCREASED DELAY: Give Web Audio API time to garbage collect nodes
+    // In Rapid Mode, thousands of nodes are created/destroyed - need GC time
     setTimeout(() => {
       startGeneration();
-    }, 100); // Small delay to ensure cleanup completes
+    }, 250); // Increased from 100ms to 250ms for audio engine cleanup
 
-    console.log('✅ Session refreshed - starting new session');
+    console.log('✅ Session refresh initiated - restarting in 250ms');
   }, [startGeneration]);
 
   // Update ref whenever refreshSession changes
