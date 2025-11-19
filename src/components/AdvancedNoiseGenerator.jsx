@@ -697,14 +697,13 @@ class NoiseGenerator {
   // Full cleanup and reset - use this for session refresh in Rapid Mode
   // Clears ALL audio resources including buffer cache to prevent memory/resource buildup
   fullReset() {
-    console.log('🧹 FULL AUDIO ENGINE RESET - Clearing all resources');
+    const bufferCount = this.bufferCache.size;
 
     // Stop all playback
     this.stopEverything();
 
     // Clear buffer cache (critical for Rapid Mode memory management)
-    if (this.bufferCache.size > 0) {
-      console.log(`  💾 Clearing ${this.bufferCache.size} cached buffers`);
+    if (bufferCount > 0) {
       this.bufferCache.clear();
     }
     this.bufferCacheEnabled = false;
@@ -713,9 +712,8 @@ class NoiseGenerator {
     if (this.gainNode) {
       try {
         this.gainNode.disconnect();
-        console.log('  🔌 Disconnected old gainNode');
       } catch (e) {
-        console.warn('  ⚠️ Error disconnecting gainNode:', e.message);
+        // Ignore disconnect errors
       }
     }
 
@@ -724,14 +722,11 @@ class NoiseGenerator {
     this.gainNode = this.audioContext.createGain();
     this.gainNode.gain.value = currentVolume / 100;
     this.gainNode.connect(this.audioContext.destination);
-    console.log(`  ✅ Created fresh gainNode (${currentVolume}% volume)`);
 
     // Reset state flags
     this.isPlaying = false;
     this.intentionallyStopping = false;
     this.currentParams = null;
-
-    console.log('✅ Full audio reset complete - engine ready for new session');
   }
 
   // Play one-shot gamma wave for alternating mode (not looping)
@@ -1067,6 +1062,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const refreshSessionRef = useRef(null); // Track refreshSession for auto-refresh in timer callbacks
+  const recreateAudioContextRef = useRef(null); // Track recreateAudioContext for deep reset
+  const lifetimeTotalVariationsRef = useRef(0); // Track TOTAL variations across all sessions/refreshes
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
   const overlayGammaEnabledRef = useRef(overlayGammaEnabled); // Track overlay gamma enabled state for timer callbacks
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
@@ -1082,6 +1079,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Automatically restart session at 300 variations to prevent memory buildup and stuttering
   // REDUCED from 2500 to 300 to prevent audio degradation in sustained ultra-high-speed operation
   const AUTO_REFRESH_THRESHOLD = 300;
+
+  // Deep reset threshold - recreate AudioContext to prevent accumulated state
+  // After 2500 TOTAL variations (across all refreshes), the AudioContext itself degrades
+  const AUDIOCONTEXT_RECREATE_THRESHOLD = 2500;
 
   // Force re-renders for progress display when session is active
   // PERFORMANCE: Throttle updates heavily in Rapid Mode to prevent UI lag
@@ -1545,13 +1546,27 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
             const nextVariationNumber = prev.totalVariationCount + 1;
 
-            // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
-            if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
-              console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
-              if (refreshSessionRef.current) {
-                setTimeout(() => refreshSessionRef.current(), 0); // Async to avoid state update conflicts
+            // Increment lifetime total (across all sessions)
+            lifetimeTotalVariationsRef.current += 1;
+            const lifetimeTotal = lifetimeTotalVariationsRef.current;
+
+            // DEEP RESET: Recreate AudioContext at 2500 total variations
+            if (lifetimeTotal >= AUDIOCONTEXT_RECREATE_THRESHOLD) {
+              console.log(`🔥 DEEP RESET at lifetime variation #${lifetimeTotal} - Recreating AudioContext`);
+              lifetimeTotalVariationsRef.current = 0; // Reset counter
+              if (recreateAudioContextRef.current) {
+                setTimeout(() => recreateAudioContextRef.current(), 0);
               }
-              return prev; // Don't continue with this variation
+              return prev;
+            }
+
+            // AUTO-REFRESH: Prevent memory buildup in Rapid Mode
+            if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+              console.log(`♻️ Session refresh at variation #${nextVariationNumber} (lifetime: ${lifetimeTotal})`);
+              if (refreshSessionRef.current) {
+                setTimeout(() => refreshSessionRef.current(), 0);
+              }
+              return prev;
             }
 
             // Check if we should stop
@@ -1712,13 +1727,27 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
           const nextVariationNumber = prev.totalVariationCount + 1;
 
-          // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
-          if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
-            console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
-            if (refreshSessionRef.current) {
-              setTimeout(() => refreshSessionRef.current(), 0); // Async to avoid state update conflicts
+          // Increment lifetime total (across all sessions)
+          lifetimeTotalVariationsRef.current += 1;
+          const lifetimeTotal = lifetimeTotalVariationsRef.current;
+
+          // DEEP RESET: Recreate AudioContext at 2500 total variations
+          if (lifetimeTotal >= AUDIOCONTEXT_RECREATE_THRESHOLD) {
+            console.log(`🔥 DEEP RESET at lifetime variation #${lifetimeTotal} - Recreating AudioContext`);
+            lifetimeTotalVariationsRef.current = 0; // Reset counter
+            if (recreateAudioContextRef.current) {
+              setTimeout(() => recreateAudioContextRef.current(), 0);
             }
-            return prev; // Don't continue with this variation
+            return prev;
+          }
+
+          // AUTO-REFRESH: Prevent memory buildup in Rapid Mode
+          if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+            console.log(`♻️ Session refresh at variation #${nextVariationNumber} (lifetime: ${lifetimeTotal})`);
+            if (refreshSessionRef.current) {
+              setTimeout(() => refreshSessionRef.current(), 0);
+            }
+            return prev;
           }
 
           // Check if we should stop
@@ -1857,8 +1886,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
   // Refresh Session - restart fresh to avoid high variation count lag
   const refreshSession = useCallback(() => {
-    console.log('🔄 ========== REFRESHING SESSION ==========');
-
     // Stop current session
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -1879,8 +1906,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     setTimeout(() => {
       startGeneration();
     }, 250); // Increased from 100ms to 250ms for audio engine cleanup
-
-    console.log('✅ Session refresh initiated - restarting in 250ms');
   }, [startGeneration]);
 
   // Update ref whenever refreshSession changes
@@ -1952,6 +1977,59 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       }
     });
   }, [startTimer, overlayGammaCarrier]);
+
+  // Recreate AudioContext - DEEP RESET for auto-trigger at 2500 lifetime variations
+  const recreateAudioContext = useCallback(async () => {
+    console.log('🔥 ========== RECREATING AUDIOCONTEXT (DEEP RESET) ==========');
+    console.log(`   Triggered at ${lifetimeTotalVariationsRef.current} lifetime variations`);
+
+    // Stop current session
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (noiseGeneratorRef.current) {
+      noiseGeneratorRef.current.stopEverything();
+    }
+
+    // Close old AudioContext
+    if (audioContextRef.current) {
+      try {
+        await audioContextRef.current.close();
+        console.log('   ✅ Old AudioContext closed');
+      } catch (e) {
+        console.warn('   ⚠️ Error closing AudioContext:', e.message);
+      }
+    }
+
+    // Create fresh AudioContext
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'playback',
+      sampleRate: 44100
+    });
+    console.log('   ✅ New AudioContext created, state:', audioContextRef.current.state);
+
+    // Recreate noise generator
+    noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
+    noiseGeneratorRef.current.initialize(masterVolumeRef.current);
+    console.log('   ✅ Noise generator recreated');
+
+    // Clear active session
+    setActiveSession(null);
+
+    // Start new session after cleanup delay
+    setTimeout(() => {
+      startGeneration();
+      console.log('✅ Deep reset complete - new session started');
+    }, 500); // Longer delay for AudioContext GC
+
+  }, [startGeneration]);
+
+  // Update ref whenever recreateAudioContext changes
+  useEffect(() => {
+    recreateAudioContextRef.current = recreateAudioContext;
+  }, [recreateAudioContext]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
