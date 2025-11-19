@@ -1499,15 +1499,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 }
                 console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-                // Auto-refresh check (prevent AudioContext corruption on long sessions)
-                if (autoRefreshEnabled && refreshInterval > 0) {
-                  const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                  if (variationsSinceLastRefresh >= refreshInterval) {
-                    console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                    lastRefreshVariation.current = nextVariationNumber;
-                    // Perform refresh asynchronously without blocking
-                    performAutoRefresh();
+                // Gamma wave refresh (prevent corruption on long continuous playback)
+                // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
+                if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                  console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
+                  if (noiseGeneratorRef.current) {
+                    noiseGeneratorRef.current.stopGammaWave();
+                    noiseGeneratorRef.current.startGammaWave(
+                      overlayGammaCarrierRef.current,
+                      40,
+                      overlayGammaVolumeRef.current
+                    );
                   }
+                  console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
                 }
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
@@ -1655,15 +1659,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
               console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-              // Auto-refresh check (prevent AudioContext corruption on long sessions)
-              if (autoRefreshEnabled && refreshInterval > 0) {
-                const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                if (variationsSinceLastRefresh >= refreshInterval) {
-                  console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                  lastRefreshVariation.current = nextVariationNumber;
-                  // Perform refresh asynchronously without blocking
-                  performAutoRefresh();
+              // Gamma wave refresh (prevent corruption on long continuous playback)
+              // Only refresh gamma overlay (~1-2ms gap), NOT the entire AudioContext
+              if (overlayGammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                console.log(`🌊 Refreshing gamma overlay at variation ${nextVariationNumber} (~1 hour mark)`);
+                if (noiseGeneratorRef.current) {
+                  noiseGeneratorRef.current.stopGammaWave();
+                  noiseGeneratorRef.current.startGammaWave(
+                    overlayGammaCarrierRef.current,
+                    40,
+                    overlayGammaVolumeRef.current
+                  );
                 }
+                console.log('✅ Gamma overlay refreshed (~1-2ms gap, pink/brown uninterrupted)');
               }
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
