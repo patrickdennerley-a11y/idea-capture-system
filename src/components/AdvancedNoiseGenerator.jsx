@@ -1079,8 +1079,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
   // Auto-refresh threshold for Rapid Mode (100-2500 switches/second)
-  // Automatically restart session at 2500 variations to prevent memory buildup and stuttering
-  const AUTO_REFRESH_THRESHOLD = 2500;
+  // Automatically restart session at 300 variations to prevent memory buildup and stuttering
+  // REDUCED from 2500 to 300 to prevent audio degradation in sustained ultra-high-speed operation
+  const AUTO_REFRESH_THRESHOLD = 300;
 
   // Force re-renders for progress display when session is active
   // PERFORMANCE: Throttle updates heavily in Rapid Mode to prevent UI lag
