@@ -1516,7 +1516,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
 
               variationObj = {
-                id: `${prev.id}-${nextVariationNumber}`,
+                id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
                 type: 'gamma',
                 variationNumber: nextVariationNumber,
                 parameters: gammaParams, // null if no variation, or {carrierFreq} if varied
@@ -1530,7 +1530,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
               nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
               variationObj = {
-                id: `${prev.id}-${nextVariationNumber}`,
+                id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
                 type: nextType,
                 variationNumber: nextVariationNumber,
                 parameters: variation.parameters,
@@ -1666,7 +1666,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             // For gamma, we don't generate variations
             nextDurationMin = prev.settings.gammaDuration;
             variationObj = {
-              id: `${prev.id}-${nextVariationNumber}`,
+              id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
               type: 'gamma',
               variationNumber: nextVariationNumber,
               parameters: null,
@@ -1680,7 +1680,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
             nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
             variationObj = {
-              id: `${prev.id}-${nextVariationNumber}`,
+              id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
               type: nextType,
               variationNumber: nextVariationNumber,
               parameters: variation.parameters,
