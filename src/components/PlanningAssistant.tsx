@@ -41,14 +41,76 @@
  * - Backend endpoint: POST /api/plan-activity in server.cjs
  */
 
-import { useState } from 'react';
+import { useState, FC, ChangeEvent, KeyboardEvent } from 'react';
 import { Compass, Sparkles, Clock, MapPin, Repeat, Zap, Lightbulb, X, History, Trash2, Save, BookmarkPlus } from 'lucide-react';
 import { getPlanningAdvice } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { formatDateTime } from '../utils/dateUtils';
 import SmartReminders from './SmartReminders';
 
-export default function PlanningAssistant({
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+interface Idea {
+  id?: string | number;
+  classificationType?: 'routine' | 'timetable' | 'checklist' | 'general';
+  dueDate?: string;
+  [key: string]: any;
+}
+
+interface ActivityLog {
+  id?: string | number;
+  timestamp?: string;
+  [key: string]: any;
+}
+
+interface Checklist {
+  id?: string | number;
+  [key: string]: any;
+}
+
+interface Review {
+  id?: string | number;
+  timestamp?: string;
+  [key: string]: any;
+}
+
+interface PlanData {
+  summary?: string;
+  bestTime?: string;
+  duration?: string;
+  location?: string;
+  recurring?: string;
+  tips?: string[];
+}
+
+interface Plan extends PlanData {
+  activity: string;
+  timestamp: string;
+  id: number;
+  name?: string;
+  savedAt?: string;
+}
+
+interface PlanningAssistantProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: Review[];
+  isAnalyzing: boolean;
+  setIsAnalyzing: (isAnalyzing: boolean) => void;
+  plan: Plan | null;
+  setPlan: (plan: Plan | null) => void;
+  planError: string | null;
+  setPlanError: (error: string | null) => void;
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+const PlanningAssistant: FC<PlanningAssistantProps> = ({
   ideas,
   logs,
   checklist,
@@ -59,14 +121,14 @@ export default function PlanningAssistant({
   setPlan,
   planError,
   setPlanError,
-}) {
-  const [activity, setActivity] = useState('');
-  const [planHistory, setPlanHistory] = useLocalStorage('neural-plan-history', []);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [planName, setPlanName] = useState('');
+}) => {
+  const [activity, setActivity] = useState<string>('');
+  const [planHistory, setPlanHistory] = useLocalStorage<Plan[]>('neural-plan-history', []);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [showSaveDialog, setShowSaveDialog] = useState<boolean>(false);
+  const [planName, setPlanName] = useState<string>('');
 
-  const handlePlan = async () => {
+  const handlePlan = async (): Promise<void> => {
     if (!activity.trim()) return;
 
     setIsAnalyzing(true);
@@ -80,7 +142,7 @@ export default function PlanningAssistant({
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const relevantIdeas = ideas.filter(idea => {
+      const relevantIdeas = ideas.filter((idea: Idea) => {
         const classificationType = idea.classificationType || 'general';
 
         // Include all routine items (always relevant for planning)
@@ -116,7 +178,7 @@ export default function PlanningAssistant({
       );
 
       if (result.success) {
-        const planWithMetadata = {
+        const planWithMetadata: Plan = {
           ...result.data,
           activity: currentActivity,
           timestamp: new Date().toISOString(),
@@ -126,7 +188,7 @@ export default function PlanningAssistant({
         setPlan(planWithMetadata);
 
         // Auto-save to history without dialog
-        setPlanHistory(prev => [planWithMetadata, ...prev].slice(0, 50)); // Keep last 50
+        setPlanHistory((prev: Plan[]) => [planWithMetadata, ...prev].slice(0, 50)); // Keep last 50
       } else {
         setPlanError(result.error || 'Failed to generate plan');
       }
@@ -137,21 +199,21 @@ export default function PlanningAssistant({
     }
   };
 
-  const handleSavePlanWithName = () => {
+  const handleSavePlanWithName = (): void => {
     if (!plan || !planName.trim()) {
       alert('Please enter a name for this plan');
       return;
     }
 
-    const namedPlan = {
+    const namedPlan: Plan = {
       ...plan,
       name: planName.trim(),
       savedAt: new Date().toISOString(),
     };
 
     // Update in history (replace the auto-saved one or add new)
-    setPlanHistory(prev => {
-      const existingIndex = prev.findIndex(p => p.id === plan.id);
+    setPlanHistory((prev: Plan[]) => {
+      const existingIndex = prev.findIndex((p: Plan) => p.id === plan.id);
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex] = namedPlan;
@@ -165,19 +227,19 @@ export default function PlanningAssistant({
     alert('Plan named and saved!');
   };
 
-  const deletePlanFromHistory = (id) => {
+  const deletePlanFromHistory = (id: number): void => {
     if (confirm('Delete this plan from history?')) {
-      setPlanHistory(prev => prev.filter(p => p.id !== id));
+      setPlanHistory((prev: Plan[]) => prev.filter((p: Plan) => p.id !== id));
     }
   };
 
-  const loadPlanFromHistory = (historicalPlan) => {
+  const loadPlanFromHistory = (historicalPlan: Plan): void => {
     setPlan(historicalPlan);
     setActivity(historicalPlan.activity);
     setShowHistory(false);
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handlePlan();
@@ -214,7 +276,7 @@ export default function PlanningAssistant({
           </div>
         ) : (
           <div className="space-y-4">
-            {planHistory.map((historicalPlan) => (
+            {planHistory.map((historicalPlan: Plan) => (
               <div
                 key={historicalPlan.id}
                 className="bg-neural-darker border border-gray-800 rounded-lg p-4 hover:border-neural-purple transition-colors"
@@ -306,7 +368,7 @@ export default function PlanningAssistant({
           <input
             type="text"
             value={activity}
-            onChange={(e) => setActivity(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => setActivity(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="e.g., Study linear algebra, Work on project proposal, Go for a walk..."
             className="neural-input flex-1"
@@ -426,7 +488,7 @@ export default function PlanningAssistant({
                   <span className="font-bold text-neural-pink">Pro Tips</span>
                 </div>
                 <ul className="space-y-2">
-                  {plan.tips.map((tip, index) => (
+                  {plan.tips.map((tip: string, index: number) => (
                     <li key={index} className="text-gray-300 flex items-start gap-2">
                       <span className="text-neural-purple mt-1">•</span>
                       <span>{tip}</span>
@@ -481,8 +543,8 @@ export default function PlanningAssistant({
                 <input
                   type="text"
                   value={planName}
-                  onChange={(e) => setPlanName(e.target.value)}
-                  onKeyPress={(e) => {
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setPlanName(e.target.value)}
+                  onKeyPress={(e: KeyboardEvent<HTMLInputElement>) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSavePlanWithName();
@@ -554,4 +616,6 @@ export default function PlanningAssistant({
       )}
     </div>
   );
-}
+};
+
+export default PlanningAssistant;

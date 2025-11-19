@@ -1,28 +1,126 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Bell, X, Volume2, VolumeX, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { Idea } from './IdeaEditModal';
+
+interface ActivityLog {
+  id: number;
+  timestamp: string;
+  timePeriod: string;
+  energy: number;
+  motivation: number;
+  activity: string;
+  subject?: string | null;
+  subjectHierarchy?: { hierarchy: string[] } | null;
+  duration?: number | null;
+  note: string;
+}
+
+interface ChecklistItem {
+  id: string;
+  category: string;
+  text: string;
+  important: boolean;
+  isDefault: boolean;
+  completed: boolean;
+  completedAt: string | null;
+}
+
+interface Checklist {
+  date: string;
+  items: ChecklistItem[];
+}
+
+interface Review {
+  id: number;
+  date: string;
+  timestamp: string;
+  completed: boolean;
+  responses: {
+    dayOverall: string;
+    accomplishments: string;
+    energyRecall: number;
+    followedRoutines: boolean;
+    tomorrowPriorities: string;
+  };
+  actualData: {
+    avgEnergy: number;
+    studyTime: number;
+    followedRoutines: boolean;
+    completionRate: number;
+    totalLogs: number;
+  };
+  comparison: {
+    energyAccuracy: number;
+    routineAccuracy: boolean;
+  };
+  insights: Array<{
+    type: string;
+    text: string;
+  }>;
+}
+
+interface ReminderHistoryEntry {
+  ideaId: number;
+  lastShown: string;
+  showCount: number;
+  dismissCount: number;
+  actionTaken: boolean;
+}
+
+interface ForgetfulnessProfile {
+  forgetfulnessScore: number;
+  category: string;
+  recommendedFrequency: number;
+}
+
+interface ReminderMetadata {
+  hasHighPriority: boolean;
+  selectedCount: number;
+  totalCandidates: number;
+}
+
+interface Reminder {
+  id: number;
+  content: string;
+  tags: string[];
+  dueDate?: string;
+  daysUntilDue?: number;
+  importance: number;
+  urgency: number;
+  urgencyLabel: string;
+  timesShown: number;
+  shouldPlaySound: boolean;
+}
+
+interface SmartRemindersProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: Review[];
+}
 
 // Create AudioContext once at module level to avoid memory leaks
-let audioContext = null;
-const getAudioContext = () => {
-  if (!audioContext && (window.AudioContext || window.webkitAudioContext)) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext: AudioContext | null = null;
+const getAudioContext = (): AudioContext | null => {
+  if (!audioContext && (window.AudioContext || (window as any).webkitAudioContext)) {
+    audioContext = new ((window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext)();
   }
   return audioContext;
 };
 
-const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
-  const [reminders, setReminders] = useState([]);
-  const [profile, setProfile] = useState(null);
-  const [metadata, setMetadata] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [showReminders, setShowReminders] = useState(false);
-  const [reminderHistory, setReminderHistory] = useLocalStorage('neural-reminder-history', []);
+const SmartReminders: React.FC<SmartRemindersProps> = ({ ideas, logs, checklist, reviews }) => {
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [profile, setProfile] = useState<ForgetfulnessProfile | null>(null);
+  const [metadata, setMetadata] = useState<ReminderMetadata | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [showReminders, setShowReminders] = useState<boolean>(false);
+  const [reminderHistory, setReminderHistory] = useLocalStorage<ReminderHistoryEntry[]>('neural-reminder-history', []);
 
   // Play notification sound for high priority reminders (reuses audio context)
-  const playNotificationSound = () => {
+  const playNotificationSound = (): void => {
     if (!soundEnabled) return;
 
     const context = getAudioContext();
@@ -44,7 +142,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     oscillator.stop(context.currentTime + 0.5);
   };
 
-  const fetchReminders = async () => {
+  const fetchReminders = async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
@@ -80,7 +178,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
       const now = new Date().toISOString();
       const updatedHistory = [...reminderHistory];
 
-      data.reminders.forEach(reminder => {
+      data.reminders.forEach((reminder: Reminder) => {
         const existingIndex = updatedHistory.findIndex(h => h.ideaId === reminder.id);
         if (existingIndex >= 0) {
           updatedHistory[existingIndex] = {
@@ -103,13 +201,13 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
 
     } catch (err) {
       console.error('Error fetching reminders:', err);
-      setError(err.message);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   };
 
-  const dismissReminder = (reminderId) => {
+  const dismissReminder = (reminderId: number): void => {
     // Update history to track dismissal
     const updatedHistory = reminderHistory.map(h =>
       h.ideaId === reminderId
@@ -127,7 +225,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     }
   };
 
-  const getUrgencyColor = (urgencyLabel) => {
+  const getUrgencyColor = (urgencyLabel: string): string => {
     switch (urgencyLabel) {
       case 'Critical': return 'text-red-400 bg-red-950 border-red-800';
       case 'High': return 'text-orange-400 bg-orange-950 border-orange-800';
@@ -136,7 +234,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     }
   };
 
-  const getProfileColor = (category) => {
+  const getProfileColor = (category: string): string => {
     if (category === 'High Forgetfulness') return 'text-red-400';
     if (category === 'Average') return 'text-yellow-400';
     return 'text-green-400';
@@ -270,8 +368,8 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
                         <span>
                           {reminder.daysUntilDue === 0 && 'Due TODAY'}
                           {reminder.daysUntilDue === 1 && 'Due tomorrow'}
-                          {reminder.daysUntilDue > 1 && `Due in ${reminder.daysUntilDue} days`}
-                          {reminder.daysUntilDue < 0 && `OVERDUE by ${Math.abs(reminder.daysUntilDue)} days`}
+                          {reminder.daysUntilDue && reminder.daysUntilDue > 1 && `Due in ${reminder.daysUntilDue} days`}
+                          {reminder.daysUntilDue && reminder.daysUntilDue < 0 && `OVERDUE by ${Math.abs(reminder.daysUntilDue)} days`}
                         </span>
                       </div>
                     )}

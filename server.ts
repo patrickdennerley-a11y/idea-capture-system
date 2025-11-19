@@ -74,12 +74,354 @@
  * - Classification prompt balances 2-level vs 3-level hierarchies
  */
 
-const express = require('express');
-const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
-require('dotenv').config();
+import express, { Express, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import Anthropic from '@anthropic-ai/sdk';
+import dotenv from 'dotenv';
 
-const app = express();
+dotenv.config();
+
+// ============================================================================
+// TYPE DEFINITIONS & INTERFACES
+// ============================================================================
+
+// API Request/Response Types
+interface Idea {
+  id?: string;
+  content: string;
+  tags?: string[];
+  context?: string;
+  timestamp?: string;
+  dueDate?: string;
+  classificationType?: string;
+}
+
+interface EnergyLog {
+  id?: string;
+  timestamp: string;
+  energy: number;
+  motivation: number;
+  activity?: string;
+  note?: string;
+  content?: string;
+}
+
+interface ChecklistItem {
+  id?: string;
+  text: string;
+  completed?: boolean;
+  important?: boolean;
+}
+
+interface Checklist {
+  items?: ChecklistItem[];
+}
+
+interface Review {
+  id?: string;
+  timestamp: string;
+  energy: number;
+  accomplishments?: string;
+  challenges?: string;
+  content?: string;
+}
+
+interface TimetableEvent {
+  time?: string;
+  title?: string;
+  content?: string;
+}
+
+interface ExistingRoutine {
+  title?: string;
+  content?: string;
+  timeOfDay?: string;
+}
+
+// Organize Ideas Request/Response
+interface OrganizeIdeasRequest {
+  ideas: Idea[];
+}
+
+interface Theme {
+  name: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  ideas: Array<{
+    content: string;
+    tags?: string[];
+  }>;
+}
+
+interface OrganizeIdeasResponse {
+  summary: string;
+  themes: Theme[];
+  nextSteps: string[];
+}
+
+// Weekly Summary Request/Response
+interface WeeklySummaryRequest {
+  ideas: Idea[];
+}
+
+interface DateRange {
+  start?: string;
+  end?: string;
+}
+
+interface WeeklySummaryResponse {
+  summary: string;
+  ideaCount: number;
+  dateRange: DateRange;
+}
+
+// Analyze Patterns Request/Response
+interface AnalyzePatternsRequest {
+  logs: EnergyLog[];
+  ideas: Idea[];
+}
+
+interface AnalyzePatternsResponse {
+  [key: string]: unknown;
+  correlations?: unknown;
+  bestTimes?: unknown;
+  recommendations?: unknown;
+}
+
+// Plan Activity Request/Response
+interface PlanActivityRequest {
+  activity: string;
+  ideas?: Idea[];
+  logs?: EnergyLog[];
+  checklist?: Checklist;
+  reviews?: Review[];
+}
+
+interface PlanActivityResponse {
+  summary: string;
+  bestTime: string;
+  duration: string;
+  location: string;
+  recurring: string;
+  tips: string[];
+}
+
+// Generate Routine Request/Response
+interface GenerateRoutineRequest {
+  ideas?: Idea[];
+  logs?: EnergyLog[];
+  checklist?: Checklist;
+  reviews?: Review[];
+}
+
+interface ScheduleBlock {
+  time: string;
+  activity: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+interface GenerateRoutineResponse {
+  summary: string;
+  schedule: ScheduleBlock[];
+  energyTips: string[];
+}
+
+// Classify Subject Request/Response
+interface ClassifySubjectRequest {
+  subject: string;
+}
+
+interface ClassifySubjectResponse {
+  hierarchy: string[];
+  normalized: string;
+}
+
+// Analyze Tags Request/Response
+interface AnalyzeTagsRequest {
+  ideas: Idea[];
+  currentTags: string[];
+}
+
+interface AnalyzeTagsResponse {
+  tagsToRemove: string[];
+  tagsToAdd: string[];
+  reasoning: string;
+  analysis: string;
+  stats?: Record<string, number>;
+  usagePercentage?: number;
+  keepTags?: string[];
+  recommendations?: unknown[];
+}
+
+// Analyze Urgency Request/Response
+interface UrgentItem {
+  content: string;
+  score: number;
+  reason: string;
+}
+
+interface ImportantItem {
+  content: string;
+  score: number;
+  reason: string;
+}
+
+interface SentimentAnalysis {
+  positiveThemes?: string[];
+  avoidedThemes?: string[];
+}
+
+interface AnalyzeUrgencyResponse {
+  urgentItems: UrgentItem[];
+  importantItems: ImportantItem[];
+  sentimentAnalysis: SentimentAnalysis;
+  recommendations: string;
+}
+
+// Get Reminders Request/Response
+interface ReminderHistory {
+  ideaId?: string;
+  lastShown?: string;
+  showCount: number;
+  dismissCount: number;
+  actionTaken: boolean;
+}
+
+interface FormattedReminder {
+  id?: string;
+  content: string;
+  tags?: string[];
+  dueDate?: string;
+  daysUntilDue?: number;
+  importance: number;
+  urgency: number;
+  urgencyLabel: string;
+  frequencyScore: number;
+  shouldPlaySound: boolean;
+  lastShown?: string;
+  timesShown: number;
+}
+
+interface RemindersProfile {
+  forgetfulnessScore: number;
+  category: string;
+  recommendedFrequency: number;
+}
+
+interface RemindersMetadata {
+  totalCandidates: number;
+  selectedCount: number;
+  hasHighPriority: boolean;
+}
+
+interface GetRemindersRequest {
+  ideas: Idea[];
+  logs?: EnergyLog[];
+  checklist?: Checklist;
+  reviews?: Review[];
+  reminderHistory?: ReminderHistory[];
+}
+
+interface GetRemindersResponse {
+  reminders: FormattedReminder[];
+  profile: RemindersProfile;
+  metadata: RemindersMetadata;
+}
+
+// Generate Smart Routines Request/Response
+interface SmartRoutine {
+  id?: string;
+  type: 'direct' | 'mashup';
+  title: string;
+  description: string;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'anytime';
+  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly';
+  duration: string;
+  sources: string[];
+  reasoning: string;
+}
+
+interface GenerateSmartRoutinesRequest {
+  ideas?: Idea[];
+  logs?: EnergyLog[];
+  timetable?: TimetableEvent[];
+  existingRoutines?: ExistingRoutine[];
+}
+
+interface SmartRoutinesMetadata {
+  totalGenerated: number;
+  directCount: number;
+  mashupCount: number;
+}
+
+interface GenerateSmartRoutinesResponse {
+  routines: SmartRoutine[];
+  metadata: SmartRoutinesMetadata;
+}
+
+// Classify Idea Request/Response
+interface ClassifyIdeaRequest {
+  content: string;
+  context?: string;
+  timestamp?: string;
+  currentTags?: string[];
+}
+
+interface ClassifyIdeaResponse {
+  classificationType: 'routine' | 'checklist' | 'timetable' | 'general';
+  duration: number | null;
+  recurrence: 'none' | 'daily' | 'weekly' | 'monthly' | null;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority: 'high' | 'medium' | 'low';
+  reasoning: string;
+}
+
+// Classify Ideas Batch Request/Response
+interface ClassifyIdeasBatchRequest {
+  ideas: Idea[];
+}
+
+interface ClassificationItem {
+  index: number;
+  classificationType: 'routine' | 'checklist' | 'timetable' | 'general';
+  duration: number | null;
+  recurrence: 'none' | 'daily' | 'weekly' | 'monthly' | null;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface ClassifyIdeasBatchResponse {
+  classifications: ClassificationItem[];
+}
+
+// Forgetfulness Profile
+interface ForgetfulnessProfile {
+  score: number;
+  category: string;
+  recommendedGenerations: number;
+}
+
+// Helper function for reminder with extended properties
+interface ReminderWithScores extends Idea {
+  importance: number;
+  urgency: number;
+  history: ReminderHistory;
+  frequencyScore?: number;
+}
+
+// Anthropic API error with status
+interface AnthropicError extends Error {
+  status?: number;
+  type?: string;
+}
+
+// ============================================================================
+// APP SETUP
+// ============================================================================
+
+const app: Express = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize Anthropic client
@@ -95,13 +437,17 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // Request logging middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
+// ============================================================================
+// ROUTES
+// ============================================================================
+
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (req: Request, res: Response): void => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -110,14 +456,15 @@ app.get('/health', (req, res) => {
 });
 
 // POST /api/organize-ideas - Organize ideas using Claude API
-app.post('/api/organize-ideas', async (req, res) => {
+app.post('/api/organize-ideas', async (req: Request<{}, {}, OrganizeIdeasRequest>, res: Response<OrganizeIdeasResponse | { error: string; details?: string }>): Promise<void> => {
   try {
     const { ideas } = req.body;
 
     if (!ideas || !Array.isArray(ideas) || ideas.length === 0) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request: ideas array is required and must not be empty'
       });
+      return;
     }
 
     console.log(`Organizing ${ideas.length} ideas with Claude API...`);
@@ -182,7 +529,7 @@ Be encouraging and supportive in your tone. Focus on helping execute these ideas
     const responseText = message.content[0].text;
 
     // Try to parse JSON from the response
-    let organizedData;
+    let organizedData: OrganizeIdeasResponse;
     try {
       // Remove markdown code fences if present
       let cleanedText = responseText.trim();
@@ -220,48 +567,52 @@ Be encouraging and supportive in your tone. Focus on helping execute these ideas
     res.json(organizedData);
 
   } catch (error) {
+    const err = error as AnthropicError;
     console.error('❌ Error organizing ideas:');
-    console.error('   Status:', error.status || 'N/A');
-    console.error('   Message:', error.message);
-    console.error('   Type:', error.type || 'N/A');
+    console.error('   Status:', err.status || 'N/A');
+    console.error('   Message:', err.message);
+    console.error('   Type:', err.type || 'N/A');
     if (process.env.NODE_ENV === 'development') {
-      console.error('   Stack:', error.stack);
+      console.error('   Stack:', err.stack);
     }
 
-    if (error.status === 401) {
-      return res.status(401).json({
+    if (err.status === 401) {
+      res.status(401).json({
         error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
       });
+      return;
     }
 
-    if (error.status === 429) {
-      return res.status(429).json({
+    if (err.status === 429) {
+      res.status(429).json({
         error: 'Rate limit exceeded. Please try again in a moment.'
       });
+      return;
     }
 
     res.status(500).json({
-      error: error.message || 'Failed to organize ideas. Please try again.',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: err.message || 'Failed to organize ideas. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 });
 
 // POST /api/weekly-summary - Get weekly summary of ideas
-app.post('/api/weekly-summary', async (req, res) => {
+app.post('/api/weekly-summary', async (req: Request<{}, {}, WeeklySummaryRequest>, res: Response<WeeklySummaryResponse | { error: string }>): Promise<void> => {
   try {
     const { ideas } = req.body;
 
     if (!ideas || !Array.isArray(ideas)) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request: ideas array is required'
       });
+      return;
     }
 
     console.log(`Generating weekly summary for ${ideas.length} ideas...`);
 
     const ideasText = ideas.map(idea => {
-      const timestamp = new Date(idea.timestamp).toLocaleDateString();
+      const timestamp = new Date(idea.timestamp || '').toLocaleDateString();
       return `[${timestamp}] ${idea.content}`;
     }).join('\n');
 
@@ -295,22 +646,24 @@ Format your response as:
     });
 
   } catch (error) {
-    console.error('Error generating weekly summary:', error);
+    const err = error as AnthropicError;
+    console.error('Error generating weekly summary:', err);
     res.status(500).json({
-      error: error.message || 'Failed to generate weekly summary'
+      error: err.message || 'Failed to generate weekly summary'
     });
   }
 });
 
 // POST /api/analyze-patterns - Analyze patterns in logs and ideas
-app.post('/api/analyze-patterns', async (req, res) => {
+app.post('/api/analyze-patterns', async (req: Request<{}, {}, AnalyzePatternsRequest>, res: Response<AnalyzePatternsResponse | { error: string }>): Promise<void> => {
   try {
     const { logs, ideas } = req.body;
 
     if (!logs || !ideas) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request: both logs and ideas are required'
       });
+      return;
     }
 
     console.log(`Analyzing patterns from ${logs.length} logs and ${ideas.length} ideas...`);
@@ -321,7 +674,7 @@ app.post('/api/analyze-patterns', async (req, res) => {
     }).join('\n');
 
     const ideasText = ideas.map(idea => {
-      const timestamp = new Date(idea.timestamp).toLocaleString();
+      const timestamp = new Date(idea.timestamp || '').toLocaleString();
       return `[${timestamp}] ${idea.content}`;
     }).join('\n');
 
@@ -350,7 +703,7 @@ Return analysis in JSON format with: correlations, bestTimes, recommendations`
 
     const responseText = message.content[0].text;
 
-    let analysis;
+    let analysis: AnalyzePatternsResponse;
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -365,22 +718,24 @@ Return analysis in JSON format with: correlations, bestTimes, recommendations`
     res.json(analysis);
 
   } catch (error) {
-    console.error('Error analyzing patterns:', error);
+    const err = error as AnthropicError;
+    console.error('Error analyzing patterns:', err);
     res.status(500).json({
-      error: error.message || 'Failed to analyze patterns'
+      error: err.message || 'Failed to analyze patterns'
     });
   }
 });
 
 // POST /api/plan-activity - Get AI planning advice for an activity
-app.post('/api/plan-activity', async (req, res) => {
+app.post('/api/plan-activity', async (req: Request<{}, {}, PlanActivityRequest>, res: Response<PlanActivityResponse | { error: string; details?: string }>): Promise<void> => {
   try {
     const { activity, ideas, logs, checklist, reviews } = req.body;
 
     if (!activity || typeof activity !== 'string') {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request: activity string is required'
       });
+      return;
     }
 
     console.log(`Getting planning advice for: "${activity}"...`);
@@ -399,11 +754,11 @@ app.post('/api/plan-activity', async (req, res) => {
       })
       .join('\n');
 
-    const checklistInfo = checklist?.items?.length > 0
+    const checklistInfo = checklist?.items?.length && checklist.items.length > 0
       ? `Current routines: ${checklist.items.map(item => item.text).join(', ')}`
       : 'No current routines set';
 
-    const recentReview = reviews?.length > 0
+    const recentReview = reviews && reviews.length > 0
       ? `Last review: Energy ${reviews[0].energy}/10, Accomplishments: ${reviews[0].accomplishments || 'none'}`
       : 'No reviews yet';
 
@@ -454,7 +809,7 @@ Be encouraging and supportive. If their data shows low energy patterns, suggest 
     const responseText = message.content[0].text;
 
     // Parse JSON response
-    let plan;
+    let plan: PlanActivityResponse;
     try {
       let cleanedText = responseText.trim();
       cleanedText = cleanedText.replace(/^```json\s*/i, '');
@@ -480,29 +835,32 @@ Be encouraging and supportive. If their data shows low energy patterns, suggest 
     res.json(plan);
 
   } catch (error) {
-    console.error('Error planning activity:', error);
+    const err = error as AnthropicError;
+    console.error('Error planning activity:', err);
 
-    if (error.status === 401) {
-      return res.status(401).json({
+    if (err.status === 401) {
+      res.status(401).json({
         error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
       });
+      return;
     }
 
-    if (error.status === 429) {
-      return res.status(429).json({
+    if (err.status === 429) {
+      res.status(429).json({
         error: 'Rate limit exceeded. Please try again in a moment.'
       });
+      return;
     }
 
     res.status(500).json({
-      error: error.message || 'Failed to plan activity. Please try again.',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: err.message || 'Failed to plan activity. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 });
 
 // POST /api/generate-routine - Generate AI-powered daily routine
-app.post('/api/generate-routine', async (req, res) => {
+app.post('/api/generate-routine', async (req: Request<{}, {}, GenerateRoutineRequest>, res: Response<GenerateRoutineResponse | { error: string; details?: string }>): Promise<void> => {
   try {
     const { ideas, logs, checklist, reviews } = req.body;
 
@@ -512,7 +870,7 @@ app.post('/api/generate-routine', async (req, res) => {
     const recentIdeas = (ideas || [])
       .slice(-30) // Last 30 ideas
       .map((idea, i) => {
-        const tags = idea.tags?.length > 0 ? `[${idea.tags.join(', ')}]` : '';
+        const tags = idea.tags?.length && idea.tags.length > 0 ? `[${idea.tags.join(', ')}]` : '';
         return `${i + 1}. ${tags} ${idea.content}`;
       })
       .join('\n');
@@ -526,7 +884,7 @@ app.post('/api/generate-routine', async (req, res) => {
       })
       .join('\n');
 
-    const checklistInfo = checklist?.items?.length > 0
+    const checklistInfo = checklist?.items?.length && checklist.items.length > 0
       ? checklist.items.map(item => `- ${item.text}${item.important ? ' (IMPORTANT)' : ''}`).join('\n')
       : 'No current routines';
 
@@ -602,7 +960,7 @@ IMPORTANT GUIDELINES:
     const responseText = message.content[0].text;
 
     // Parse JSON response
-    let routine;
+    let routine: GenerateRoutineResponse;
     try {
       let cleanedText = responseText.trim();
       cleanedText = cleanedText.replace(/^```json\s*/i, '');
@@ -625,50 +983,54 @@ IMPORTANT GUIDELINES:
     res.json(routine);
 
   } catch (error) {
+    const err = error as AnthropicError;
     console.error('❌ Error generating routine:');
-    console.error('   Status:', error.status || 'N/A');
-    console.error('   Message:', error.message);
-    console.error('   Type:', error.type || 'N/A');
+    console.error('   Status:', err.status || 'N/A');
+    console.error('   Message:', err.message);
+    console.error('   Type:', err.type || 'N/A');
     if (process.env.NODE_ENV === 'development') {
-      console.error('   Stack:', error.stack);
+      console.error('   Stack:', err.stack);
     }
 
-    if (error.status === 401) {
-      return res.status(401).json({
+    if (err.status === 401) {
+      res.status(401).json({
         error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
       });
+      return;
     }
 
-    if (error.status === 429) {
-      return res.status(429).json({
+    if (err.status === 429) {
+      res.status(429).json({
         error: 'Rate limit exceeded. Please try again in a moment.'
       });
+      return;
     }
 
     res.status(500).json({
-      error: error.message || 'Failed to generate routine. Please try again.',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: err.message || 'Failed to generate routine. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 });
 
 // Subject classification cache (in-memory for MVP)
-const subjectCache = new Map();
+const subjectCache = new Map<string, ClassifySubjectResponse>();
 
 // Helper function to normalize subject for matching (alphanumeric only, lowercase)
-const normalizeSubject = (subject) => {
+const normalizeSubject = (subject: string): string => {
   return subject.toLowerCase().replace(/[^a-z0-9]/g, '');
 };
 
 // POST /api/classify-subject - Classify a study subject into hierarchical categories
-app.post('/api/classify-subject', async (req, res) => {
+app.post('/api/classify-subject', async (req: Request<{}, {}, ClassifySubjectRequest>, res: Response<ClassifySubjectResponse | { error: string }>): Promise<void> => {
   try {
     const { subject } = req.body;
 
     if (!subject || typeof subject !== 'string') {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request: subject string is required'
       });
+      return;
     }
 
     const normalizedSubject = normalizeSubject(subject);
@@ -676,7 +1038,8 @@ app.post('/api/classify-subject', async (req, res) => {
     // Check cache first
     if (subjectCache.has(normalizedSubject)) {
       console.log(`Using cached classification for: ${subject}`);
-      return res.json(subjectCache.get(normalizedSubject));
+      res.json(subjectCache.get(normalizedSubject)!);
+      return;
     }
 
     console.log(`Classifying subject: ${subject}...`);
@@ -719,7 +1082,7 @@ The "normalized" field is the most specific level, alphanumeric only, lowercase,
     const responseText = message.content[0].text;
 
     // Parse JSON response
-    let classification;
+    let classification: ClassifySubjectResponse;
     try {
       let cleanedText = responseText.trim();
       cleanedText = cleanedText.replace(/^```json\s*/i, '');
@@ -743,30 +1106,34 @@ The "normalized" field is the most specific level, alphanumeric only, lowercase,
     res.json(classification);
 
   } catch (error) {
-    console.error('Error classifying subject:', error);
+    const err = error as AnthropicError;
+    console.error('Error classifying subject:', err);
     res.status(500).json({
-      error: error.message || 'Failed to classify subject'
+      error: err.message || 'Failed to classify subject'
     });
   }
 });
 
-// 7. INTELLIGENT TAG MANAGEMENT
-// Analyzes tag usage patterns and recommends changes
-app.post('/api/analyze-tags', async (req, res) => {
+// POST /api/analyze-tags - Intelligent tag management
+app.post('/api/analyze-tags', async (req: Request<{}, {}, AnalyzeTagsRequest>, res: Response<AnalyzeTagsResponse | { error: string }>): Promise<void> => {
   try {
     const { ideas, currentTags } = req.body;
 
     if (!ideas || ideas.length === 0) {
-      return res.json({
-        recommendations: [],
+      res.json({
+        tagsToRemove: [],
+        tagsToAdd: [],
+        reasoning: '',
         analysis: 'Not enough data to analyze tags yet.',
-        keepTags: currentTags || []
+        keepTags: currentTags || [],
+        recommendations: []
       });
+      return;
     }
 
     // Calculate tag usage statistics
-    const tagStats = {};
-    const customTagUsage = {};
+    const tagStats: Record<string, number> = {};
+    const customTagUsage: Record<string, number> = {};
     let totalIdeasWithTags = 0;
 
     ideas.forEach(idea => {
@@ -786,12 +1153,16 @@ app.post('/api/analyze-tags', async (req, res) => {
 
     // Only proceed with AI analysis if user actively uses tags
     if (usagePercentage < 0.3) {
-      return res.json({
-        recommendations: [],
+      res.json({
+        tagsToRemove: [],
+        tagsToAdd: [],
+        reasoning: '',
         analysis: `Tags are used in ${Math.round(usagePercentage * 100)}% of ideas. Keep experimenting! The system will optimize tags once you use them more frequently.`,
         keepTags: currentTags || [],
-        stats: tagStats
+        stats: tagStats,
+        recommendations: []
       });
+      return;
     }
 
     // Prepare context for AI
@@ -840,7 +1211,7 @@ Return pure JSON (no code fences):
     });
 
     const responseText = message.content[0].text;
-    let result;
+    let result: Omit<AnalyzeTagsResponse, 'stats' | 'usagePercentage'>;
 
     try {
       let cleanedText = responseText.trim();
@@ -864,28 +1235,30 @@ Return pure JSON (no code fences):
     });
 
   } catch (error) {
-    console.error('Error analyzing tags:', error);
+    const err = error as AnthropicError;
+    console.error('Error analyzing tags:', err);
     res.status(500).json({ error: 'Failed to analyze tags' });
   }
 });
 
-// 8. URGENCY & PRIORITY DETECTION
-// Analyzes ideas and logs to determine what's urgent and important
-app.post('/api/analyze-urgency', async (req, res) => {
+// POST /api/analyze-urgency - Urgency & Priority Detection
+app.post('/api/analyze-urgency', async (req: Request<{}, {}, Record<string, unknown>>, res: Response<AnalyzeUrgencyResponse | { error: string }>): Promise<void> => {
   try {
-    const { ideas, logs } = req.body;
+    const { ideas, logs } = req.body as { ideas?: Idea[]; logs?: EnergyLog[] };
 
     if (!ideas || ideas.length === 0) {
-      return res.json({
-        urgent: [],
-        important: [],
-        analysis: 'No ideas to analyze.'
+      res.json({
+        urgentItems: [],
+        importantItems: [],
+        sentimentAnalysis: {},
+        recommendations: 'No ideas to analyze.'
       });
+      return;
     }
 
     const today = new Date();
     const recentIdeas = ideas.slice(0, 50).map(idea => {
-      const daysAgo = idea.timestamp ? Math.floor((today - new Date(idea.timestamp)) / (1000 * 60 * 60 * 24)) : 0;
+      const daysAgo = idea.timestamp ? Math.floor((today.getTime() - new Date(idea.timestamp).getTime()) / (1000 * 60 * 60 * 24)) : 0;
       const dueInfo = idea.dueDate ? `Due: ${idea.dueDate}` : 'No due date';
       return `[${daysAgo}d ago, ${dueInfo}, Tags: ${idea.tags?.join(',') || 'none'}] ${idea.content}`;
     }).join('\n');
@@ -950,7 +1323,7 @@ Return pure JSON (no code fences):
     });
 
     const responseText = message.content[0].text;
-    let result;
+    let result: AnalyzeUrgencyResponse;
 
     try {
       let cleanedText = responseText.trim();
@@ -970,13 +1343,14 @@ Return pure JSON (no code fences):
     res.json(result);
 
   } catch (error) {
-    console.error('Error analyzing urgency:', error);
+    const err = error as AnthropicError;
+    console.error('Error analyzing urgency:', err);
     res.status(500).json({ error: 'Failed to analyze urgency' });
   }
 });
 
-// Smart Reminder System - Adaptive Frequency Algorithm
-app.post('/api/get-reminders', async (req, res) => {
+// POST /api/get-reminders - Smart Reminder System with Adaptive Frequency Algorithm
+app.post('/api/get-reminders', async (req: Request<{}, {}, GetRemindersRequest>, res: Response<GetRemindersResponse | { error: string }>): Promise<void> => {
   try {
     const { ideas, logs, checklist, reviews, reminderHistory = [] } = req.body;
 
@@ -988,20 +1362,20 @@ app.post('/api/get-reminders', async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     // Get ideas that need reminders (due soon, recurring, or important)
-    const reminderCandidates = ideas
+    const reminderCandidates: ReminderWithScores[] = ideas
       .filter(idea => {
         // Include upcoming deadlines (within 3 days)
         if (idea.dueDate) {
           const dueDate = new Date(idea.dueDate);
           dueDate.setHours(0, 0, 0, 0);
-          const daysUntilDue = Math.floor((dueDate - today) / (1000 * 60 * 60 * 24));
+          const daysUntilDue = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           if (daysUntilDue >= 0 && daysUntilDue <= 3) return true;
         }
 
         // Include recurring/ongoing items (no due date but recently mentioned)
         if (!idea.dueDate) {
-          const createdDate = new Date(idea.timestamp);
-          const daysAgo = Math.floor((today - createdDate) / (1000 * 60 * 60 * 24));
+          const createdDate = new Date(idea.timestamp || '');
+          const daysAgo = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
           if (daysAgo <= 7) return true; // Recent ideas stay relevant
         }
 
@@ -1010,7 +1384,7 @@ app.post('/api/get-reminders', async (req, res) => {
       .map(idea => {
         const history = reminderHistory.find(h => h.ideaId === idea.id) || {
           ideaId: idea.id,
-          lastShown: null,
+          lastShown: undefined,
           showCount: 0,
           dismissCount: 0,
           actionTaken: false
@@ -1025,7 +1399,7 @@ app.post('/api/get-reminders', async (req, res) => {
           importance,
           urgency,
           history,
-          frequencyScore: null // Will be calculated below
+          frequencyScore: undefined
         };
       });
 
@@ -1046,13 +1420,13 @@ app.post('/api/get-reminders', async (req, res) => {
 
     // Sort by frequency score and select top reminders
     const sortedReminders = scoredReminders
-      .sort((a, b) => b.frequencyScore - a.frequencyScore)
+      .sort((a, b) => (b.frequencyScore || 0) - (a.frequencyScore || 0))
       .slice(0, Math.min(5, Math.ceil(scoredReminders.length * 0.3))); // Max 5, or 30% of candidates
 
     // Format reminders for display
-    const formattedReminders = sortedReminders.map(r => {
+    const formattedReminders: FormattedReminder[] = sortedReminders.map(r => {
       const daysUntilDue = r.dueDate
-        ? Math.floor((new Date(r.dueDate) - today) / (1000 * 60 * 60 * 24))
+        ? Math.floor((new Date(r.dueDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
         : null;
 
       let urgencyLabel = 'Low';
@@ -1065,11 +1439,11 @@ app.post('/api/get-reminders', async (req, res) => {
         content: r.content,
         tags: r.tags,
         dueDate: r.dueDate,
-        daysUntilDue,
+        daysUntilDue: daysUntilDue ?? undefined,
         importance: Math.round(r.importance),
         urgency: Math.round(r.urgency),
         urgencyLabel,
-        frequencyScore: Math.round(r.frequencyScore),
+        frequencyScore: Math.round(r.frequencyScore || 0),
         shouldPlaySound: r.urgency > 70 || (r.importance > 80 && daysUntilDue !== null && daysUntilDue <= 1),
         lastShown: r.history.lastShown,
         timesShown: r.history.showCount
@@ -1091,13 +1465,14 @@ app.post('/api/get-reminders', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error generating reminders:', error);
+    const err = error as AnthropicError;
+    console.error('Error generating reminders:', err);
     res.status(500).json({ error: 'Failed to generate reminders' });
   }
 });
 
-// Smart Routines - Generate personalized routine suggestions
-app.post('/api/generate-smart-routines', async (req, res) => {
+// POST /api/generate-smart-routines - Generate personalized routine suggestions
+app.post('/api/generate-smart-routines', async (req: Request<{}, {}, GenerateSmartRoutinesRequest>, res: Response<GenerateSmartRoutinesResponse | { error: string; details?: string }>): Promise<void> => {
   try {
     const { ideas, logs, timetable, existingRoutines } = req.body;
 
@@ -1200,7 +1575,7 @@ Be practical and supportive. Focus on routines they'll actually follow.`
     const responseText = message.content[0].text;
 
     // Parse JSON response
-    let routinesData;
+    let routinesData: { routines: SmartRoutine[] };
     try {
       let cleanedText = responseText.trim();
       cleanedText = cleanedText.replace(/^```json\s*/i, '');
@@ -1234,211 +1609,44 @@ Be practical and supportive. Focus on routines they'll actually follow.`
     });
 
   } catch (error) {
+    const err = error as AnthropicError;
     console.error('❌ Error generating smart routines:');
-    console.error('   Status:', error.status || 'N/A');
-    console.error('   Message:', error.message);
-    console.error('   Type:', error.type || 'N/A');
+    console.error('   Status:', err.status || 'N/A');
+    console.error('   Message:', err.message);
+    console.error('   Type:', err.type || 'N/A');
     if (process.env.NODE_ENV === 'development') {
-      console.error('   Stack:', error.stack);
+      console.error('   Stack:', err.stack);
     }
 
-    if (error.status === 401) {
-      return res.status(401).json({
+    if (err.status === 401) {
+      res.status(401).json({
         error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
       });
+      return;
     }
 
-    if (error.status === 429) {
-      return res.status(429).json({
+    if (err.status === 429) {
+      res.status(429).json({
         error: 'Rate limit exceeded. Please try again in a moment.'
       });
+      return;
     }
 
     res.status(500).json({
-      error: error.message || 'Failed to generate smart routines. Please try again.',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: err.message || 'Failed to generate smart routines. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 });
 
-// Helper: Calculate user's forgetfulness profile from their behavioral data
-function calculateForgetfulnessProfile(logs, checklist, reviews) {
-  // Default baseline: Average human (Ebbinghaus forgetting curve + Miller's Law)
-  // Research shows: 50% forgotten after 1 hour, 70% after 24 hours, 90% after 31 days
-  const defaultProfile = {
-    score: 0.65, // Moderate forgetfulness (0 = perfect memory, 1 = very forgetful)
-    category: 'Average',
-    recommendedGenerations: 5 // Remind every ~5 generations for important items
-  };
-
-  if (!logs || logs.length < 10) {
-    return defaultProfile; // Not enough data, use baseline
-  }
-
-  let forgetfulnessIndicators = 0;
-  let totalDataPoints = 0;
-
-  // Analyze logs for forgetting patterns
-  const forgetKeywords = ['forgot', 'missed', 'didn\'t remember', 'overlooked', 'skipped'];
-  const logMentions = logs.filter(log =>
-    forgetKeywords.some(keyword => log.content?.toLowerCase().includes(keyword))
-  );
-  forgetfulnessIndicators += logMentions.length * 2; // Weight logs heavily
-  totalDataPoints += logs.length;
-
-  // Analyze checklist completion rates
-  if (checklist?.items?.length > 0) {
-    const completedItems = checklist.items.filter(item => item.completed).length;
-    const completionRate = completedItems / checklist.items.length;
-    forgetfulnessIndicators += (1 - completionRate) * 10; // Incomplete tasks indicate forgetting
-    totalDataPoints += 10;
-  }
-
-  // Analyze reviews for patterns
-  if (reviews && reviews.length > 0) {
-    const recentReviews = reviews.slice(0, 5);
-    recentReviews.forEach(review => {
-      if (review.content) {
-        const hasForgetMention = forgetKeywords.some(kw =>
-          review.content.toLowerCase().includes(kw)
-        );
-        if (hasForgetMention) forgetfulnessIndicators += 3;
-      }
-    });
-    totalDataPoints += recentReviews.length * 3;
-  }
-
-  // Calculate normalized score (0-1 scale)
-  const rawScore = totalDataPoints > 0 ? forgetfulnessIndicators / totalDataPoints : 0.65;
-  const normalizedScore = Math.max(0.2, Math.min(0.95, rawScore)); // Clamp between 0.2-0.95
-
-  // Categorize and provide recommendations
-  let category, recommendedGenerations;
-  if (normalizedScore < 0.4) {
-    category = 'Low Forgetfulness';
-    recommendedGenerations = 8; // Remind less often
-  } else if (normalizedScore < 0.7) {
-    category = 'Average';
-    recommendedGenerations = 5; // Standard frequency
-  } else {
-    category = 'High Forgetfulness';
-    recommendedGenerations = 3; // Remind more often
-  }
-
-  return {
-    score: normalizedScore,
-    category,
-    recommendedGenerations
-  };
-}
-
-// Helper: Calculate importance score (0-100) based on frequency, enthusiasm, and patterns
-function calculateImportance(idea, allIdeas) {
-  let score = 50; // Start at neutral
-
-  // Check frequency: How often does similar content appear?
-  const similarIdeas = allIdeas.filter(other => {
-    if (other.id === idea.id) return false;
-    const contentSimilarity = idea.content?.toLowerCase().split(' ')
-      .filter(word => word.length > 4)
-      .some(word => other.content?.toLowerCase().includes(word));
-    const tagOverlap = idea.tags?.some(tag => other.tags?.includes(tag));
-    return contentSimilarity || tagOverlap;
-  });
-
-  if (similarIdeas.length > 5) score += 20; // Frequently mentioned topic
-  else if (similarIdeas.length > 2) score += 10;
-
-  // Check enthusiasm markers (exclamation marks, positive words)
-  const enthusiasmMarkers = idea.content?.match(/!|amazing|love|excited|important|priority/gi);
-  if (enthusiasmMarkers) {
-    score += Math.min(enthusiasmMarkers.length * 5, 20);
-  }
-
-  // Check tags for priority indicators
-  const priorityTags = ['work', 'urgent', 'important', 'deadline', 'assignment'];
-  const hasPriorityTag = idea.tags?.some(tag =>
-    priorityTags.some(pt => tag.toLowerCase().includes(pt))
-  );
-  if (hasPriorityTag) score += 15;
-
-  return Math.max(0, Math.min(100, score));
-}
-
-// Helper: Calculate urgency score (0-100) based on time sensitivity
-function calculateUrgency(idea, today) {
-  let score = 30; // Default low urgency for ongoing items
-
-  if (!idea.dueDate) {
-    // No deadline = ongoing/recurring, but check recency
-    const createdDate = new Date(idea.timestamp);
-    const daysAgo = Math.floor((today - createdDate) / (1000 * 60 * 60 * 24));
-    if (daysAgo === 0) score = 50; // Created today
-    else if (daysAgo <= 2) score = 40; // Very recent
-    return score;
-  }
-
-  // Has deadline - calculate based on time remaining
-  const dueDate = new Date(idea.dueDate);
-  dueDate.setHours(0, 0, 0, 0);
-  const daysUntilDue = Math.floor((dueDate - today) / (1000 * 60 * 60 * 24));
-
-  if (daysUntilDue < 0) return 100; // Overdue!
-  if (daysUntilDue === 0) return 95; // Due today
-  if (daysUntilDue === 1) return 85; // Due tomorrow
-  if (daysUntilDue === 2) return 70; // Due in 2 days
-  if (daysUntilDue === 3) return 55; // Due in 3 days
-  if (daysUntilDue <= 7) return 40; // Due this week
-
-  return 30; // Due later
-}
-
-// Helper: Calculate reminder frequency score using adaptive algorithm
-function calculateReminderFrequency(reminder, userProfile, totalReminders, reminderHistory) {
-  // Base score from importance and urgency (0-100 scale)
-  const baseScore = (reminder.importance * 0.6) + (reminder.urgency * 0.4);
-
-  // Forgetfulness multiplier (0.2 to 1.5)
-  // High forgetfulness = show more often, low = show less often
-  const forgetfulnessMultiplier = 0.5 + (userProfile.score * 1.0);
-
-  // Load adjustment (avoid overwhelming with too many reminders)
-  // More total reminders = lower individual scores
-  const loadAdjustment = totalReminders > 0
-    ? 1 / Math.log(totalReminders + 2)
-    : 1;
-
-  // Time decay (show reminders that haven't been shown recently)
-  const daysSinceShown = reminder.history.lastShown
-    ? Math.floor((new Date() - new Date(reminder.history.lastShown)) / (1000 * 60 * 60 * 24))
-    : 999; // Never shown = max decay bonus
-
-  const timeDecayBonus = Math.min(daysSinceShown / 7, 1.5); // Cap at 1.5x bonus after 1 week
-
-  // Engagement penalty (if user keeps dismissing, show less)
-  const engagementRate = reminder.history.showCount > 0
-    ? 1 - (reminder.history.dismissCount / reminder.history.showCount)
-    : 1; // No history = neutral
-
-  const engagementMultiplier = Math.max(0.3, engagementRate); // Minimum 0.3x even if always dismissed
-
-  // Final frequency score
-  const frequencyScore = baseScore *
-                        forgetfulnessMultiplier *
-                        loadAdjustment *
-                        timeDecayBonus *
-                        engagementMultiplier;
-
-  return frequencyScore;
-}
-
-// AI-Powered Idea Classification - Auto-classify captured ideas (Haiku 3.5 for cost efficiency)
-app.post('/api/classify-idea', async (req, res) => {
+// POST /api/classify-idea - Auto-classify captured ideas
+app.post('/api/classify-idea', async (req: Request<{}, {}, ClassifyIdeaRequest>, res: Response<ClassifyIdeaResponse | { error: string; fallback?: Partial<ClassifyIdeaResponse> }>): Promise<void> => {
   try {
     const { content, context, timestamp, currentTags } = req.body;
 
     if (!content || !content.trim()) {
-      return res.status(400).json({ error: 'Content is required' });
+      res.status(400).json({ error: 'Content is required' });
+      return;
     }
 
     // Use Haiku 3.5 for cost efficiency (~$0.0001 per classification)
@@ -1478,7 +1686,7 @@ Return JSON:
       }]
     });
 
-    let classification;
+    let classification: ClassifyIdeaResponse;
     try {
       let responseText = message.content[0].text;
 
@@ -1505,7 +1713,8 @@ Return JSON:
     res.json(classification);
 
   } catch (error) {
-    console.error('Error classifying idea:', error);
+    const err = error as AnthropicError;
+    console.error('Error classifying idea:', err);
     res.status(500).json({
       error: 'Failed to classify idea',
       fallback: {
@@ -1520,13 +1729,14 @@ Return JSON:
   }
 });
 
-// Batch Classification - Classify multiple ideas at once for efficiency
-app.post('/api/classify-ideas-batch', async (req, res) => {
+// POST /api/classify-ideas-batch - Batch classify multiple ideas at once for efficiency
+app.post('/api/classify-ideas-batch', async (req: Request<{}, {}, ClassifyIdeasBatchRequest>, res: Response<ClassifyIdeasBatchResponse | { error: string }>): Promise<void> => {
   try {
     const { ideas } = req.body;
 
     if (!ideas || !Array.isArray(ideas) || ideas.length === 0) {
-      return res.status(400).json({ error: 'Ideas array is required' });
+      res.status(400).json({ error: 'Ideas array is required' });
+      return;
     }
 
     // Limit batch size to prevent excessive API costs
@@ -1563,7 +1773,7 @@ Return pure JSON array (no code fences):
       }]
     });
 
-    let classifications;
+    let classifications: ClassificationItem[];
     try {
       let responseText = message.content[0].text;
       responseText = responseText.trim();
@@ -1577,24 +1787,205 @@ Return pure JSON array (no code fences):
       // Return defaults for all
       classifications = ideasToClassify.map((_, idx) => ({
         index: idx + 1,
-        classificationType: 'general',
+        classificationType: 'general' as const,
         duration: null,
-        recurrence: 'none',
+        recurrence: 'none' as const,
         timeOfDay: null,
-        priority: 'medium'
+        priority: 'medium' as const
       }));
     }
 
     res.json({ classifications });
 
   } catch (error) {
-    console.error('Error in batch classification:', error);
+    const err = error as AnthropicError;
+    console.error('Error in batch classification:', err);
     res.status(500).json({ error: 'Failed to classify ideas' });
   }
 });
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+// Helper: Calculate user's forgetfulness profile from their behavioral data
+function calculateForgetfulnessProfile(logs: EnergyLog[] | undefined, checklist: Checklist | undefined, reviews: Review[] | undefined): ForgetfulnessProfile {
+  // Default baseline: Average human (Ebbinghaus forgetting curve + Miller's Law)
+  // Research shows: 50% forgotten after 1 hour, 70% after 24 hours, 90% after 31 days
+  const defaultProfile: ForgetfulnessProfile = {
+    score: 0.65, // Moderate forgetfulness (0 = perfect memory, 1 = very forgetful)
+    category: 'Average',
+    recommendedGenerations: 5 // Remind every ~5 generations for important items
+  };
+
+  if (!logs || logs.length < 10) {
+    return defaultProfile; // Not enough data, use baseline
+  }
+
+  let forgetfulnessIndicators = 0;
+  let totalDataPoints = 0;
+
+  // Analyze logs for forgetting patterns
+  const forgetKeywords = ['forgot', 'missed', 'didn\'t remember', 'overlooked', 'skipped'];
+  const logMentions = logs.filter(log =>
+    forgetKeywords.some(keyword => log.content?.toLowerCase().includes(keyword))
+  );
+  forgetfulnessIndicators += logMentions.length * 2; // Weight logs heavily
+  totalDataPoints += logs.length;
+
+  // Analyze checklist completion rates
+  if (checklist?.items?.length && checklist.items.length > 0) {
+    const completedItems = checklist.items.filter(item => item.completed).length;
+    const completionRate = completedItems / checklist.items.length;
+    forgetfulnessIndicators += (1 - completionRate) * 10; // Incomplete tasks indicate forgetting
+    totalDataPoints += 10;
+  }
+
+  // Analyze reviews for patterns
+  if (reviews && reviews.length > 0) {
+    const recentReviews = reviews.slice(0, 5);
+    recentReviews.forEach(review => {
+      if (review.content) {
+        const hasForgetMention = forgetKeywords.some(kw =>
+          review.content.toLowerCase().includes(kw)
+        );
+        if (hasForgetMention) forgetfulnessIndicators += 3;
+      }
+    });
+    totalDataPoints += recentReviews.length * 3;
+  }
+
+  // Calculate normalized score (0-1 scale)
+  const rawScore = totalDataPoints > 0 ? forgetfulnessIndicators / totalDataPoints : 0.65;
+  const normalizedScore = Math.max(0.2, Math.min(0.95, rawScore)); // Clamp between 0.2-0.95
+
+  // Categorize and provide recommendations
+  let category: string;
+  let recommendedGenerations: number;
+  if (normalizedScore < 0.4) {
+    category = 'Low Forgetfulness';
+    recommendedGenerations = 8; // Remind less often
+  } else if (normalizedScore < 0.7) {
+    category = 'Average';
+    recommendedGenerations = 5; // Standard frequency
+  } else {
+    category = 'High Forgetfulness';
+    recommendedGenerations = 3; // Remind more often
+  }
+
+  return {
+    score: normalizedScore,
+    category,
+    recommendedGenerations
+  };
+}
+
+// Helper: Calculate importance score (0-100) based on frequency, enthusiasm, and patterns
+function calculateImportance(idea: Idea, allIdeas: Idea[]): number {
+  let score = 50; // Start at neutral
+
+  // Check frequency: How often does similar content appear?
+  const similarIdeas = allIdeas.filter(other => {
+    if (other.id === idea.id) return false;
+    const contentSimilarity = idea.content?.toLowerCase().split(' ')
+      .filter(word => word.length > 4)
+      .some(word => other.content?.toLowerCase().includes(word));
+    const tagOverlap = idea.tags?.some(tag => other.tags?.includes(tag));
+    return contentSimilarity || tagOverlap;
+  });
+
+  if (similarIdeas.length > 5) score += 20; // Frequently mentioned topic
+  else if (similarIdeas.length > 2) score += 10;
+
+  // Check enthusiasm markers (exclamation marks, positive words)
+  const enthusiasmMarkers = idea.content?.match(/!|amazing|love|excited|important|priority/gi);
+  if (enthusiasmMarkers) {
+    score += Math.min(enthusiasmMarkers.length * 5, 20);
+  }
+
+  // Check tags for priority indicators
+  const priorityTags = ['work', 'urgent', 'important', 'deadline', 'assignment'];
+  const hasPriorityTag = idea.tags?.some(tag =>
+    priorityTags.some(pt => tag.toLowerCase().includes(pt))
+  );
+  if (hasPriorityTag) score += 15;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+// Helper: Calculate urgency score (0-100) based on time sensitivity
+function calculateUrgency(idea: Idea, today: Date): number {
+  let score = 30; // Default low urgency for ongoing items
+
+  if (!idea.dueDate) {
+    // No deadline = ongoing/recurring, but check recency
+    const createdDate = new Date(idea.timestamp || '');
+    const daysAgo = Math.floor((today.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysAgo === 0) score = 50; // Created today
+    else if (daysAgo <= 2) score = 40; // Very recent
+    return score;
+  }
+
+  // Has deadline - calculate based on time remaining
+  const dueDate = new Date(idea.dueDate);
+  dueDate.setHours(0, 0, 0, 0);
+  const daysUntilDue = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (daysUntilDue < 0) return 100; // Overdue!
+  if (daysUntilDue === 0) return 95; // Due today
+  if (daysUntilDue === 1) return 85; // Due tomorrow
+  if (daysUntilDue === 2) return 70; // Due in 2 days
+  if (daysUntilDue === 3) return 55; // Due in 3 days
+  if (daysUntilDue <= 7) return 40; // Due this week
+
+  return 30; // Due later
+}
+
+// Helper: Calculate reminder frequency score using adaptive algorithm
+function calculateReminderFrequency(reminder: ReminderWithScores, userProfile: ForgetfulnessProfile, totalReminders: number, reminderHistory: ReminderHistory[]): number {
+  // Base score from importance and urgency (0-100 scale)
+  const baseScore = (reminder.importance * 0.6) + (reminder.urgency * 0.4);
+
+  // Forgetfulness multiplier (0.2 to 1.5)
+  // High forgetfulness = show more often, low = show less often
+  const forgetfulnessMultiplier = 0.5 + (userProfile.score * 1.0);
+
+  // Load adjustment (avoid overwhelming with too many reminders)
+  // More total reminders = lower individual scores
+  const loadAdjustment = totalReminders > 0
+    ? 1 / Math.log(totalReminders + 2)
+    : 1;
+
+  // Time decay (show reminders that haven't been shown recently)
+  const daysSinceShown = reminder.history.lastShown
+    ? Math.floor((new Date().getTime() - new Date(reminder.history.lastShown).getTime()) / (1000 * 60 * 60 * 24))
+    : 999; // Never shown = max decay bonus
+
+  const timeDecayBonus = Math.min(daysSinceShown / 7, 1.5); // Cap at 1.5x bonus after 1 week
+
+  // Engagement penalty (if user keeps dismissing, show less)
+  const engagementRate = reminder.history.showCount > 0
+    ? 1 - (reminder.history.dismissCount / reminder.history.showCount)
+    : 1; // No history = neutral
+
+  const engagementMultiplier = Math.max(0.3, engagementRate); // Minimum 0.3x even if always dismissed
+
+  // Final frequency score
+  const frequencyScore = baseScore *
+                        forgetfulnessMultiplier *
+                        loadAdjustment *
+                        timeDecayBonus *
+                        engagementMultiplier;
+
+  return frequencyScore;
+}
+
+// ============================================================================
+// ERROR HANDLING & 404
+// ============================================================================
+
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response): void => {
   res.status(404).json({
     error: 'Endpoint not found',
     availableEndpoints: {
@@ -1609,13 +2000,14 @@ app.use((req, res) => {
       'POST /api/analyze-urgency': 'AI-powered urgency detection',
       'POST /api/get-reminders': 'Smart reminder system with adaptive frequency',
       'POST /api/classify-idea': 'Auto-classify captured idea (Haiku 3.5)',
-      'POST /api/classify-ideas-batch': 'Batch classify multiple ideas'
+      'POST /api/classify-ideas-batch': 'Batch classify multiple ideas',
+      'POST /api/generate-smart-routines': 'Generate personalized routine suggestions'
     }
   });
 });
 
 // Error handler
-app.use((err, req, res, next) => {
+app.use((err: Error, req: Request, res: Response, next: NextFunction): void => {
   console.error('Unhandled error:', err);
   res.status(500).json({
     error: 'Internal server error',
@@ -1624,7 +2016,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// ============================================================================
+// SERVER START
+// ============================================================================
+
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════╗
@@ -1667,3 +2062,5 @@ app.listen(PORT, () => {
     console.log('\n✓ ANTHROPIC_API_KEY is configured correctly\n');
   }
 });
+
+export default app;

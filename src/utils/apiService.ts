@@ -1,9 +1,13 @@
 // Use Vite proxy in development, direct URL in production
 const API_BASE_URL = import.meta.env.DEV ? '' : 'http://localhost:3001';
 
+interface FetchOptions extends RequestInit {
+  headers?: Record<string, string>;
+}
+
 // Retry logic helper
-const fetchWithRetry = async (url, options, maxRetries = 3) => {
-  let lastError;
+const fetchWithRetry = async <T = any>(url: string, options: FetchOptions, maxRetries = 3): Promise<T> => {
+  let lastError: Error;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -22,10 +26,10 @@ const fetchWithRetry = async (url, options, maxRetries = 3) => {
 
       return await response.json();
     } catch (error) {
-      lastError = error;
+      lastError = error as Error;
 
       // Don't retry on network errors if backend is down
-      if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
+      if (lastError.message.includes('fetch') || lastError.message.includes('NetworkError')) {
         throw new Error('Backend server is not responding. Please make sure it\'s running on port 3001.');
       }
 
@@ -36,15 +40,48 @@ const fetchWithRetry = async (url, options, maxRetries = 3) => {
     }
   }
 
-  throw lastError;
+  throw lastError!;
 };
+
+export interface Idea {
+  id: string;
+  text: string;
+  timestamp: string;
+  category?: string;
+  priority?: string;
+  [key: string]: any;
+}
+
+export interface Log {
+  id: string;
+  timestamp: string;
+  energy?: number;
+  motivation?: number;
+  [key: string]: any;
+}
+
+export interface Checklist {
+  [key: string]: any;
+}
+
+export interface Review {
+  id: string;
+  timestamp: string;
+  [key: string]: any;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
 
 /**
  * Send captured ideas to backend for AI organization
- * @param {Array} ideas - Array of idea objects
- * @returns {Promise} - Organized ideas with themes and priorities
+ * @param ideas - Array of idea objects
+ * @returns Organized ideas with themes and priorities
  */
-export const organizeIdeas = async (ideas) => {
+export const organizeIdeas = async (ideas: Idea[]): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/organize-ideas`, {
       method: 'POST',
@@ -59,17 +96,17 @@ export const organizeIdeas = async (ideas) => {
     console.error('Error organizing ideas:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Get AI-generated weekly summary of ideas and logs
- * @param {Array} ideas - Array of idea objects
- * @returns {Promise} - Weekly summary analysis
+ * @param ideas - Array of idea objects
+ * @returns Weekly summary analysis
  */
-export const getWeeklySummary = async (ideas) => {
+export const getWeeklySummary = async (ideas: Idea[]): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/weekly-summary`, {
       method: 'POST',
@@ -84,18 +121,18 @@ export const getWeeklySummary = async (ideas) => {
     console.error('Error getting weekly summary:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Analyze patterns in logs and ideas to find correlations
- * @param {Array} logs - Array of energy/motivation log objects
- * @param {Array} ideas - Array of idea objects
- * @returns {Promise} - Pattern analysis with correlations
+ * @param logs - Array of energy/motivation log objects
+ * @param ideas - Array of idea objects
+ * @returns Pattern analysis with correlations
  */
-export const analyzePatterns = async (logs, ideas) => {
+export const analyzePatterns = async (logs: Log[], ideas: Idea[]): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/analyze-patterns`, {
       method: 'POST',
@@ -110,17 +147,17 @@ export const analyzePatterns = async (logs, ideas) => {
     console.error('Error analyzing patterns:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Classify a study subject into hierarchical categories
- * @param {string} subject - The subject being studied (e.g., "Group Theory", "Quantum Mechanics")
- * @returns {Promise} - Hierarchical classification (e.g., Math -> Algebra -> Group Theory)
+ * @param subject - The subject being studied (e.g., "Group Theory", "Quantum Mechanics")
+ * @returns Hierarchical classification (e.g., Math -> Algebra -> Group Theory)
  */
-export const classifySubject = async (subject) => {
+export const classifySubject = async (subject: string): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/classify-subject`, {
       method: 'POST',
@@ -135,21 +172,27 @@ export const classifySubject = async (subject) => {
     console.error('Error classifying subject:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Get AI planning advice for an activity based on user data
- * @param {string} activity - The activity to plan
- * @param {Array} ideas - Array of captured ideas
- * @param {Array} logs - Array of activity logs
- * @param {Object} checklist - Daily checklist data
- * @param {Array} reviews - Array of end-of-day reviews
- * @returns {Promise} - Planning advice with suggestions
+ * @param activity - The activity to plan
+ * @param ideas - Array of captured ideas
+ * @param logs - Array of activity logs
+ * @param checklist - Daily checklist data
+ * @param reviews - Array of end-of-day reviews
+ * @returns Planning advice with suggestions
  */
-export const getPlanningAdvice = async (activity, ideas, logs, checklist, reviews) => {
+export const getPlanningAdvice = async (
+  activity: string,
+  ideas: Idea[],
+  logs: Log[],
+  checklist: Checklist,
+  reviews: Review[]
+): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/plan-activity`, {
       method: 'POST',
@@ -164,20 +207,25 @@ export const getPlanningAdvice = async (activity, ideas, logs, checklist, review
     console.error('Error getting planning advice:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Generate AI-powered daily routine based on all user data
- * @param {Array} ideas - Array of captured ideas
- * @param {Array} logs - Array of activity logs
- * @param {Object} checklist - Daily checklist data
- * @param {Array} reviews - Array of end-of-day reviews
- * @returns {Promise} - Generated daily routine with time blocks
+ * @param ideas - Array of captured ideas
+ * @param logs - Array of activity logs
+ * @param checklist - Daily checklist data
+ * @param reviews - Array of end-of-day reviews
+ * @returns Generated daily routine with time blocks
  */
-export const generateDailyRoutine = async (ideas, logs, checklist, reviews) => {
+export const generateDailyRoutine = async (
+  ideas: Idea[],
+  logs: Log[],
+  checklist: Checklist,
+  reviews: Review[]
+): Promise<ApiResponse<any>> => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/generate-routine`, {
       method: 'POST',
@@ -192,16 +240,16 @@ export const generateDailyRoutine = async (ideas, logs, checklist, reviews) => {
     console.error('Error generating daily routine:', error);
     return {
       success: false,
-      error: error.message,
+      error: (error as Error).message,
     };
   }
 };
 
 /**
  * Health check to verify backend is running
- * @returns {Promise<boolean>} - True if backend is healthy
+ * @returns True if backend is healthy
  */
-export const checkBackendHealth = async () => {
+export const checkBackendHealth = async (): Promise<boolean> => {
   try {
     const baseUrl = import.meta.env.DEV ? 'http://localhost:3001' : API_BASE_URL;
     const response = await fetch(`${baseUrl}/health`, {

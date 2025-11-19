@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Dispatch, SetStateAction } from 'react';
 
-export function useLocalStorage(key, initialValue) {
+export function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
   // Get stored value or use initial value
-  const [storedValue, setStoredValue] = useState(() => {
+  const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
@@ -13,7 +13,7 @@ export function useLocalStorage(key, initialValue) {
   });
 
   // Track timeout for debouncing
-  const timeoutRef = useRef(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Debounced update to localStorage (500ms delay to batch rapid updates)
   useEffect(() => {

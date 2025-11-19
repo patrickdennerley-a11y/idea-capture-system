@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
+import { useState, useMemo, ChangeEvent, FC } from 'react';
+import { Calendar, dateFnsLocalizer, View } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
@@ -7,6 +7,66 @@ import { useLocalStorage } from '../hooks/useLocalStorage';
 import { X, Save, Undo, Download, Plus } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
+
+// Type definitions
+interface ScheduleBlock {
+  time: string;
+  activity: string;
+  description?: string;
+  reasoning?: string;
+  priority?: string;
+}
+
+interface RoutineData {
+  schedule: ScheduleBlock[];
+}
+
+interface StoredEvent {
+  id: number;
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface CalendarEvent extends StoredEvent {
+  start: Date | string;
+  end: Date | string;
+}
+
+interface FormData {
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface CalendarViewProps {
+  routineToLoad?: RoutineData | null;
+}
+
+interface DragDropEvent {
+  event: CalendarEvent;
+  start: Date;
+  end: Date;
+}
+
+interface SelectSlotEvent {
+  start: Date;
+  end: Date;
+}
+
+interface EventStyleGetterResult {
+  style: {
+    backgroundColor: string;
+    color: string;
+    border: string;
+    borderRadius: string;
+    padding: string;
+  };
+}
 
 const locales = {
   'en-US': enUS,
@@ -22,13 +82,13 @@ const localizer = dateFnsLocalizer({
 
 const DnDCalendar = withDragAndDrop(Calendar);
 
-export default function CalendarView({ routineToLoad = null }) {
-  const [events, setEvents] = useLocalStorage('neural-calendar-events', []);
-  const [undoStack, setUndoStack] = useLocalStorage('neural-calendar-undo', []);
-  const [view, setView] = useState('week');
-  const [showModal, setShowModal] = useState(false);
-  const [editingEvent, setEditingEvent] = useState(null);
-  const [formData, setFormData] = useState({
+const CalendarView: FC<CalendarViewProps> = ({ routineToLoad = null }) => {
+  const [events, setEvents] = useLocalStorage<StoredEvent[]>('neural-calendar-events', []);
+  const [undoStack, setUndoStack] = useLocalStorage<StoredEvent[][]>('neural-calendar-undo', []);
+  const [view, setView] = useState<View>('week');
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [formData, setFormData] = useState<FormData>({
     title: '',
     description: '',
     start: '',
@@ -37,7 +97,7 @@ export default function CalendarView({ routineToLoad = null }) {
   });
 
   // Convert stored events to Date objects for calendar
-  const calendarEvents = useMemo(() => {
+  const calendarEvents = useMemo<CalendarEvent[]>(() => {
     return events.map(event => ({
       ...event,
       start: new Date(event.start),
@@ -46,7 +106,7 @@ export default function CalendarView({ routineToLoad = null }) {
   }, [events]);
 
   // Helper: format Date to datetime-local input format
-  const formatDateTimeLocal = (date) => {
+  const formatDateTimeLocal = (date: Date | string): string => {
     const d = new Date(date);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -57,12 +117,12 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Helper: save current state for undo (keep last 10 states)
-  const saveUndo = () => {
+  const saveUndo = (): void => {
     setUndoStack(prev => [...prev.slice(-9), events]);
   };
 
   // Undo last change
-  const handleUndo = () => {
+  const handleUndo = (): void => {
     if (undoStack.length > 0) {
       const previousState = undoStack[undoStack.length - 1];
       setEvents(previousState);
@@ -71,12 +131,12 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Parse time string like "9:00 AM - 10:30 AM" and create Date objects for today
-  const parseTimeBlock = (timeString) => {
+  const parseTimeBlock = (timeString: string): { start: Date; end: Date } => {
     try {
       const today = new Date();
       const [startStr, endStr] = timeString.split(' - ');
 
-      const parseTime = (timeStr) => {
+      const parseTime = (timeStr: string): Date => {
         const [time, meridiem] = timeStr.trim().split(' ');
         let [hours, minutes = 0] = time.split(':').map(Number);
 
@@ -100,7 +160,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Load AI-generated routine into calendar
-  const handleLoadRoutine = () => {
+  const handleLoadRoutine = (): void => {
     if (!routineToLoad || !routineToLoad.schedule) {
       alert('No routine to load');
       return;
@@ -109,7 +169,7 @@ export default function CalendarView({ routineToLoad = null }) {
     try {
       saveUndo();
 
-      const newEvents = routineToLoad.schedule.map((block, index) => {
+      const newEvents: StoredEvent[] = routineToLoad.schedule.map((block, index) => {
         const { start, end } = parseTimeBlock(block.time);
         return {
           id: Date.now() + index,
@@ -117,7 +177,7 @@ export default function CalendarView({ routineToLoad = null }) {
           description: block.description || block.reasoning || '',
           start: start.toISOString(),
           end: end.toISOString(),
-          priority: block.priority?.toLowerCase() || 'medium',
+          priority: (block.priority?.toLowerCase() || 'medium') as 'high' | 'medium' | 'low',
         };
       });
 
@@ -130,7 +190,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle selecting a time slot (creating new event)
-  const handleSelectSlot = ({ start, end }) => {
+  const handleSelectSlot = ({ start, end }: SelectSlotEvent): void => {
     setEditingEvent(null);
     setFormData({
       title: '',
@@ -143,7 +203,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle custom event button (default to next hour, 1 hour duration)
-  const handleCreateEvent = () => {
+  const handleCreateEvent = (): void => {
     const now = new Date();
     const nextHour = new Date(now);
     nextHour.setHours(now.getHours() + 1, 0, 0, 0);
@@ -162,7 +222,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle clicking an existing event (editing)
-  const handleSelectEvent = (event) => {
+  const handleSelectEvent = (event: CalendarEvent): void => {
     setEditingEvent(event);
     setFormData({
       title: event.title || '',
@@ -175,7 +235,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle saving event (create or update)
-  const handleSaveEvent = () => {
+  const handleSaveEvent = (): void => {
     if (!formData.title.trim()) {
       alert('Please enter an event title');
       return;
@@ -191,7 +251,7 @@ export default function CalendarView({ routineToLoad = null }) {
     }
 
     // Validate: minimum 5 minute duration
-    const durationMinutes = (endDate - startDate) / (1000 * 60);
+    const durationMinutes = (endDate.getTime() - startDate.getTime()) / (1000 * 60);
     if (durationMinutes < 5) {
       alert('Events must be at least 5 minutes long');
       return;
@@ -200,7 +260,7 @@ export default function CalendarView({ routineToLoad = null }) {
     // Save current state for undo
     saveUndo();
 
-    const eventData = {
+    const eventData: StoredEvent = {
       id: editingEvent?.id || Date.now(),
       title: formData.title,
       description: formData.description,
@@ -221,7 +281,7 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle deleting event
-  const handleDeleteEvent = () => {
+  const handleDeleteEvent = (): void => {
     if (editingEvent && confirm('Delete this event?')) {
       saveUndo();
       setEvents(events.filter(e => e.id !== editingEvent.id));
@@ -230,29 +290,35 @@ export default function CalendarView({ routineToLoad = null }) {
   };
 
   // Handle event drag/drop (move event)
-  const handleEventDrop = ({ event, start, end }) => {
+  const handleEventDrop = ({ event, start, end }: DragDropEvent): void => {
     saveUndo();
-    const updatedEvent = {
-      ...event,
-      start: start.toISOString(),
-      end: end.toISOString(),
-    };
-    setEvents(events.map(e => e.id === event.id ? updatedEvent : e));
+    setEvents(events.map(e =>
+      e.id === event.id
+        ? {
+            ...e,
+            start: start.toISOString(),
+            end: end.toISOString(),
+          }
+        : e
+    ));
   };
 
   // Handle event resize (change duration by dragging edges)
-  const handleEventResize = ({ event, start, end }) => {
+  const handleEventResize = ({ event, start, end }: DragDropEvent): void => {
     saveUndo();
-    const updatedEvent = {
-      ...event,
-      start: start.toISOString(),
-      end: end.toISOString(),
-    };
-    setEvents(events.map(e => e.id === event.id ? updatedEvent : e));
+    setEvents(events.map(e =>
+      e.id === event.id
+        ? {
+            ...e,
+            start: start.toISOString(),
+            end: end.toISOString(),
+          }
+        : e
+    ));
   };
 
   // Event styling: solid purple boxes with white text, NO borders
-  const eventStyleGetter = () => ({
+  const eventStyleGetter = (): EventStyleGetterResult => ({
     style: {
       backgroundColor: '#7c3aed',
       color: '#ffffff',
@@ -347,7 +413,7 @@ export default function CalendarView({ routineToLoad = null }) {
                 <input
                   type="text"
                   value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, title: e.target.value })}
                   className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
                   placeholder="Event title"
                 />
@@ -359,7 +425,7 @@ export default function CalendarView({ routineToLoad = null }) {
                 </label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
                   placeholder="Event description"
                   rows={3}
@@ -372,7 +438,7 @@ export default function CalendarView({ routineToLoad = null }) {
                 </label>
                 <select
                   value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, priority: e.target.value as 'high' | 'medium' | 'low' })}
                   className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
                 >
                   <option value="high">High Priority</option>
@@ -388,7 +454,7 @@ export default function CalendarView({ routineToLoad = null }) {
                 <input
                   type="datetime-local"
                   value={formData.start}
-                  onChange={(e) => setFormData({ ...formData, start: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, start: e.target.value })}
                   className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
                 />
               </div>
@@ -400,7 +466,7 @@ export default function CalendarView({ routineToLoad = null }) {
                 <input
                   type="datetime-local"
                   value={formData.end}
-                  onChange={(e) => setFormData({ ...formData, end: e.target.value })}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, end: e.target.value })}
                   className="w-full bg-neural-dark border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:border-neural-purple"
                 />
               </div>
@@ -428,4 +494,6 @@ export default function CalendarView({ routineToLoad = null }) {
       )}
     </div>
   );
-}
+};
+
+export default CalendarView;

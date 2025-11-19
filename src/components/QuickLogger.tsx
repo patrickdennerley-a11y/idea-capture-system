@@ -42,7 +42,7 @@
  * - Classification not working → Check server.cjs endpoint and model name
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, ReactNode, ChangeEvent, FormEvent } from 'react';
 import { Activity, Zap, Heart, BookOpen, Plus, TrendingUp, Calendar, X, CheckCircle2, Clock, Play, Pause, Square, Trash2 } from 'lucide-react';
 import { formatTime, getTimePeriod, getTodayString } from '../utils/dateUtils';
 import { classifySubject } from '../utils/apiService';
@@ -58,20 +58,64 @@ const ACTIVITIES = [
   'Other',
 ];
 
-export default function QuickLogger({ logs, setLogs }) {
-  const [showLogger, setShowLogger] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [energy, setEnergy] = useState(5);
-  const [motivation, setMotivation] = useState(5);
-  const [activity, setActivity] = useState('');
-  const [subject, setSubject] = useState('');
-  const [note, setNote] = useState('');
-  const [duration, setDuration] = useState('');
-  const [isTimerMode, setIsTimerMode] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(0);
-  const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [timerStartTime, setTimerStartTime] = useState(null);
-  const timerIntervalRef = useRef(null);
+// Type Definitions
+interface SubjectHierarchy {
+  hierarchy: string[];
+  [key: string]: any;
+}
+
+interface Log {
+  id: number;
+  timestamp: string;
+  timePeriod: string;
+  energy: number;
+  motivation: number;
+  activity: string;
+  subject: string | null;
+  subjectHierarchy: SubjectHierarchy | null;
+  duration: number | null;
+  note: string;
+}
+
+interface QuickLoggerProps {
+  logs: Log[];
+  setLogs: React.Dispatch<React.SetStateAction<Log[]>>;
+}
+
+interface LogHistoryViewProps {
+  logs: Log[];
+  onClose: () => void;
+}
+
+interface CalendarDay {
+  date: string;
+  dayOfWeek: string;
+  dayOfMonth: number;
+  logs: Log[];
+  avgEnergy: number | null;
+  avgMotivation: number | null;
+  isToday: boolean;
+}
+
+interface ClassificationResult {
+  success: boolean;
+  data?: SubjectHierarchy;
+}
+
+export default function QuickLogger({ logs, setLogs }: QuickLoggerProps): ReactNode {
+  const [showLogger, setShowLogger] = useState<boolean>(false);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [energy, setEnergy] = useState<number>(5);
+  const [motivation, setMotivation] = useState<number>(5);
+  const [activity, setActivity] = useState<string>('');
+  const [subject, setSubject] = useState<string>('');
+  const [note, setNote] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
+  const [isTimerMode, setIsTimerMode] = useState<boolean>(false);
+  const [timerSeconds, setTimerSeconds] = useState<number>(0);
+  const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
+  const [timerStartTime, setTimerStartTime] = useState<number | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Timer effect
   useEffect(() => {
@@ -92,16 +136,16 @@ export default function QuickLogger({ logs, setLogs }) {
     };
   }, [isTimerRunning]);
 
-  const startTimer = () => {
+  const startTimer = (): void => {
     setIsTimerRunning(true);
     setTimerStartTime(Date.now());
   };
 
-  const pauseTimer = () => {
+  const pauseTimer = (): void => {
     setIsTimerRunning(false);
   };
 
-  const stopTimer = () => {
+  const stopTimer = (): void => {
     setIsTimerRunning(false);
     // Auto-fill duration with timer value
     const minutes = Math.round(timerSeconds / 60);
@@ -110,7 +154,7 @@ export default function QuickLogger({ logs, setLogs }) {
     setIsTimerMode(false);
   };
 
-  const formatTimer = (seconds) => {
+  const formatTimer = (seconds: number): string => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
@@ -121,7 +165,7 @@ export default function QuickLogger({ logs, setLogs }) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const logEntry = async () => {
+  const logEntry = async (): Promise<void> => {
     // Store values before state updates to prevent race conditions
     const currentActivity = activity;
     const currentSubject = subject;
@@ -131,7 +175,7 @@ export default function QuickLogger({ logs, setLogs }) {
     const currentNote = note;
 
     // Calculate duration in minutes
-    let durationMinutes = 30; // default
+    let durationMinutes: number = 30; // default
     if (currentDuration && currentDuration.trim() !== '') {
       const parsed = parseInt(currentDuration.trim(), 10); // Explicit base 10
       if (!isNaN(parsed) && parsed > 0) {
@@ -142,17 +186,17 @@ export default function QuickLogger({ logs, setLogs }) {
     console.log('Duration input:', JSON.stringify(currentDuration), '→ Parsed:', durationMinutes);
 
     // Classify subject if studying
-    let subjectHierarchy = null;
+    let subjectHierarchy: SubjectHierarchy | null = null;
     if (currentActivity === 'Studying' && currentSubject.trim()) {
       console.log('Classifying subject:', currentSubject.trim());
-      const classification = await classifySubject(currentSubject.trim());
+      const classification: ClassificationResult = await classifySubject(currentSubject.trim());
       console.log('Classification result:', classification);
-      if (classification.success) {
+      if (classification.success && classification.data) {
         subjectHierarchy = classification.data;
       }
     }
 
-    const newLog = {
+    const newLog: Log = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
       timePeriod: getTimePeriod(),
@@ -182,27 +226,27 @@ export default function QuickLogger({ logs, setLogs }) {
     setShowLogger(false);
   };
 
-  const deleteLog = (logId) => {
+  const deleteLog = (logId: number): void => {
     if (confirm('Delete this log entry?')) {
       setLogs(prev => prev.filter(log => log.id !== logId));
     }
   };
 
-  const todayLogs = logs.filter(log => {
+  const todayLogs: Log[] = logs.filter(log => {
     const logDate = new Date(log.timestamp).toDateString();
     const today = new Date().toDateString();
     return logDate === today;
   });
 
-  const avgEnergy = todayLogs.length > 0
+  const avgEnergy: number = todayLogs.length > 0
     ? Math.round(todayLogs.reduce((sum, log) => sum + log.energy, 0) / todayLogs.length)
     : 0;
 
-  const avgMotivation = todayLogs.length > 0
+  const avgMotivation: number = todayLogs.length > 0
     ? Math.round(todayLogs.reduce((sum, log) => sum + log.motivation, 0) / todayLogs.length)
     : 0;
 
-  const studyTime = Math.round(
+  const studyTime: number = Math.round(
     (todayLogs
       .filter(log => log.activity === 'Studying')
       .reduce((total, log) => total + (log.duration || 30), 0) / 60) * 10
@@ -304,7 +348,7 @@ export default function QuickLogger({ logs, setLogs }) {
               min="1"
               max="10"
               value={energy}
-              onChange={(e) => setEnergy(parseInt(e.target.value))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEnergy(parseInt(e.target.value))}
               className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer slider"
               style={{
                 background: `linear-gradient(to right, #facc15 0%, #facc15 ${((energy - 1) / 9) * 100}%, #1a1a1f ${((energy - 1) / 9) * 100}%, #1a1a1f 100%)`
@@ -326,7 +370,7 @@ export default function QuickLogger({ logs, setLogs }) {
               min="1"
               max="10"
               value={motivation}
-              onChange={(e) => setMotivation(parseInt(e.target.value))}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setMotivation(parseInt(e.target.value))}
               className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer slider"
               style={{
                 background: `linear-gradient(to right, #f87171 0%, #f87171 ${((motivation - 1) / 9) * 100}%, #1a1a1f ${((motivation - 1) / 9) * 100}%, #1a1a1f 100%)`
@@ -339,7 +383,7 @@ export default function QuickLogger({ logs, setLogs }) {
             <label className="block text-sm text-gray-400 mb-2">Current Activity</label>
             <select
               value={activity}
-              onChange={(e) => setActivity(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setActivity(e.target.value)}
               className="neural-input"
             >
               <option value="">Select activity...</option>
@@ -360,7 +404,7 @@ export default function QuickLogger({ logs, setLogs }) {
                 <input
                   type="text"
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setSubject(e.target.value)}
                   placeholder="Enter what you're studying..."
                   className="neural-input"
                 />
@@ -429,7 +473,7 @@ export default function QuickLogger({ logs, setLogs }) {
                     <input
                       type="number"
                       value={duration}
-                      onChange={(e) => {
+                      onChange={(e: ChangeEvent<HTMLInputElement>) => {
                         console.log('Duration field changed:', JSON.stringify(e.target.value));
                         setDuration(e.target.value);
                       }}
@@ -450,7 +494,7 @@ export default function QuickLogger({ logs, setLogs }) {
             <input
               type="text"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setNote(e.target.value)}
               placeholder="e.g., 'felt motivated after walk', 'brain fog'"
               className="neural-input"
             />
@@ -545,22 +589,22 @@ export default function QuickLogger({ logs, setLogs }) {
 }
 
 // Log History View Component
-function LogHistoryView({ logs, onClose }) {
-  const [selectedDate, setSelectedDate] = useState(null);
+function LogHistoryView({ logs, onClose }: LogHistoryViewProps): ReactNode {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Group logs by date
-  const logsByDate = logs.reduce((acc, log) => {
+  const logsByDate: Record<string, Log[]> = logs.reduce((acc, log) => {
     const date = new Date(log.timestamp).toISOString().split('T')[0];
     if (!acc[date]) {
       acc[date] = [];
     }
     acc[date].push(log);
     return acc;
-  }, {});
+  }, {} as Record<string, Log[]>);
 
   // Generate last 30 days
-  const generateCalendarDays = () => {
-    const days = [];
+  const generateCalendarDays = (): CalendarDay[] => {
+    const days: CalendarDay[] = [];
     const today = new Date();
     const todayString = getTodayString();
 
@@ -596,29 +640,29 @@ function LogHistoryView({ logs, onClose }) {
 
   // Calculate overall stats
   const daysWithLogs = days.filter(d => d.logs.length > 0).length;
-  const allLogs = days.flatMap(d => d.logs);
+  const allLogs: Log[] = days.flatMap(d => d.logs);
 
-  const overallAvgEnergy = allLogs.length > 0
+  const overallAvgEnergy: number = allLogs.length > 0
     ? Math.round((allLogs.reduce((sum, log) => sum + log.energy, 0) / allLogs.length) * 10) / 10
     : 0;
 
-  const overallAvgMotivation = allLogs.length > 0
+  const overallAvgMotivation: number = allLogs.length > 0
     ? Math.round((allLogs.reduce((sum, log) => sum + log.motivation, 0) / allLogs.length) * 10) / 10
     : 0;
 
-  const totalLogs = allLogs.length;
+  const totalLogs: number = allLogs.length;
 
   // Find best and worst days
   const daysWithData = days.filter(d => d.avgEnergy !== null);
-  const bestEnergyDay = daysWithData.reduce((best, d) =>
-    d.avgEnergy > (best.avgEnergy || 0) ? d : best
-  , { avgEnergy: 0 });
+  const bestEnergyDay: CalendarDay = daysWithData.reduce((best, d) =>
+    (d.avgEnergy || 0) > (best.avgEnergy || 0) ? d : best
+  , { avgEnergy: 0 } as CalendarDay);
 
-  const worstEnergyDay = daysWithData.reduce((worst, d) =>
-    d.avgEnergy < (worst.avgEnergy || 10) ? d : worst
-  , { avgEnergy: 10 });
+  const worstEnergyDay: CalendarDay = daysWithData.reduce((worst, d) =>
+    (d.avgEnergy || 0) < (worst.avgEnergy || 10) ? d : worst
+  , { avgEnergy: 10 } as CalendarDay);
 
-  const getColorClass = (avgValue) => {
+  const getColorClass = (avgValue: number | null): string => {
     if (avgValue === null) return 'bg-gray-800 border-gray-700';
     if (avgValue >= 7) return 'bg-green-600/30 border-green-600/50';
     if (avgValue >= 4) return 'bg-yellow-600/30 border-yellow-600/50';
@@ -682,7 +726,7 @@ function LogHistoryView({ logs, onClose }) {
               {new Date(bestEnergyDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
             <div className="text-2xl font-bold text-green-400 mt-1">
-              {Math.round(bestEnergyDay.avgEnergy * 10) / 10}/10
+              {Math.round((bestEnergyDay.avgEnergy || 0) * 10) / 10}/10
             </div>
             <div className="text-xs text-gray-500 mt-1">
               {bestEnergyDay.logs.length} logs that day
@@ -698,7 +742,7 @@ function LogHistoryView({ logs, onClose }) {
               {new Date(worstEnergyDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </div>
             <div className="text-2xl font-bold text-red-400 mt-1">
-              {Math.round(worstEnergyDay.avgEnergy * 10) / 10}/10
+              {Math.round((worstEnergyDay.avgEnergy || 0) * 10) / 10}/10
             </div>
             <div className="text-xs text-gray-500 mt-1">
               {worstEnergyDay.logs.length} logs that day
@@ -767,8 +811,8 @@ function LogHistoryView({ logs, onClose }) {
                       <div className="h-1 bg-neural-dark rounded-full overflow-hidden">
                         <div
                           className="h-full bg-yellow-400"
-                          style={{ width: `${day.avgEnergy * 10}%` }}
-                          title={`Energy: ${Math.round(day.avgEnergy * 10) / 10}/10`}
+                          style={{ width: `${(day.avgEnergy || 0) * 10}%` }}
+                          title={`Energy: ${Math.round((day.avgEnergy || 0) * 10) / 10}/10`}
                         />
                       </div>
                     )}
@@ -777,8 +821,8 @@ function LogHistoryView({ logs, onClose }) {
                       <div className="h-1 bg-neural-dark rounded-full overflow-hidden">
                         <div
                           className="h-full bg-red-400"
-                          style={{ width: `${day.avgMotivation * 10}%` }}
-                          title={`Motivation: ${Math.round(day.avgMotivation * 10) / 10}/10`}
+                          style={{ width: `${(day.avgMotivation || 0) * 10}%` }}
+                          title={`Motivation: ${Math.round((day.avgMotivation || 0) * 10) / 10}/10`}
                         />
                       </div>
                     )}
@@ -835,7 +879,7 @@ function LogHistoryView({ logs, onClose }) {
                   Avg Energy
                 </div>
                 <div className="text-2xl font-bold text-yellow-400">
-                  {Math.round(selectedDay.avgEnergy * 10) / 10}
+                  {Math.round((selectedDay.avgEnergy || 0) * 10) / 10}
                 </div>
               </div>
               <div>
@@ -844,7 +888,7 @@ function LogHistoryView({ logs, onClose }) {
                   Avg Motivation
                 </div>
                 <div className="text-2xl font-bold text-red-400">
-                  {Math.round(selectedDay.avgMotivation * 10) / 10}
+                  {Math.round((selectedDay.avgMotivation || 0) * 10) / 10}
                 </div>
               </div>
               <div>

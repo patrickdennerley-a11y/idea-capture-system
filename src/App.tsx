@@ -7,7 +7,7 @@ import EndOfDayReview from './components/EndOfDayReview';
 import NoiseHub from './components/NoiseHub';
 import PlanningAssistant from './components/PlanningAssistant';
 import RoutineGenerator from './components/RoutineGenerator';
-import IconCustomizer, { ICONS, DEFAULT_THEME } from './components/IconCustomizer';
+import IconCustomizer, { ICONS, DEFAULT_THEME, IconTheme } from './components/IconCustomizer';
 import {
   Lightbulb,
   CheckCircle2,
@@ -18,10 +18,18 @@ import {
   X,
   Compass,
   Calendar,
+  LucideIcon,
 } from 'lucide-react';
 import { getTodayString } from './utils/dateUtils';
 
-const TABS = [
+interface Tab {
+  id: string;
+  name: string;
+  icon: LucideIcon;
+  color: string;
+}
+
+const TABS: Tab[] = [
   { id: 'capture', name: 'Capture', icon: Lightbulb, color: 'yellow' },
   { id: 'checklist', name: 'Routines', icon: CheckCircle2, color: 'purple' },
   { id: 'logger', name: 'Log', icon: Activity, color: 'blue' },
@@ -37,41 +45,41 @@ function App() {
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
 
   // State with localStorage persistence
-  const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
-  const [logs, setLogs] = useLocalStorage('neural-logs', []);
-  const [reviews, setReviews] = useLocalStorage('neural-reviews', []);
-  const [checklist, setChecklist] = useLocalStorage('neural-checklist', {
+  const [ideas, setIdeas] = useLocalStorage<any[]>('neural-ideas', []);
+  const [logs, setLogs] = useLocalStorage<any[]>('neural-logs', []);
+  const [reviews, setReviews] = useLocalStorage<any[]>('neural-reviews', []);
+  const [checklist, setChecklist] = useLocalStorage<any>('neural-checklist', {
     date: getTodayString(),
     items: [],
   });
-  const [iconTheme, setIconTheme] = useLocalStorage('neural-icon-theme', DEFAULT_THEME);
+  const [iconTheme, setIconTheme] = useLocalStorage<IconTheme>('neural-icon-theme', DEFAULT_THEME);
 
   // Routine generation state (persists across tab switches)
   const [isGeneratingRoutine, setIsGeneratingRoutine] = useState(false);
-  const [generatedRoutine, setGeneratedRoutine] = useState(null);
-  const [routineError, setRoutineError] = useState(null);
+  const [generatedRoutine, setGeneratedRoutine] = useState<any>(null);
+  const [routineError, setRoutineError] = useState<string | null>(null);
 
   // Idea organization state (persists across tab switches)
   const [isOrganizing, setIsOrganizing] = useState(false);
-  const [organizedData, setOrganizedData] = useState(null);
-  const [organizationError, setOrganizationError] = useState(null);
+  const [organizedData, setOrganizedData] = useState<any>(null);
+  const [organizationError, setOrganizationError] = useState<string | null>(null);
   const [showOrganized, setShowOrganized] = useState(false);
 
   // Planning state (persists across tab switches)
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [plan, setPlan] = useState(null);
-  const [planError, setPlanError] = useState(null);
+  const [plan, setPlan] = useState<any>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   // Smart Routines state (persists across tab switches)
-  const [smartRoutines, setSmartRoutines] = useState([]);
+  const [smartRoutines, setSmartRoutines] = useState<any[]>([]);
   const [isGeneratingSmartRoutines, setIsGeneratingSmartRoutines] = useState(false);
-  const [smartRoutinesError, setSmartRoutinesError] = useState(null);
+  const [smartRoutinesError, setSmartRoutinesError] = useState<string | null>(null);
   const [showSmartRoutines, setShowSmartRoutines] = useState(false);
-  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState(null);
-  const [smartRoutineStates, setSmartRoutineStates] = useState({});
+  const [smartRoutinesMetadata, setSmartRoutinesMetadata] = useState<any>(null);
+  const [smartRoutineStates, setSmartRoutineStates] = useState<Record<string, any>>({});
 
   // History for all AI generations
-  const [generationHistory, setGenerationHistory] = useLocalStorage('neural-generation-history', {
+  const [generationHistory, setGenerationHistory] = useLocalStorage<any>('neural-generation-history', {
     routines: [],
     smartRoutines: [],
     ideas: [],
@@ -79,14 +87,14 @@ function App() {
   });
 
   // Noise Generator state (persists across tab switches)
-  const audioContextRef = useRef(null);
-  const [activeSession, setActiveSession] = useState(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const [activeSession, setActiveSession] = useState<any>(null);
 
   // Initialize audio context once at app level (never destroyed)
   useEffect(() => {
     if (!audioContextRef.current && typeof window !== 'undefined') {
       try {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         console.log('🔊 Audio context initialized at app level');
       } catch (err) {
         console.error('Failed to initialize audio context:', err);
@@ -103,7 +111,7 @@ function App() {
   }, []);
 
   // Helper to check if a tab has AI work in progress
-  const isTabProcessing = (tabId) => {
+  const isTabProcessing = (tabId: string): boolean => {
     switch (tabId) {
       case 'capture':
         return isOrganizing;

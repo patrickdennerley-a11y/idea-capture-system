@@ -2,18 +2,85 @@ import { useState } from 'react';
 import { Moon, AlertCircle, TrendingUp, Brain } from 'lucide-react';
 import { getTodayString, isToday } from '../utils/dateUtils';
 
-export default function EndOfDayReview({ reviews, setReviews, logs, checklist }) {
-  const [showReview, setShowReview] = useState(false);
-  const [dayOverall, setDayOverall] = useState('');
-  const [accomplishments, setAccomplishments] = useState('');
-  const [energyRecall, setEnergyRecall] = useState(5);
-  const [followedRoutines, setFollowedRoutines] = useState(true);
-  const [tomorrowPriorities, setTomorrowPriorities] = useState('');
+// Type definitions
+interface Log {
+  timestamp: string;
+  energy: number;
+  activity: string;
+  [key: string]: any;
+}
+
+interface ChecklistItem {
+  completed: boolean;
+  [key: string]: any;
+}
+
+interface Checklist {
+  items: ChecklistItem[];
+  [key: string]: any;
+}
+
+interface ReviewResponses {
+  dayOverall: string;
+  accomplishments: string;
+  energyRecall: number;
+  followedRoutines: boolean;
+  tomorrowPriorities: string;
+}
+
+interface ActualData {
+  avgEnergy: number;
+  studyTime: number;
+  followedRoutines: boolean;
+  completionRate: number;
+  totalLogs: number;
+}
+
+interface Comparison {
+  energyAccuracy: number;
+  routineAccuracy: boolean;
+}
+
+interface Insight {
+  type: 'success' | 'warning' | 'info';
+  text: string;
+}
+
+interface Review {
+  id: number;
+  date: string;
+  timestamp: string;
+  completed: boolean;
+  responses: ReviewResponses;
+  actualData: ActualData;
+  comparison: Comparison;
+  insights: Insight[];
+}
+
+interface EndOfDayReviewProps {
+  reviews: Review[];
+  setReviews: (reviews: Review[] | ((prev: Review[]) => Review[])) => void;
+  logs: Log[];
+  checklist: Checklist;
+}
+
+export default function EndOfDayReview({
+  reviews,
+  setReviews,
+  logs,
+  checklist,
+}: EndOfDayReviewProps): React.ReactElement {
+  const [showReview, setShowReview] = useState<boolean>(false);
+  const [dayOverall, setDayOverall] = useState<string>('');
+  const [accomplishments, setAccomplishments] = useState<string>('');
+  const [energyRecall, setEnergyRecall] = useState<number>(5);
+  const [followedRoutines, setFollowedRoutines] = useState<boolean>(true);
+  const [tomorrowPriorities, setTomorrowPriorities] = useState<string>('');
 
   const todayReview = reviews.find(r => r.date === getTodayString());
   const hasCompletedToday = todayReview && todayReview.completed;
 
-  const saveReview = () => {
+  const saveReview = (): void => {
     // Calculate actual stats from logs
     const todayLogs = logs.filter(log => {
       const logDate = new Date(log.timestamp).toDateString();
@@ -34,7 +101,7 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
     const actualFollowedRoutines = completionRate >= 70;
 
     // Create review with comparison
-    const newReview = {
+    const newReview: Review = {
       id: Date.now(),
       date: getTodayString(),
       timestamp: new Date().toISOString(),
@@ -80,8 +147,14 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
     setShowReview(false);
   };
 
-  const generateInsights = (recalled, actual, routinesRecalled, routinesActual, logs) => {
-    const insights = [];
+  const generateInsights = (
+    recalled: number,
+    actual: number,
+    routinesRecalled: boolean,
+    routinesActual: boolean,
+    logs: Log[]
+  ): Insight[] => {
+    const insights: Insight[] = [];
 
     // Energy perception accuracy
     const energyDiff = recalled - actual;
@@ -173,13 +246,13 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
               <div className="bg-neural-dark rounded-lg p-3">
                 <div className="text-sm text-gray-400 mb-1">Energy Recalled</div>
                 <div className="text-2xl font-bold text-purple-400">
-                  {todayReview.responses.energyRecall}/10
+                  {todayReview?.responses.energyRecall}/10
                 </div>
               </div>
               <div className="bg-neural-dark rounded-lg p-3">
                 <div className="text-sm text-gray-400 mb-1">Energy Actual</div>
                 <div className="text-2xl font-bold text-neural-blue">
-                  {todayReview.actualData.avgEnergy}/10
+                  {todayReview?.actualData.avgEnergy}/10
                 </div>
               </div>
             </div>
@@ -190,7 +263,7 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
                 Insights
               </h4>
               <div className="space-y-2">
-                {todayReview.insights.map((insight, idx) => (
+                {todayReview?.insights.map((insight, idx) => (
                   <div
                     key={idx}
                     className={`p-3 rounded-lg border ${
@@ -212,15 +285,15 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
               <div className="space-y-3 text-sm">
                 <div>
                   <span className="text-gray-400">Day Overall:</span>
-                  <p className="text-gray-200 mt-1">{todayReview.responses.dayOverall}</p>
+                  <p className="text-gray-200 mt-1">{todayReview?.responses.dayOverall}</p>
                 </div>
                 <div>
                   <span className="text-gray-400">Accomplishments:</span>
-                  <p className="text-gray-200 mt-1">{todayReview.responses.accomplishments}</p>
+                  <p className="text-gray-200 mt-1">{todayReview?.responses.accomplishments}</p>
                 </div>
                 <div>
                   <span className="text-gray-400">Tomorrow's Priorities:</span>
-                  <p className="text-gray-200 mt-1">{todayReview.responses.tomorrowPriorities}</p>
+                  <p className="text-gray-200 mt-1">{todayReview?.responses.tomorrowPriorities}</p>
                 </div>
               </div>
             </div>
@@ -277,7 +350,7 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
               onChange={(e) => setEnergyRecall(parseInt(e.target.value))}
               className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer slider"
               style={{
-                background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${((energyRecall - 1) / 9) * 100}%, #1a1a1f ${((energyRecall - 1) / 9) * 100}%, #1a1a1f 100%)`
+                background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${((energyRecall - 1) / 9) * 100}%, #1a1a1f ${((energyRecall - 1) / 9) * 100}%, #1a1a1f 100%)`,
               }}
             />
           </div>
