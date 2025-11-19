@@ -1035,7 +1035,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
 
-  // Memory management: keep only last 100 variations for distance calculation
+  // Memory management: keep only last 100 variations to prevent unbounded growth
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
   // Force re-renders every 100ms for millisecond display when session is active
@@ -1457,10 +1457,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     const shortestDuration = Math.min(pinkDurationMs, brownDurationMs);
 
     // Timer interval = 10% of shortest duration, capped between 1ms and 100ms
-    // This allows ~10 checks per variation for accuracy
     const timerInterval = Math.max(1, Math.min(100, shortestDuration / 10));
 
     console.log(`⏱️ Timer interval: ${timerInterval.toFixed(2)}ms (based on ${shortestDuration.toFixed(4)}ms shortest duration)`);
+    console.log(`♻️ Memory optimization: Variations array limited to last ${MAX_VARIATIONS_IN_MEMORY} entries`);
 
     intervalRef.current = setInterval(() => {
       setActiveSession(prev => {
@@ -1566,9 +1566,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
             }
 
+            // MEMORY OPTIMIZATION: Keep only last 100 variations to prevent unbounded array growth
+            const newVariations = [...prev.variations, variationObj].slice(-MAX_VARIATIONS_IN_MEMORY);
+
             return {
               ...prev,
-              variations: [...prev.variations, variationObj],
+              variations: newVariations,
               currentVariation: variationObj,
               currentType: nextType,
               currentVariationStart: Date.now(),
@@ -1713,9 +1716,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             }
           }
 
+          // MEMORY OPTIMIZATION: Keep only last 100 variations to prevent unbounded array growth
+          const newVariations = [...prev.variations, variationObj].slice(-MAX_VARIATIONS_IN_MEMORY);
+
           return {
             ...prev,
-            variations: [...prev.variations, variationObj],
+            variations: newVariations,
             currentVariation: variationObj,
             currentType: nextType,
             currentVariationStart: Date.now(),
