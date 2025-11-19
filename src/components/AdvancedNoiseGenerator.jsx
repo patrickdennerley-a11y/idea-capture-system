@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3 } from 'lucide-react';
+import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3, RefreshCw } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 // Web Audio API Noise Generation
@@ -1792,6 +1792,31 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     console.log('  AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession]);
 
+  // Refresh Session - restart fresh to avoid high variation count lag
+  const refreshSession = useCallback(() => {
+    console.log('🔄 ========== REFRESHING SESSION ==========');
+
+    // Stop current session
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (noiseGeneratorRef.current) {
+      noiseGeneratorRef.current.stopEverything();
+    }
+
+    // Clear active session
+    setActiveSession(null);
+
+    // Start new session immediately
+    setTimeout(() => {
+      startGeneration();
+    }, 100); // Small delay to ensure cleanup completes
+
+    console.log('✅ Session refreshed - starting new session');
+  }, [startGeneration]);
+
   // Pause/Resume
   const togglePause = useCallback(() => {
     setActiveSession(prev => {
@@ -2149,6 +2174,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   title="Pause/Resume"
                 >
                   {activeSession.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={refreshSession}
+                  className="neural-button-secondary bg-blue-900/30 border-blue-500/50 hover:bg-blue-900/50"
+                  title="Refresh session - restart fresh to reset variation count"
+                >
+                  <RefreshCw className="w-4 h-4" />
                 </button>
                 <button
                   onClick={stopGeneration}
