@@ -1164,10 +1164,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
     if (audioContextRef.current.state === 'closed') {
       console.error('❌ AudioContext is closed! Recreating...');
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // FIX: Add latencyHint: 'playback' to prevent crackling under heavy CPU load
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        latencyHint: 'playback',
+        sampleRate: 44100
+      });
       // Recreate noise generator with new context
       noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
-      console.log('✅ New AudioContext created');
+      console.log('✅ New AudioContext created with playback latency hint');
     }
 
     if (audioContextRef.current.state === 'suspended') {
@@ -1831,8 +1835,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     // Create fresh AudioContext
-    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('  ✅ New AudioContext created, state:', audioContextRef.current.state);
+    // FIX: Add latencyHint: 'playback' to prevent crackling under heavy CPU load
+    audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+      latencyHint: 'playback',
+      sampleRate: 44100
+    });
+    console.log('  ✅ New AudioContext created with playback latency hint, state:', audioContextRef.current.state);
 
     // Recreate noise generator
     noiseGeneratorRef.current = new NoiseGenerator(audioContextRef.current);
