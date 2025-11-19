@@ -859,17 +859,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const [gammaVolume, setGammaVolume] = useLocalStorage('neural-noise-gamma-volume', 30);
   const [gammaCarrierFreq, setGammaCarrierFreq] = useLocalStorage('neural-noise-gamma-carrier', 200);
 
-  // Auto-refresh settings for overnight sessions
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useLocalStorage('neural-noise-auto-refresh', true);
-  const [refreshInterval, setRefreshInterval] = useLocalStorage('neural-noise-refresh-interval', 1500);
-
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
   const gammaVolumeRef = useRef(gammaVolume); // Track gamma volume for timer callbacks
   const gammaCarrierFreqRef = useRef(gammaCarrierFreq); // Track gamma carrier freq for timer callbacks
   const gammaEnabledRef = useRef(gammaEnabled); // Track gamma enabled state for timer callbacks
-  const lastRefreshVariation = useRef(0); // Track when we last refreshed
 
   // Memory management: keep only last 100 variations for distance calculation
   const MAX_VARIATIONS_IN_MEMORY = 100;
@@ -1236,15 +1231,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                 noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
                 console.log(`🔊 Delay complete, playing ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-                // Auto-refresh check (prevent AudioContext corruption on long sessions)
-                if (autoRefreshEnabled && refreshInterval > 0) {
-                  const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                  if (variationsSinceLastRefresh >= refreshInterval) {
-                    console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                    lastRefreshVariation.current = nextVariationNumber;
-                    // Perform refresh asynchronously without blocking
-                    performAutoRefresh();
-                  }
+                // Gamma wave refresh (prevent corruption on long continuous playback)
+                if (gammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                  console.log(`🌊 Refreshing gamma wave at variation ${nextVariationNumber} (~1 hour mark)`);
+                  noiseGeneratorRef.current.stopGammaWave();
+                  noiseGeneratorRef.current.startGammaWave(
+                    gammaCarrierFreqRef.current,
+                    40,
+                    gammaVolumeRef.current
+                  );
+                  console.log('✅ Gamma wave refreshed (~1-2ms gap, pink/brown uninterrupted)');
                 }
               } catch (error) {
                 console.error('❌ CRITICAL: Failed to play next variation:', error);
@@ -1374,15 +1370,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               noiseGeneratorRef.current.playNoise(nextType, variation.parameters, masterVolumeRef.current);
               console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
 
-              // Auto-refresh check (prevent AudioContext corruption on long sessions)
-              if (autoRefreshEnabled && refreshInterval > 0) {
-                const variationsSinceLastRefresh = nextVariationNumber - lastRefreshVariation.current;
-                if (variationsSinceLastRefresh >= refreshInterval) {
-                  console.log(`🔄 Auto-refresh triggered at variation ${nextVariationNumber} (interval: ${refreshInterval})`);
-                  lastRefreshVariation.current = nextVariationNumber;
-                  // Perform refresh asynchronously without blocking
-                  performAutoRefresh();
-                }
+              // Gamma wave refresh (prevent corruption on long continuous playback)
+              if (gammaEnabledRef.current && nextVariationNumber % 1800 === 0) {
+                console.log(`🌊 Refreshing gamma wave at variation ${nextVariationNumber} (~1 hour mark)`);
+                noiseGeneratorRef.current.stopGammaWave();
+                noiseGeneratorRef.current.startGammaWave(
+                  gammaCarrierFreqRef.current,
+                  40,
+                  gammaVolumeRef.current
+                );
+                console.log('✅ Gamma wave refreshed (~1-2ms gap, pink/brown uninterrupted)');
               }
             } catch (error) {
               console.error('❌ CRITICAL: Failed to play next variation:', error);
@@ -1410,7 +1407,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         };
       });
     }, 100); // Update every 100ms for millisecond precision
-  }, [autoRefreshEnabled, refreshInterval]);
+  }, []);
 
   // Stop generation
   const stopGeneration = useCallback(() => {
@@ -2332,87 +2329,6 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   )}
                 </div>
 
-                {/* Auto-Refresh Settings for Overnight Sessions */}
-                <div className="space-y-3 border-t border-gray-700 pt-4">
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autoRefreshEnabled}
-                        onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
-                        className="w-4 h-4 accent-green-500"
-                      />
-                      <span className="text-sm font-medium">🔄 Auto-Refresh AudioContext (Recommended for overnight sessions)</span>
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Automatically recreates the audio system every N variations to prevent corruption during long sessions.
-                    Creates a brief (100ms) silence but prevents audio from dying after several hours.
-                  </p>
-
-                  {autoRefreshEnabled && (
-                    <div className="space-y-3 pl-6 border-l-2 border-green-500/30">
-                      <div>
-                        <label className="block text-sm text-gray-400 mb-2">
-                          Refresh Interval: Every {refreshInterval} variations
-                        </label>
-                        <input
-                          type="range"
-                          min="500"
-                          max="5000"
-                          step="100"
-                          value={refreshInterval}
-                          onChange={(e) => setRefreshInterval(parseInt(e.target.value))}
-                          className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer accent-green-500"
-                        />
-                        <div className="flex justify-between text-xs text-gray-500 mt-1">
-                          <span>500 (~17 min)</span>
-                          <span>5000 (~2.8 hrs)</span>
-                        </div>
-                      </div>
-
-                      <div className="bg-neural-darker rounded-lg p-3 text-xs text-gray-400">
-                        <p className="mb-1"><strong>Recommended intervals:</strong></p>
-                        <ul className="space-y-1 ml-4">
-                          <li>• <strong>1000-1500 variations</strong> (~30-50 min) - Best for overnight sessions</li>
-                          <li>• <strong>2000-3000 variations</strong> (~1-1.5 hrs) - Balanced</li>
-                          <li>• <strong>500 variations</strong> (~17 min) - Very frequent (safest but more interruptions)</li>
-                        </ul>
-                        <p className="mt-2 text-xs text-gray-500">
-                          At {refreshInterval} variations (2s each), refresh happens every <strong>~{Math.round(refreshInterval * 2 / 60)} minutes</strong>
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setRefreshInterval(1000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          1000 (33min)
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(1500)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          1500 (50min) ⭐
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(2000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          2000 (67min)
-                        </button>
-                        <button
-                          onClick={() => setRefreshInterval(3000)}
-                          className="neural-button-secondary text-xs px-2 py-1"
-                        >
-                          3000 (100min)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Duration type */}
                 <div className="space-y-2">
                   <label className="block text-sm text-gray-400 mb-2">Total Duration:</label>
@@ -2490,7 +2406,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               <li>• <strong>Noise Modes:</strong> Choose Pink Only, Brown Only, or Alternating modes</li>
               <li>• <strong>Smart Duration:</strong> Set duration to 0 to skip that noise type in Alternating mode</li>
               <li>• <strong>40Hz Gamma Wave:</strong> Optional binaural beat overlay for enhanced focus/cognition</li>
-              <li>• <strong>Auto-Refresh:</strong> Automatically recreates audio every N variations to prevent corruption on overnight sessions (enabled by default)</li>
+              <li>• <strong>Gamma Auto-Refresh:</strong> If gamma is enabled, it automatically refreshes every ~1 hour (~1-2ms gap, pink/brown uninterrupted)</li>
               <li>• Each variation is mathematically maximized to be different from all previous ones</li>
               <li>• Uses Euclidean distance in 20-dimensional parameter space for brown noise (15D for pink)</li>
               <li>• Parameters: frequency, rate, depth, carrier, volume, filter, stereo, phase, EQ (3 bands), envelope, modulation, binaural offset, resonance + brown-specific (integration, leak, bass boost, rumble, drift)</li>
