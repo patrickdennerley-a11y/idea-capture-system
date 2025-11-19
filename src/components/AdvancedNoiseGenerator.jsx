@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3 } from 'lucide-react';
+import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3, AlertTriangle } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 // Web Audio API Noise Generation
@@ -291,7 +291,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  async playNoise(type, params, volume = 50) {
+  async playNoise(type, params, volume = 50, durationSeconds = 60) {
     try {
       // console.log('═══ PLAY NOISE DEBUG START ═══');
       // console.log('Type:', type);
@@ -416,7 +416,22 @@ class NoiseGenerator {
 
       // Apply envelope (attack)
       const now = this.audioContext.currentTime;
-      const attackTime = params.attackTime / 1000; // Convert ms to seconds
+      let attackTime = params.attackTime / 1000; // Convert ms to seconds
+
+      // FIX 2: DYNAMIC ENVELOPE SCALING
+      // Check if this is a "Fast Switch" scenario (< 200ms)
+      const isFastSwitch = durationSeconds < 0.2;
+
+      // Dynamic clamp: Attack cannot be longer than 25% of duration
+      if (attackTime > durationSeconds * 0.25) {
+        attackTime = durationSeconds * 0.25;
+        console.log(`⚡ Fast mode: Attack clamped to ${attackTime.toFixed(3)}s (25% of ${durationSeconds.toFixed(3)}s)`);
+      }
+
+      // Absolute minimum for click-prevention (0.5ms)
+      if (isFastSwitch) {
+        attackTime = Math.max(0.0005, attackTime);
+      }
 
       // Attack: fade in from 0 to target volume
       this.gainNode.gain.cancelScheduledValues(now);
@@ -1186,11 +1201,28 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     // Validate durations based on mode
-    const actualPinkDuration = pinkDuration;
-    const actualBrownDuration = useSameDuration ? pinkDuration : brownDuration;
+    let actualPinkDuration = pinkDuration;
+    let actualBrownDuration = useSameDuration ? pinkDuration : brownDuration;
     const actualGammaDuration = useSameDuration ? pinkDuration : gammaDuration;
 
-    if (alternationMode === 'pink-only' && actualPinkDuration <= 0) {
+    // FIX 3: PHYSICAL REALITY CHECK - Force minimum 30ms
+    const minDuration = 0.0005; // 30ms in minutes
+
+    if (pinkDuration < minDuration && pinkDuration > 0) {
+      console.warn("Pink duration clamped to 30ms (browser limit)");
+      actualPinkDuration = minDuration;
+    } else {
+      actualPinkDuration = Math.max(pinkDuration, minDuration);
+    }
+
+    if ((useSameDuration ? pinkDuration : brownDuration) < minDuration && (useSameDuration ? pinkDuration : brownDuration) > 0) {
+      console.warn("Brown duration clamped to 30ms (browser limit)");
+      actualBrownDuration = minDuration;
+    } else {
+      actualBrownDuration = Math.max(useSameDuration ? pinkDuration : brownDuration, minDuration);
+    }
+
+    if (alternationMode === 'pink-only' && pinkDuration <= 0) {
       alert('❌ Pink duration must be greater than 0 when Pink Only mode is selected.');
       return;
     }
@@ -1323,7 +1355,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           );
         } else {
           // Play pink or brown noise
-          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
+          const durationSec = variationObj.durationMinutes * 60;
+          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume, durationSec);
         }
         console.log('✅ Session started successfully');
 
@@ -1413,7 +1446,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     return 'pink';
   }, []);
 
-  // Timer logic - runs every 100ms for millisecond precision
+  // Timer logic - runs every 10ms for ultra-fast detection (~20ms minimum)
   const startTimer = useCallback((session) => {
     intervalRef.current = setInterval(() => {
       setActiveSession(prev => {
@@ -1509,7 +1542,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     nextDurationMin
                   );
                 } else {
-                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                  const durationSec = nextDurationMin * 60;
+                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, durationSec);
                 }
                 // console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
@@ -1656,7 +1690,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   nextDurationMin
                 );
               } else {
-                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                const durationSec = nextDurationMin * 60;
+                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, durationSec);
               }
               // console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}`);
             } catch (error) {
@@ -1684,7 +1719,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           totalElapsedMs: totalElapsedMs,
         };
       });
-    }, 100); // Update every 100ms for millisecond precision
+    }, 10); // Update every 10ms for ultra-fast detection (~20ms minimum)
   }, []);
 
   // Stop generation
@@ -1739,7 +1774,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         const newCurrentVariationStart = prev.currentVariationStart + pausedDuration;
 
         if (noiseGeneratorRef.current && prev.currentVariation) {
-          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current);
+          // Calculate remaining duration for resumed variation
+          const totalDurationMs = prev.currentVariation.durationMinutes * 60 * 1000;
+          const elapsedMs = Date.now() - prev.currentVariationStart;
+          const remainingMs = Math.max(0, totalDurationMs - elapsedMs);
+          const remainingSec = remainingMs / 1000;
+          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current, remainingSec);
 
           // Resume gamma wave if it was enabled before pause
           if (prev.gammaWasEnabled) {
@@ -1829,10 +1869,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
       if (activeSession.currentVariation) {
         try {
+          // Calculate remaining duration for resumed variation
+          const totalDurationMs = activeSession.currentVariation.durationMinutes * 60 * 1000;
+          const elapsedMs = Date.now() - activeSession.currentVariationStart;
+          const remainingMs = Math.max(0, totalDurationMs - elapsedMs);
+          const remainingSec = remainingMs / 1000;
           await noiseGeneratorRef.current.playNoise(
             activeSession.currentType,
             activeSession.currentVariation.parameters,
-            masterVolumeRef.current
+            masterVolumeRef.current,
+            remainingSec
           );
           console.log('  ✅ Resumed current variation');
 
@@ -2446,6 +2492,15 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                       />
                     </div>
                   </div>
+
+                  {/* FIX 5: Browser limit warning for sub-30ms durations */}
+                  {(pinkDuration < 0.0005 && pinkDuration > 0) && (
+                    <div className="flex items-center gap-2 text-xs text-orange-400 bg-orange-900/20 p-2 rounded">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Browser limit: Durations below 30ms (0.0005min) will be clamped to prevent audio glitches.</span>
+                    </div>
+                  )}
+
                   {(alternationMode === 'two-way' || alternationMode === 'three-way') && (
                     <p className="text-xs text-gray-500 italic">
                       💡 Tip: Set duration to 0 to skip that noise type in the rotation
