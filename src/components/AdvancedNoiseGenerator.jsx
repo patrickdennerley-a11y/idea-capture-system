@@ -867,6 +867,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
   const gammaVolumeRef = useRef(gammaVolume); // Track gamma volume for timer callbacks
+  const gammaCarrierFreqRef = useRef(gammaCarrierFreq); // Track gamma carrier freq for timer callbacks
+  const gammaEnabledRef = useRef(gammaEnabled); // Track gamma enabled state for timer callbacks
   const lastRefreshVariation = useRef(0); // Track when we last refreshed
 
   // Memory management: keep only last 100 variations for distance calculation
@@ -916,6 +918,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       noiseGeneratorRef.current.setGammaVolume(gammaVolume);
     }
   }, [gammaVolume]);
+
+  // Update gamma carrier freq ref when changed
+  useEffect(() => {
+    gammaCarrierFreqRef.current = gammaCarrierFreq;
+  }, [gammaCarrierFreq]);
+
+  // Update gamma enabled ref when changed
+  useEffect(() => {
+    gammaEnabledRef.current = gammaEnabled;
+  }, [gammaEnabled]);
 
   // Sync brown duration with pink when "use same duration" is enabled
   useEffect(() => {
@@ -1498,8 +1510,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const performAutoRefresh = useCallback(async () => {
     console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
 
-    // Store current state
-    const wasGammaPlaying = !!noiseGeneratorRef.current?.gammaSource;
+    // Store current state - use refs to get latest values from async context
+    const shouldRestoreGamma = gammaEnabledRef.current;
+    const currentGammaCarrier = gammaCarrierFreqRef.current;
+    const currentGammaVolume = gammaVolumeRef.current;
 
     // Stop audio (brief silence)
     if (noiseGeneratorRef.current) {
@@ -1539,10 +1553,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         );
         console.log('  ✅ Resumed current variation');
 
-        // Resume gamma if it was playing
-        if (wasGammaPlaying) {
-          noiseGeneratorRef.current.startGammaWave(gammaCarrierFreq, 40, gammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave');
+        // ALWAYS resume gamma if user has it enabled (use ref for latest value)
+        if (shouldRestoreGamma) {
+          noiseGeneratorRef.current.startGammaWave(currentGammaCarrier, 40, currentGammaVolume);
+          console.log(`  ✅ Resumed gamma wave (${currentGammaCarrier}Hz carrier, ${currentGammaVolume}% volume)`);
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
@@ -1550,7 +1564,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, gammaCarrierFreq]);
+  }, [activeSession]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
