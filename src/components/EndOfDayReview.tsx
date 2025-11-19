@@ -1,8 +1,74 @@
 import { useState } from 'react';
 import { Moon, AlertCircle, TrendingUp, Brain } from 'lucide-react';
-import { getTodayString, isToday } from '../utils/dateUtils';
+import { getTodayString } from '../utils/dateUtils';
 
-export default function EndOfDayReview({ reviews, setReviews, logs, checklist }) {
+interface Log {
+  id: number;
+  timestamp: string;
+  energy: number;
+  motivation: number;
+  activity: string;
+  subject?: string;
+  duration?: number;
+  note?: string;
+}
+
+interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+interface Checklist {
+  date: string;
+  items: ChecklistItem[];
+}
+
+interface Insight {
+  type: 'success' | 'warning' | 'info';
+  text: string;
+}
+
+interface ActualData {
+  avgEnergy: number;
+  studyTime: number;
+  followedRoutines: boolean;
+  completionRate: number;
+  totalLogs: number;
+}
+
+interface Comparison {
+  energyAccuracy: number;
+  routineAccuracy: boolean;
+}
+
+interface ReviewResponses {
+  dayOverall: string;
+  accomplishments: string;
+  energyRecall: number;
+  followedRoutines: boolean;
+  tomorrowPriorities: string;
+}
+
+interface Review {
+  id: number;
+  date: string;
+  timestamp: string;
+  completed: boolean;
+  responses: ReviewResponses;
+  actualData: ActualData;
+  comparison: Comparison;
+  insights: Insight[];
+}
+
+interface EndOfDayReviewProps {
+  reviews: Review[];
+  setReviews: React.Dispatch<React.SetStateAction<Review[]>>;
+  logs: Log[];
+  checklist: Checklist;
+}
+
+export default function EndOfDayReview({ reviews, setReviews, logs, checklist }: EndOfDayReviewProps) {
   const [showReview, setShowReview] = useState(false);
   const [dayOverall, setDayOverall] = useState('');
   const [accomplishments, setAccomplishments] = useState('');
@@ -34,7 +100,7 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
     const actualFollowedRoutines = completionRate >= 70;
 
     // Create review with comparison
-    const newReview = {
+    const newReview: Review = {
       id: Date.now(),
       date: getTodayString(),
       timestamp: new Date().toISOString(),
@@ -80,8 +146,14 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
     setShowReview(false);
   };
 
-  const generateInsights = (recalled, actual, routinesRecalled, routinesActual, logs) => {
-    const insights = [];
+  const generateInsights = (
+    recalled: number,
+    actual: number,
+    routinesRecalled: boolean,
+    routinesActual: boolean,
+    logs: Log[]
+  ): Insight[] => {
+    const insights: Insight[] = [];
 
     // Energy perception accuracy
     const energyDiff = recalled - actual;
@@ -153,7 +225,7 @@ export default function EndOfDayReview({ reviews, setReviews, logs, checklist })
         )}
       </div>
 
-      {hasCompletedToday && (
+      {hasCompletedToday && todayReview && (
         <div className="bg-neural-darker border border-green-800/30 rounded-lg p-6 mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 bg-green-600/20 rounded-full flex items-center justify-center">

@@ -1,13 +1,20 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Volume2, VolumeX, Play, Pause, Radio, Sparkles } from 'lucide-react';
 import AdvancedNoiseGenerator from './AdvancedNoiseGenerator';
+import React from 'react';
 
-const NOISE_TYPES = {
+interface NoiseType {
+  name: string;
+  color: string;
+  description: string;
+  url: string;
+}
+
+const NOISE_TYPES: Record<string, NoiseType> = {
   pink: {
     name: 'Pink Noise',
     color: 'pink',
     description: 'Balanced frequency for focus and calm',
-    // You can replace with actual audio file URLs or continue using YouTube embeds
     url: 'https://www.youtube.com/embed/ZXtimhT-ff4?autoplay=1&loop=1&playlist=ZXtimhT-ff4',
   },
   brown: {
@@ -24,14 +31,19 @@ const NOISE_TYPES = {
   },
 };
 
-export default function NoiseHub({ audioContextRef, activeSession, setActiveSession }) {
-  const [currentView, setCurrentView] = useState('simple'); // 'simple' or 'advanced'
-  const [activeNoise, setActiveNoise] = useState(null);
+interface NoiseHubProps {
+  audioContextRef: React.MutableRefObject<AudioContext | null>;
+  activeSession: any;
+  setActiveSession: React.Dispatch<React.SetStateAction<any>>;
+}
+
+export default function NoiseHub({ audioContextRef, activeSession, setActiveSession }: NoiseHubProps) {
+  const [currentView, setCurrentView] = useState<'simple' | 'advanced'>('simple');
+  const [activeNoise, setActiveNoise] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(50);
-  const [showHub, setShowHub] = useState(false);
 
-  const startNoise = (type) => {
+  const startNoise = (type: string) => {
     setActiveNoise(type);
     setIsPlaying(true);
   };

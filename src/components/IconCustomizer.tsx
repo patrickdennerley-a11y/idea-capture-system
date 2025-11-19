@@ -14,18 +14,32 @@
 
 import { useState } from 'react';
 import { X, Palette, RotateCcw, Brain as LucideBrain } from 'lucide-react';
+import React from 'react';
+
+export interface IconTheme {
+  icon: string;
+  strokeColor: string;
+  bgType: 'solid' | 'gradient';
+  bgColor: string;
+  bgGradientEnd: string;
+}
 
 // Default theme
-const DEFAULT_THEME = {
+export const DEFAULT_THEME: IconTheme = {
   icon: 'brain-lucide',
   strokeColor: '#ffffff',
-  bgType: 'gradient', // 'solid' or 'gradient'
-  bgColor: '#a855f7', // solid bg or gradient start
-  bgGradientEnd: '#ec4899', // gradient end
+  bgType: 'gradient',
+  bgColor: '#a855f7',
+  bgGradientEnd: '#ec4899',
 };
 
+interface IconProps {
+  className?: string;
+  style?: React.CSSProperties;
+}
+
 // Icon SVG components
-const ICONS = {
+export const ICONS: Record<string, React.FC<IconProps>> = {
   'brain-lucide': (props) => (
     <LucideBrain {...props} />
   ),
@@ -43,14 +57,12 @@ const ICONS = {
 
   sine: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      {/* X-axis */}
       <path
         d="M2 13h20"
         strokeLinecap="round"
         strokeWidth="1.5"
         opacity="0.5"
       />
-      {/* Sine wave - 2 complete oscillations, centered */}
       <path
         d="M2 13Q5 7 8 13T14 13Q17 7 20 13T22 13"
         strokeLinecap="round"
@@ -75,18 +87,14 @@ const ICONS = {
 
   rocket: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      {/* Rocket body */}
       <path
         d="M12 2v8m0 0l-3 3v5l3 2 3-2v-5l-3-3z"
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="2"
       />
-      {/* Fins */}
       <path d="M9 13l-3 2v3l3-2m6 0l3 2v3l-3-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Window */}
       <circle cx="12" cy="7" r="1.5" fill="currentColor" />
-      {/* Flames */}
       <path d="M10.5 20v2m3-2v2m-1.5 0v1.5" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
@@ -101,39 +109,28 @@ const ICONS = {
 
   meditation: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      {/* Head */}
       <circle cx="12" cy="8" r="2.5" strokeWidth="2" />
-      {/* Body in lotus position */}
       <path
         d="M12 10.5c-3 0-5 2-5 4.5v1.5h10V15c0-2.5-2-4.5-5-4.5z"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Crossed legs */}
       <path d="M7 16c-1.5 1-2.5 2-3 3m13-3c1.5 1 2.5 2 3 3" strokeWidth="2" strokeLinecap="round" />
-      {/* Energy/aura above head */}
       <path d="M12 5.5v-1m-2 1l1-2m3 2l-1-2" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   ),
 
   angel: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
-      {/* Halo */}
       <circle cx="12" cy="4" r="2" strokeWidth="1.5" />
-
-      {/* Head */}
       <circle cx="12" cy="9" r="2.5" strokeWidth="2" />
-
-      {/* Body */}
       <path
         d="M12 11.5c-3.5 0-5.5 2.5-5.5 5.5v2h11v-2c0-3-2-5.5-5.5-5.5z"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-
-      {/* Left wing - detailed feathers */}
       <path
         d="M6.5 14c-1.5-1-2.5-2-3.5-3.5-0.8-1.2-1-2.5-0.5-3.5 0.4-0.8 1.2-1 2-0.8 1 0.3 2 1.2 2.5 2.3"
         strokeWidth="1.8"
@@ -152,8 +149,6 @@ const ICONS = {
         strokeLinecap="round"
         opacity="0.5"
       />
-
-      {/* Right wing - detailed feathers */}
       <path
         d="M17.5 14c1.5-1 2.5-2 3.5-3.5 0.8-1.2 1-2.5 0.5-3.5-0.4-0.8-1.2-1-2-0.8-1 0.3-2 1.2-2.5 2.3"
         strokeWidth="1.8"
@@ -187,18 +182,15 @@ const ICONS = {
     </svg>
   ),
 
-  // Neuralink-style icons
   constellation: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
-      {/* Constellation nodes */}
       <circle cx="12" cy="7" r="1.5" fill="currentColor" />
       <circle cx="16" cy="10" r="1.5" fill="currentColor" />
       <circle cx="16" cy="14" r="1.5" fill="currentColor" />
       <circle cx="12" cy="17" r="1.5" fill="currentColor" />
       <circle cx="8" cy="14" r="1.5" fill="currentColor" />
       <circle cx="8" cy="10" r="1.5" fill="currentColor" />
-      {/* Connecting lines */}
       <path d="M12 7l4 3m0 4l-4 3m0 0l-4-3m0-4l4-3m0 10V7M8 10l8 4m0-4l-8 4" strokeWidth="1.2" opacity="0.4" />
     </svg>
   ),
@@ -206,16 +198,12 @@ const ICONS = {
   molecule: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
-      {/* Central node */}
       <circle cx="12" cy="12" r="2" fill="currentColor" />
-      {/* Orbiting nodes */}
       <circle cx="12" cy="6" r="1.5" fill="currentColor" />
       <circle cx="18" cy="12" r="1.5" fill="currentColor" />
       <circle cx="12" cy="18" r="1.5" fill="currentColor" />
       <circle cx="6" cy="12" r="1.5" fill="currentColor" />
-      {/* Connections to center */}
       <path d="M12 10V6m2 6h6m-2 6v-6m-6 2h-6" strokeWidth="1.5" />
-      {/* Orbital rings */}
       <ellipse cx="12" cy="12" rx="6" ry="3" strokeWidth="1" opacity="0.3" transform="rotate(45 12 12)" />
       <ellipse cx="12" cy="12" rx="6" ry="3" strokeWidth="1" opacity="0.3" transform="rotate(-45 12 12)" />
     </svg>
@@ -224,7 +212,6 @@ const ICONS = {
   network: (props) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
-      {/* Neural network nodes - 3 layers */}
       <circle cx="7" cy="9" r="1.5" fill="currentColor" />
       <circle cx="7" cy="15" r="1.5" fill="currentColor" />
       <circle cx="12" cy="7" r="1.5" fill="currentColor" />
@@ -232,13 +219,18 @@ const ICONS = {
       <circle cx="12" cy="17" r="1.5" fill="currentColor" />
       <circle cx="17" cy="9" r="1.5" fill="currentColor" />
       <circle cx="17" cy="15" r="1.5" fill="currentColor" />
-      {/* Connections */}
       <path d="M8.5 9.5l3 -2m-3.5 5.5l3 -3m0 0l3 -2m-3 2l3 3m-3-3v5m-3-5l3 5m3-10l-3 5m3 1l-3-5" strokeWidth="1" opacity="0.4" />
     </svg>
   ),
 };
 
-const ICON_OPTIONS = [
+interface IconOption {
+  id: string;
+  name: string;
+  description: string;
+}
+
+const ICON_OPTIONS: IconOption[] = [
   { id: 'brain-lucide', name: 'Brain (Original)', description: 'Lucide brain icon' },
   { id: 'brain', name: 'Brain (Alt)', description: 'Neural network style' },
   { id: 'sine', name: 'Sine Wave', description: 'Mathematics & flow' },
@@ -253,8 +245,15 @@ const ICON_OPTIONS = [
   { id: 'uni', name: 'University', description: 'Melbourne Uni shield' },
 ];
 
-export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
-  const [localTheme, setLocalTheme] = useState(theme);
+interface IconCustomizerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  theme: IconTheme;
+  setTheme: (theme: IconTheme) => void;
+}
+
+export default function IconCustomizer({ isOpen, onClose, theme, setTheme }: IconCustomizerProps) {
+  const [localTheme, setLocalTheme] = useState<IconTheme>(theme);
 
   if (!isOpen) return null;
 
@@ -464,6 +463,3 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
     </div>
   );
 }
-
-// Export the ICONS object for use in App.jsx
-export { ICONS, DEFAULT_THEME };

@@ -1,11 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Save, Trash2, Sparkles, Loader } from 'lucide-react';
 
+interface Idea {
+  id: number;
+  content: string;
+  tags?: string[];
+  context?: string;
+  dueDate?: string | null;
+  timestamp: string;
+  classificationType?: 'general' | 'routine' | 'checklist' | 'timetable';
+  duration?: number | null;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
+  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority?: 'low' | 'medium' | 'high';
+  autoClassified?: boolean;
+  [key: string]: any;
+}
+
+interface ClassificationResult {
+  classificationType?: 'general' | 'routine' | 'checklist' | 'timetable';
+  duration?: number | null;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
+  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority?: 'low' | 'medium' | 'high';
+}
+
+interface IdeaEditModalProps {
+  idea: Idea;
+  onSave: (idea: Idea) => void;
+  onDelete: (ideaId: number) => void;
+  onClose: () => void;
+  onClassify: (content: string, context: string, tags: string[]) => Promise<ClassificationResult | null>;
+}
+
+interface EditedIdea {
+  content: string;
+  tags: string[];
+  context: string;
+  dueDate: string;
+  classificationType: 'general' | 'routine' | 'checklist' | 'timetable';
+  duration: number | null;
+  recurrence: 'none' | 'daily' | 'weekly' | 'monthly';
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority: 'low' | 'medium' | 'high';
+  autoClassified: boolean;
+}
+
 const CLASSIFICATION_TYPES = [
-  { value: 'general', label: 'General Idea', description: 'Default - not used for automated planning' },
-  { value: 'routine', label: 'Routine Activity', description: 'Recurring patterns for daily routine generation' },
-  { value: 'checklist', label: 'Checklist Item', description: 'One-time tasks for daily checklist' },
-  { value: 'timetable', label: 'Timetable Event', description: 'Specific date/time events' }
+  { value: 'general' as const, label: 'General Idea', description: 'Default - not used for automated planning' },
+  { value: 'routine' as const, label: 'Routine Activity', description: 'Recurring patterns for daily routine generation' },
+  { value: 'checklist' as const, label: 'Checklist Item', description: 'One-time tasks for daily checklist' },
+  { value: 'timetable' as const, label: 'Timetable Event', description: 'Specific date/time events' }
 ];
 
 const IDEA_TAGS = [
@@ -21,28 +66,28 @@ const IDEA_TAGS = [
 ];
 
 const RECURRENCE_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' }
+  { value: 'none' as const, label: 'None' },
+  { value: 'daily' as const, label: 'Daily' },
+  { value: 'weekly' as const, label: 'Weekly' },
+  { value: 'monthly' as const, label: 'Monthly' }
 ];
 
 const TIME_OF_DAY_OPTIONS = [
   { value: null, label: 'Any time' },
-  { value: 'morning', label: 'Morning (6am-12pm)' },
-  { value: 'afternoon', label: 'Afternoon (12pm-5pm)' },
-  { value: 'evening', label: 'Evening (5pm-9pm)' },
-  { value: 'night', label: 'Night (9pm-6am)' }
+  { value: 'morning' as const, label: 'Morning (6am-12pm)' },
+  { value: 'afternoon' as const, label: 'Afternoon (12pm-5pm)' },
+  { value: 'evening' as const, label: 'Evening (5pm-9pm)' },
+  { value: 'night' as const, label: 'Night (9pm-6am)' }
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'low', label: 'Low Priority' },
-  { value: 'medium', label: 'Medium Priority' },
-  { value: 'high', label: 'High Priority' }
+  { value: 'low' as const, label: 'Low Priority' },
+  { value: 'medium' as const, label: 'Medium Priority' },
+  { value: 'high' as const, label: 'High Priority' }
 ];
 
-const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
-  const [editedIdea, setEditedIdea] = useState({
+const IdeaEditModal: React.FC<IdeaEditModalProps> = ({ idea, onSave, onDelete, onClose, onClassify }) => {
+  const [editedIdea, setEditedIdea] = useState<EditedIdea>({
     content: idea.content || '',
     tags: idea.tags || [],
     context: idea.context || '',
@@ -66,9 +111,9 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
         setEditedIdea(prev => ({
           ...prev,
           classificationType: result.classificationType || prev.classificationType,
-          duration: result.duration || prev.duration,
+          duration: result.duration !== undefined ? result.duration : prev.duration,
           recurrence: result.recurrence || prev.recurrence,
-          timeOfDay: result.timeOfDay || prev.timeOfDay,
+          timeOfDay: result.timeOfDay !== undefined ? result.timeOfDay : prev.timeOfDay,
           priority: result.priority || prev.priority,
           autoClassified: true
         }));
@@ -80,7 +125,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }
   };
 
-  const toggleTag = (tag) => {
+  const toggleTag = (tag: string) => {
     setEditedIdea(prev => ({
       ...prev,
       tags: prev.tags.includes(tag)
@@ -99,7 +144,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }
   };
 
-  const removeTag = (tagToRemove) => {
+  const removeTag = (tagToRemove: string) => {
     setEditedIdea(prev => ({
       ...prev,
       tags: prev.tags.filter(t => t !== tagToRemove)
@@ -112,7 +157,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
       return;
     }
 
-    const updatedIdea = {
+    const updatedIdea: Idea = {
       ...idea,
       ...editedIdea,
       lastModified: new Date().toISOString()
@@ -127,7 +172,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
     }
   };
 
-  const getClassificationColor = (type) => {
+  const getClassificationColor = (type: string): string => {
     switch (type) {
       case 'routine': return 'bg-purple-950 border-purple-700 text-purple-300';
       case 'checklist': return 'bg-blue-950 border-blue-700 text-blue-300';
@@ -350,7 +395,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
               </label>
               <select
                 value={editedIdea.recurrence}
-                onChange={(e) => setEditedIdea(prev => ({ ...prev, recurrence: e.target.value }))}
+                onChange={(e) => setEditedIdea(prev => ({ ...prev, recurrence: e.target.value as 'none' | 'daily' | 'weekly' | 'monthly' }))}
                 className="neural-input pr-10"
               >
                 {RECURRENCE_OPTIONS.map(option => (
@@ -371,7 +416,7 @@ const IdeaEditModal = ({ idea, onSave, onDelete, onClose, onClassify }) => {
               value={editedIdea.timeOfDay || ''}
               onChange={(e) => setEditedIdea(prev => ({
                 ...prev,
-                timeOfDay: e.target.value || null
+                timeOfDay: e.target.value ? e.target.value as 'morning' | 'afternoon' | 'evening' | 'night' : null
               }))}
               className="neural-input pr-10"
             >

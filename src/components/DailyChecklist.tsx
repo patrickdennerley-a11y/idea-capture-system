@@ -1,10 +1,57 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, Circle, Flame, Trophy, Plus, X, Calendar, Star, Trash2 } from 'lucide-react';
-import { getTodayString, isToday } from '../utils/dateUtils';
+import { getTodayString } from '../utils/dateUtils';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
+// Type definitions
+interface ChecklistItem {
+  id: string;
+  category: string;
+  text: string;
+  important: boolean;
+  isDefault: boolean;
+  completed?: boolean;
+  completedAt?: string | null;
+}
+
+interface Checklist {
+  date: string;
+  items: ChecklistItem[];
+  _check?: number;
+}
+
+interface DayHistory {
+  completed: string[];
+  timestamps: Record<string, string>;
+  completionRate: number;
+  totalItems: number;
+}
+
+interface History {
+  [date: string]: DayHistory;
+}
+
+interface DailyChecklistProps {
+  checklist: Checklist;
+  setChecklist: React.Dispatch<React.SetStateAction<Checklist>>;
+}
+
+interface CalendarViewProps {
+  history: History;
+  checklist: Checklist;
+  onClose: () => void;
+}
+
+interface CalendarDay {
+  date: string;
+  dayOfWeek: string;
+  dayOfMonth: number;
+  data: DayHistory | null;
+  isToday: boolean;
+}
+
 // Your actual routines from your notes
-const DEFAULT_CHECKLIST_ITEMS = [
+const DEFAULT_CHECKLIST_ITEMS: ChecklistItem[] = [
   {
     id: 'morning-1',
     category: 'Morning',
@@ -135,25 +182,20 @@ const DEFAULT_CHECKLIST_ITEMS = [
 
 const CATEGORIES = ['Morning', 'Throughout Day', 'Study', 'Evening', 'Before Bed'];
 
-export default function DailyChecklist({ checklist, setChecklist }) {
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [newItemText, setNewItemText] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState('Morning');
-  const [newItemImportant, setNewItemImportant] = useState(false);
-  const [customItems, setCustomItems] = useLocalStorage('neural-custom-routines', []);
-  const [disabledDefaults, setDisabledDefaults] = useLocalStorage('neural-disabled-defaults', []);
-  const [history, setHistory] = useLocalStorage('neural-checklist-history', {});
+export default function DailyChecklist({ checklist, setChecklist }: DailyChecklistProps): JSX.Element {
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [showAddForm, setShowAddForm] = useState<boolean>(false);
+  const [showCalendar, setShowCalendar] = useState<boolean>(false);
+  const [newItemText, setNewItemText] = useState<string>('');
+  const [newItemCategory, setNewItemCategory] = useState<string>('Morning');
+  const [newItemImportant, setNewItemImportant] = useState<boolean>(false);
+  const [customItems, setCustomItems] = useLocalStorage<ChecklistItem[]>('neural-custom-routines', []);
+  const [disabledDefaults, setDisabledDefaults] = useLocalStorage<string[]>('neural-disabled-defaults', []);
+  const [history, setHistory] = useLocalStorage<History>('neural-checklist-history', {});
 
-  // Combine default items (excluding disabled ones) with custom items
-  const allItems = [
-    ...DEFAULT_CHECKLIST_ITEMS.filter(item => !disabledDefaults.includes(item.id)),
-    ...customItems
-  ];
   const categories = ['All', ...CATEGORIES];
 
-  const initRef = useRef(false);
+  const initRef = useRef<boolean>(false);
 
   // Initialize or reset checklist when needed
   useEffect(() => {
@@ -185,7 +227,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
         .filter(item => item.completed)
         .map(item => item.id);
 
-      const timestamps = {};
+      const timestamps: Record<string, string> = {};
       checklist.items.forEach(item => {
         if (item.completedAt) {
           timestamps[item.id] = item.completedAt;
@@ -249,7 +291,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     );
   }
 
-  const toggleItem = (id) => {
+  const toggleItem = (id: string): void => {
     const now = new Date().toISOString();
     setChecklist(prev => ({
       ...prev,
@@ -265,10 +307,10 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     }));
   };
 
-  const addCustomItem = () => {
+  const addCustomItem = (): void => {
     if (!newItemText.trim()) return;
 
-    const newItem = {
+    const newItem: ChecklistItem = {
       id: `custom-${Date.now()}`,
       category: newItemCategory,
       text: newItemText.trim(),
@@ -290,7 +332,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     setShowAddForm(false);
   };
 
-  const deleteItem = (id) => {
+  const deleteItem = (id: string): void => {
     const isDefaultItem = DEFAULT_CHECKLIST_ITEMS.some(item => item.id === id);
 
     if (isDefaultItem) {
@@ -322,7 +364,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
   const totalItems = checklist.items?.length || 0;
 
   // Calculate streak from history
-  const calculateStreak = () => {
+  const calculateStreak = (): number => {
     const dates = Object.keys(history).sort().reverse();
     let streak = 0;
     const today = getTodayString();
@@ -351,7 +393,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
   const streak = calculateStreak();
 
   // Get yesterday's completion rate
-  const getYesterdayCompletion = () => {
+  const getYesterdayCompletion = (): number | null => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayString = yesterday.toISOString().split('T')[0];
@@ -605,18 +647,18 @@ export default function DailyChecklist({ checklist, setChecklist }) {
 }
 
 // Calendar View Component
-function CalendarView({ history, checklist, onClose }) {
-  const [selectedDate, setSelectedDate] = useState(null);
+function CalendarView({ history, checklist, onClose }: CalendarViewProps): JSX.Element {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Calculate today's completion data from live checklist
-  const getTodayData = () => {
+  const getTodayData = (): DayHistory | null => {
     if (!checklist || !checklist.items || checklist.items.length === 0) return null;
 
     const completed = checklist.items
       .filter(item => item.completed)
       .map(item => item.id);
 
-    const timestamps = {};
+    const timestamps: Record<string, string> = {};
     checklist.items.forEach(item => {
       if (item.completedAt) {
         timestamps[item.id] = item.completedAt;
@@ -632,13 +674,12 @@ function CalendarView({ history, checklist, onClose }) {
       timestamps,
       completionRate,
       totalItems: checklist.items.length,
-      isToday: true,
     };
   };
 
   // Generate last 30 days
-  const generateCalendarDays = () => {
-    const days = [];
+  const generateCalendarDays = (): CalendarDay[] => {
+    const days: CalendarDay[] = [];
     const today = new Date();
     const todayString = getTodayString();
     const todayData = getTodayData();
@@ -672,9 +713,9 @@ function CalendarView({ history, checklist, onClose }) {
     : 0;
   const bestDay = days.reduce((best, d) =>
     (d.data?.completionRate || 0) > (best.data?.completionRate || 0) ? d : best
-  , { data: { completionRate: 0 } });
+  , { data: { completionRate: 0 } as DayHistory | null } as CalendarDay);
 
-  const getColorClass = (completionRate) => {
+  const getColorClass = (completionRate: number | null): string => {
     if (!completionRate) return 'bg-gray-800 border-gray-700';
     if (completionRate >= 0.7) return 'bg-green-600/30 border-green-600/50';
     if (completionRate >= 0.4) return 'bg-yellow-600/30 border-yellow-600/50';
@@ -709,7 +750,7 @@ function CalendarView({ history, checklist, onClose }) {
         <div className="bg-neural-darker border border-gray-800 rounded-lg p-3">
           <div className="text-sm text-gray-400 mb-1">Best Day</div>
           <div className="text-2xl font-bold text-green-400">
-            {bestDay.data.completionRate > 0 ? Math.round(bestDay.data.completionRate * 100) + '%' : '-'}
+            {bestDay.data && bestDay.data.completionRate > 0 ? Math.round(bestDay.data.completionRate * 100) + '%' : '-'}
           </div>
         </div>
       </div>
@@ -741,7 +782,7 @@ function CalendarView({ history, checklist, onClose }) {
             key={day.date}
             onClick={() => setSelectedDate(day.data ? day.date : null)}
             className={`p-3 rounded-lg border-2 transition-all ${
-              getColorClass(day.data?.completionRate)
+              getColorClass(day.data?.completionRate || null)
             } ${
               selectedDate === day.date
                 ? 'ring-2 ring-neural-purple'

@@ -41,12 +41,106 @@
  * - Backend endpoint: POST /api/plan-activity in server.cjs
  */
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Compass, Sparkles, Clock, MapPin, Repeat, Zap, Lightbulb, X, History, Trash2, Save, BookmarkPlus } from 'lucide-react';
 import { getPlanningAdvice } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { formatDateTime } from '../utils/dateUtils';
 import SmartReminders from './SmartReminders';
+
+// Type definitions
+interface Idea {
+  id: number;
+  content: string;
+  tags?: string[];
+  context?: string;
+  dueDate?: string | null;
+  timestamp: string;
+  classificationType?: string;
+  duration?: number | null;
+  recurrence?: string;
+  timeOfDay?: string | null;
+  priority?: string;
+  autoClassified?: boolean;
+  lastModified?: string;
+  isDraft?: boolean;
+}
+
+interface ActivityLog {
+  id: number;
+  timestamp: string;
+  timePeriod: string;
+  energy: number;
+  motivation: number;
+  activity: string;
+  subject?: string | null;
+  subjectHierarchy?: {
+    hierarchy: string[];
+  } | null;
+  duration?: number | null;
+  note?: string;
+}
+
+interface ChecklistItem {
+  id: string;
+  category: string;
+  text: string;
+  important: boolean;
+  isDefault: boolean;
+  completed: boolean;
+  completedAt: string | null;
+}
+
+interface Checklist {
+  date: string;
+  items: ChecklistItem[];
+}
+
+interface Review {
+  id: number;
+  timestamp: string;
+  date: string;
+  accomplishments: string;
+  challenges: string;
+  learnings: string;
+  tomorrowGoals: string;
+  mood: number;
+}
+
+interface PlanData {
+  summary?: string;
+  bestTime?: string;
+  duration?: string;
+  location?: string;
+  recurring?: string;
+  tips?: string[];
+  activity?: string;
+  timestamp?: string;
+  id?: number;
+  name?: string;
+  savedAt?: string;
+}
+
+interface PlanHistoryItem extends PlanData {
+  activity: string;
+  timestamp: string;
+  id: number;
+  name?: string;
+  savedAt?: string;
+}
+
+interface PlanningAssistantProps {
+  ideas: Idea[];
+  logs: ActivityLog[];
+  checklist: Checklist;
+  reviews: Review[];
+  isAnalyzing: boolean;
+  setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>;
+  plan: PlanData | null;
+  setPlan: React.Dispatch<React.SetStateAction<PlanData | null>>;
+  planError: string | null;
+  setPlanError: React.Dispatch<React.SetStateAction<string | null>>;
+}
 
 export default function PlanningAssistant({
   ideas,
@@ -59,14 +153,14 @@ export default function PlanningAssistant({
   setPlan,
   planError,
   setPlanError,
-}) {
-  const [activity, setActivity] = useState('');
-  const [planHistory, setPlanHistory] = useLocalStorage('neural-plan-history', []);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [planName, setPlanName] = useState('');
+}: PlanningAssistantProps): JSX.Element {
+  const [activity, setActivity] = useState<string>('');
+  const [planHistory, setPlanHistory] = useLocalStorage<PlanHistoryItem[]>('neural-plan-history', []);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [showSaveDialog, setShowSaveDialog] = useState<boolean>(false);
+  const [planName, setPlanName] = useState<string>('');
 
-  const handlePlan = async () => {
+  const handlePlan = async (): Promise<void> => {
     if (!activity.trim()) return;
 
     setIsAnalyzing(true);
@@ -115,9 +209,9 @@ export default function PlanningAssistant({
         reviews
       );
 
-      if (result.success) {
-        const planWithMetadata = {
-          ...result.data,
+      if (result.success && result.data) {
+        const planWithMetadata: PlanHistoryItem = {
+          ...(result.data as PlanData),
           activity: currentActivity,
           timestamp: new Date().toISOString(),
           id: Date.now(),
@@ -137,14 +231,17 @@ export default function PlanningAssistant({
     }
   };
 
-  const handleSavePlanWithName = () => {
+  const handleSavePlanWithName = (): void => {
     if (!plan || !planName.trim()) {
       alert('Please enter a name for this plan');
       return;
     }
 
-    const namedPlan = {
+    const namedPlan: PlanHistoryItem = {
       ...plan,
+      activity: plan.activity || '',
+      timestamp: plan.timestamp || new Date().toISOString(),
+      id: plan.id || Date.now(),
       name: planName.trim(),
       savedAt: new Date().toISOString(),
     };
@@ -165,19 +262,19 @@ export default function PlanningAssistant({
     alert('Plan named and saved!');
   };
 
-  const deletePlanFromHistory = (id) => {
+  const deletePlanFromHistory = (id: number): void => {
     if (confirm('Delete this plan from history?')) {
       setPlanHistory(prev => prev.filter(p => p.id !== id));
     }
   };
 
-  const loadPlanFromHistory = (historicalPlan) => {
+  const loadPlanFromHistory = (historicalPlan: PlanHistoryItem): void => {
     setPlan(historicalPlan);
     setActivity(historicalPlan.activity);
     setShowHistory(false);
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handlePlan();

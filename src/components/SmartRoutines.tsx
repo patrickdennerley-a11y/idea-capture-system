@@ -19,9 +19,77 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Check, X, SkipForward, Clock, Calendar, Lightbulb, Loader, AlertCircle, History, Save, Trash2 } from 'lucide-react';
+import { Sparkles, Check, X, SkipForward, Clock, Calendar, AlertCircle, History, Save, Trash2 } from 'lucide-react';
 
-const SmartRoutines = ({
+interface Idea {
+  id: number;
+  content: string;
+  [key: string]: any;
+}
+
+interface Log {
+  id: number;
+  timestamp: string;
+  [key: string]: any;
+}
+
+interface TimetableEvent {
+  id: number;
+  [key: string]: any;
+}
+
+interface Routine {
+  id: number;
+  title: string;
+  description: string;
+  timeOfDay: string;
+  frequency: string;
+  duration?: string;
+  type: 'direct' | 'mashup';
+  sources?: string[];
+  reasoning?: string;
+}
+
+interface Metadata {
+  directCount: number;
+  mashupCount: number;
+}
+
+interface HistoryEntry {
+  id: number;
+  timestamp: string;
+  suggestions: Routine[];
+  metadata: Metadata;
+  states: Record<number, string>;
+}
+
+interface GenerationHistory {
+  smartRoutines?: HistoryEntry[];
+}
+
+interface SmartRoutinesProps {
+  ideas: Idea[];
+  logs: Log[];
+  timetable: TimetableEvent[];
+  routines: any[];
+  suggestions: Routine[];
+  setSuggestions: React.Dispatch<React.SetStateAction<Routine[]>>;
+  loading: boolean;
+  setLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  error: string | null;
+  setError: React.Dispatch<React.SetStateAction<string | null>>;
+  showSuggestions: boolean;
+  setShowSuggestions: React.Dispatch<React.SetStateAction<boolean>>;
+  metadata: Metadata | null;
+  setMetadata: React.Dispatch<React.SetStateAction<Metadata | null>>;
+  suggestionStates: Record<number, string>;
+  setSuggestionStates: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+  generationHistory: GenerationHistory;
+  setGenerationHistory: React.Dispatch<React.SetStateAction<GenerationHistory>>;
+  onRoutineAdded: (routine: any) => void;
+}
+
+const SmartRoutines: React.FC<SmartRoutinesProps> = ({
   ideas,
   logs,
   timetable,
@@ -42,7 +110,7 @@ const SmartRoutines = ({
   setGenerationHistory,
   onRoutineAdded
 }) => {
-  const [discardConfirm, setDiscardConfirm] = useState(null);
+  const [discardConfirm, setDiscardConfirm] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   // Auto-show suggestions when results are ready (handles tab switch during generation)
@@ -79,13 +147,13 @@ const SmartRoutines = ({
       setShowSuggestions(true);
 
       // Initialize all suggestions as pending
-      const initialStates = {};
-      data.routines.forEach(routine => {
+      const initialStates: Record<number, string> = {};
+      data.routines.forEach((routine: Routine) => {
         initialStates[routine.id] = 'pending';
       });
       setSuggestionStates(initialStates);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching smart routines:', err);
       setError(err.message);
     } finally {
@@ -93,7 +161,7 @@ const SmartRoutines = ({
     }
   };
 
-  const confirmRoutine = (routine) => {
+  const confirmRoutine = (routine: Routine) => {
     // Mark as confirmed
     setSuggestionStates(prev => ({
       ...prev,
@@ -119,7 +187,7 @@ const SmartRoutines = ({
     }, 500);
   };
 
-  const skipRoutine = (routineId) => {
+  const skipRoutine = (routineId: number) => {
     setSuggestionStates(prev => ({
       ...prev,
       [routineId]: 'skipped'
@@ -131,23 +199,25 @@ const SmartRoutines = ({
     }, 300);
   };
 
-  const requestDiscard = (routineId) => {
+  const requestDiscard = (routineId: number) => {
     setDiscardConfirm(routineId);
   };
 
   const confirmDiscard = () => {
     const routineId = discardConfirm;
-    setSuggestionStates(prev => ({
-      ...prev,
-      [routineId]: 'discarded'
-    }));
+    if (routineId) {
+      setSuggestionStates(prev => ({
+        ...prev,
+        [routineId]: 'discarded'
+      }));
 
-    // Remove from view
-    setTimeout(() => {
-      setSuggestions(prev => prev.filter(s => s.id !== routineId));
-    }, 300);
+      // Remove from view
+      setTimeout(() => {
+        setSuggestions(prev => prev.filter(s => s.id !== routineId));
+      }, 300);
 
-    setDiscardConfirm(null);
+      setDiscardConfirm(null);
+    }
   };
 
   const cancelDiscard = () => {
@@ -164,7 +234,7 @@ const SmartRoutines = ({
 
   const handleDismissAll = () => {
     // Mark all as discarded
-    const allDiscarded = {};
+    const allDiscarded: Record<number, string> = {};
     suggestions.forEach(s => {
       allDiscarded[s.id] = 'discarded';
     });
@@ -177,11 +247,11 @@ const SmartRoutines = ({
   };
 
   const handleSaveToHistory = () => {
-    const historyEntry = {
+    const historyEntry: HistoryEntry = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
       suggestions: suggestions,
-      metadata: metadata,
+      metadata: metadata!,
       states: suggestionStates
     };
 
@@ -195,7 +265,7 @@ const SmartRoutines = ({
     handleCloseSuggestions();
   };
 
-  const viewHistoryEntry = (entry) => {
+  const viewHistoryEntry = (entry: HistoryEntry) => {
     setSuggestions(entry.suggestions);
     setMetadata(entry.metadata);
     setSuggestionStates(entry.states);
@@ -203,14 +273,14 @@ const SmartRoutines = ({
     setShowHistory(false);
   };
 
-  const deleteHistoryEntry = (entryId) => {
+  const deleteHistoryEntry = (entryId: number) => {
     setGenerationHistory(prev => ({
       ...prev,
       smartRoutines: (prev.smartRoutines || []).filter(e => e.id !== entryId)
     }));
   };
 
-  const getTypeStyles = (type) => {
+  const getTypeStyles = (type: 'direct' | 'mashup') => {
     if (type === 'direct') {
       return {
         badge: '📝 FROM YOUR IDEAS',
@@ -232,7 +302,7 @@ const SmartRoutines = ({
     }
   };
 
-  const getTimeIcon = (timeOfDay) => {
+  const getTimeIcon = (timeOfDay: string): string => {
     switch (timeOfDay) {
       case 'morning': return '🌅';
       case 'afternoon': return '☀️';
@@ -258,13 +328,13 @@ const SmartRoutines = ({
           {loading ? 'Generating...' : 'Generate Smart Routines'}
         </button>
 
-        {(generationHistory?.smartRoutines?.length > 0) && (
+        {(generationHistory?.smartRoutines?.length ?? 0) > 0 && (
           <button
             onClick={() => setShowHistory(true)}
             className="neural-button-secondary flex items-center gap-2"
           >
             <History className="w-4 h-4" />
-            History ({generationHistory.smartRoutines.length})
+            History ({generationHistory.smartRoutines!.length})
           </button>
         )}
 
@@ -364,10 +434,12 @@ const SmartRoutines = ({
                         <Calendar className="w-3 h-3" />
                         <span className="capitalize">{routine.frequency}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        <span>{routine.duration}</span>
-                      </div>
+                      {routine.duration && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>{routine.duration}</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Sources */}
@@ -490,7 +562,7 @@ const SmartRoutines = ({
             </div>
 
             <div className="p-6 space-y-4">
-              {generationHistory?.smartRoutines?.length > 0 ? (
+              {generationHistory?.smartRoutines && generationHistory.smartRoutines.length > 0 ? (
                 generationHistory.smartRoutines.map((entry) => {
                   const date = new Date(entry.timestamp);
                   const confirmedCount = Object.values(entry.states || {}).filter(s => s === 'confirmed').length;

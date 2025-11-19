@@ -33,21 +33,119 @@
  * - Ideas list at lines 462-515
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { Lightbulb, Tag, Mic, Save, Search, X, Copy, Check, Sparkles, Loader, AlertCircle, XCircle, History, ChevronLeft, ChevronRight, Clipboard, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import { Lightbulb, Tag, Mic, Save, Search, X, Copy, Check, Sparkles, Loader, AlertCircle, XCircle, History, Clipboard, Settings } from 'lucide-react';
 import { formatDateTime } from '../utils/dateUtils';
 import { organizeIdeas } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import IdeaEditModal from './IdeaEditModal';
-// Temporarily disabled virtual scrolling - using regular rendering instead
-// import { VariableSizeList as List } from 'react-window';
+
+// Type definitions
+interface Idea {
+  id: number;
+  content: string;
+  tags?: string[];
+  context?: string;
+  dueDate?: string | null;
+  timestamp: string;
+  classificationType?: 'general' | 'routine' | 'checklist' | 'timetable';
+  duration?: number | null;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
+  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority?: 'low' | 'medium' | 'high';
+  autoClassified?: boolean;
+  lastModified?: string;
+  isDraft?: boolean;
+}
+
+interface Classification {
+  classificationType?: 'general' | 'routine' | 'checklist' | 'timetable';
+  duration?: number | null;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
+  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night' | null;
+  priority?: 'low' | 'medium' | 'high';
+}
+
+interface OrganizedTheme {
+  name: string;
+  description?: string;
+  priority?: string;
+  ideas?: (Idea | string)[];
+}
+
+interface OrganizedData {
+  summary?: string;
+  themes?: OrganizedTheme[];
+  nextSteps?: string[];
+}
+
+interface OrganizationHistoryEntry {
+  id: number;
+  timestamp: string;
+  data: OrganizedData;
+  ideaCount: number;
+}
+
+interface FilterState {
+  tags: string[];
+  classifications: string[];
+}
+
+interface IdeaCaptureProps {
+  ideas: Idea[];
+  setIdeas: React.Dispatch<React.SetStateAction<Idea[]>>;
+  isOrganizing: boolean;
+  setIsOrganizing: React.Dispatch<React.SetStateAction<boolean>>;
+  organizedData: OrganizedData | null;
+  setOrganizedData: React.Dispatch<React.SetStateAction<OrganizedData | null>>;
+  organizationError: string | null;
+  setOrganizationError: React.Dispatch<React.SetStateAction<string | null>>;
+  showOrganized: boolean;
+  setShowOrganized: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+interface IdeaCardProps {
+  idea: Idea;
+  draggedItemId: number | null;
+  dragOverItemId: number | null;
+  copiedIdeaId: number | null;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>, id: number) => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>, id: number) => void;
+  onDragEnd: () => void;
+  onDrop: (e: React.DragEvent<HTMLDivElement>, id: number) => void;
+  onCopy: (idea: Idea) => void;
+  onEdit: (idea: Idea) => void;
+  onDelete: (id: number) => void;
+}
+
+type VirtualListRow = {
+  type: 'header';
+  groupKey: string;
+  label: string;
+  color: string;
+  count: number;
+  collapsed?: boolean;
+} | {
+  type: 'idea';
+  idea: Idea;
+  groupKey: string;
+} | {
+  type: 'loadMore';
+  groupKey: string;
+  remainingCount: number;
+};
+
+interface RowProps {
+  index: number;
+  style: React.CSSProperties;
+}
 
 // 🔍 DIAGNOSTIC: Track render counts
 let ideaCaptureRenderCount = 0;
 let ideaCardRenderCount = 0;
 
 // Memoized IdeaCard component to prevent re-renders during scroll
-const IdeaCard = memo(({
+const IdeaCard = memo<IdeaCardProps>(({
   idea,
   draggedItemId,
   dragOverItemId,
@@ -168,7 +266,6 @@ const IdeaCard = memo(({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function - return true if props are equal (skip re-render)
-  // Check if idea content changed
   if (prevProps.idea.id !== nextProps.idea.id) return false;
   if (prevProps.idea.content !== nextProps.idea.content) return false;
   if (prevProps.idea.context !== nextProps.idea.context) return false;
@@ -188,9 +285,6 @@ const IdeaCard = memo(({
   for (let i = 0; i < prevTags.length; i++) {
     if (prevTags[i] !== nextTags[i]) return false;
   }
-
-  // All callbacks are now wrapped with useCallback, so they should be stable references
-  // React.memo will handle shallow comparison of callback props automatically
 
   return true; // Props are equal, skip re-render
 });
@@ -218,45 +312,45 @@ export default function IdeaCapture({
   setOrganizationError,
   showOrganized,
   setShowOrganized,
-}) {
+}: IdeaCaptureProps): JSX.Element {
   // 🔍 DIAGNOSTIC: Count main component renders
   ideaCaptureRenderCount++;
   console.log(`🔍 IdeaCapture rendered ${ideaCaptureRenderCount} times - Ideas count: ${ideas.length}`);
 
-  const [currentIdea, setCurrentIdea] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [customTag, setCustomTag] = useState('');
-  const [context, setContext] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [showSaved, setShowSaved] = useState(false);
-  const [showCopied, setShowCopied] = useState(false);
-  const [copiedIdeaId, setCopiedIdeaId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isListening, setIsListening] = useState(false);
-  const [editingIdea, setEditingIdea] = useState(null);
-  const [isAutoClassifying, setIsAutoClassifying] = useState(false);
+  const [currentIdea, setCurrentIdea] = useState<string>('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [customTag, setCustomTag] = useState<string>('');
+  const [context, setContext] = useState<string>('');
+  const [dueDate, setDueDate] = useState<string>('');
+  const [showSaved, setShowSaved] = useState<boolean>(false);
+  const [showCopied, setShowCopied] = useState<boolean>(false);
+  const [copiedIdeaId, setCopiedIdeaId] = useState<number | null>(null);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
+  const [_isAutoClassifying, _setIsAutoClassifying] = useState<boolean>(false);
 
   // Pagination and grouping state
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [itemsPerGroup, setItemsPerGroup] = useState({});
-  const [selectedFilters, setSelectedFilters] = useState({
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [itemsPerGroup, setItemsPerGroup] = useState<Record<string, number>>({});
+  const [selectedFilters, setSelectedFilters] = useState<FilterState>({
     tags: [],
     classifications: []
   });
 
-  const textareaRef = useRef(null);
-  const recognitionRef = useRef(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   // History state
-  const [organizationHistory, setOrganizationHistory] = useLocalStorage('neural-organization-history', []);
-  const [showHistory, setShowHistory] = useState(false);
-  const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
+  const [organizationHistory, setOrganizationHistory] = useLocalStorage<OrganizationHistoryEntry[]>('neural-organization-history', []);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [_currentHistoryIndex, setCurrentHistoryIndex] = useState<number>(0);
 
   // Drag and drop state
-  const [draggedItemId, setDraggedItemId] = useState(null);
-  const [dragOverItemId, setDragOverItemId] = useState(null);
-  const scrollContainerRef = useRef(null);
-  const scrollIntervalRef = useRef(null);
+  const [draggedItemId, setDraggedItemId] = useState<number | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollIntervalRef = useRef<number | null>(null);
 
   // Auto-focus textarea on load (minimal friction)
   useEffect(() => {
@@ -268,20 +362,20 @@ export default function IdeaCapture({
   // Setup voice recognition
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
 
-      recognitionRef.current.onresult = (event) => {
+      recognitionRef.current.onresult = (event: any) => {
         const transcript = Array.from(event.results)
-          .map(result => result[0])
-          .map(result => result.transcript)
+          .map((result: any) => result[0])
+          .map((result: any) => result.transcript)
           .join('');
         setCurrentIdea(transcript);
       };
 
-      recognitionRef.current.onerror = (event) => {
+      recognitionRef.current.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
       };
@@ -293,7 +387,6 @@ export default function IdeaCapture({
   }, []);
 
   // Auto-show organized data modal when results are ready
-  // This handles the case where user switches tabs during generation
   useEffect(() => {
     if (organizedData && !showOrganized) {
       console.log('🔍 Auto-showing organized data modal (results ready after tab switch)');
@@ -301,7 +394,7 @@ export default function IdeaCapture({
     }
   }, [organizedData, showOrganized, setShowOrganized]);
 
-  const toggleVoiceInput = () => {
+  const toggleVoiceInput = (): void => {
     if (!recognitionRef.current) {
       alert('Voice input not supported in this browser');
       return;
@@ -315,7 +408,7 @@ export default function IdeaCapture({
     }
   };
 
-  const toggleTag = (tag) => {
+  const toggleTag = (tag: string): void => {
     setSelectedTags(prev =>
       prev.includes(tag)
         ? prev.filter(t => t !== tag)
@@ -323,22 +416,22 @@ export default function IdeaCapture({
     );
   };
 
-  const addCustomTag = () => {
+  const addCustomTag = (): void => {
     if (customTag.trim() && !selectedTags.includes(customTag.trim().toLowerCase())) {
       setSelectedTags(prev => [...prev, customTag.trim().toLowerCase()]);
       setCustomTag('');
     }
   };
 
-  const removeTag = (tagToRemove) => {
+  const removeTag = (tagToRemove: string): void => {
     setSelectedTags(prev => prev.filter(t => t !== tagToRemove));
   };
 
-  const saveIdea = async () => {
+  const saveIdea = async (): Promise<void> => {
     if (!currentIdea.trim()) return;
 
     // Create idea with default classification
-    const newIdea = {
+    const newIdea: Idea = {
       id: Date.now(),
       content: currentIdea.trim(),
       tags: selectedTags,
@@ -377,7 +470,7 @@ export default function IdeaCapture({
   };
 
   // Auto-classify idea in background after save
-  const classifyIdeaInBackground = async (idea) => {
+  const classifyIdeaInBackground = async (idea: Idea): Promise<void> => {
     try {
       const response = await fetch('http://localhost:3001/api/classify-idea', {
         method: 'POST',
@@ -391,7 +484,7 @@ export default function IdeaCapture({
       });
 
       if (response.ok) {
-        const classification = await response.json();
+        const classification: Classification = await response.json();
 
         // Update idea with classification
         setIdeas(prev => prev.map(i =>
@@ -415,7 +508,7 @@ export default function IdeaCapture({
   };
 
   // Manual classification function for edit modal
-  const classifyIdea = async (content, context, tags) => {
+  const classifyIdea = async (content: string, context: string, tags: string[]): Promise<Classification | null> => {
     try {
       const response = await fetch('http://localhost:3001/api/classify-idea', {
         method: 'POST',
@@ -448,7 +541,7 @@ export default function IdeaCapture({
             i.isDraft ? { ...i, content: currentIdea, timestamp: new Date().toISOString() } : i
           ));
         } else {
-          const draft = {
+          const draft: Idea = {
             id: Date.now(),
             content: currentIdea,
             tags: selectedTags,
@@ -463,32 +556,32 @@ export default function IdeaCapture({
     }
   }, [currentIdea]);
 
-  const deleteIdea = useCallback((id) => {
+  const deleteIdea = useCallback((id: number): void => {
     setIdeas(prev => prev.filter(i => i.id !== id));
   }, [setIdeas]);
 
   // Modal handlers
-  const openEditModal = useCallback((idea) => {
+  const openEditModal = useCallback((idea: Idea): void => {
     setEditingIdea(idea);
   }, []);
 
-  const handleSaveFromModal = (updatedIdea) => {
+  const handleSaveFromModal = (updatedIdea: Idea): void => {
     setIdeas(prev => prev.map(i =>
       i.id === updatedIdea.id ? updatedIdea : i
     ));
     setEditingIdea(null);
   };
 
-  const handleDeleteFromModal = (ideaId) => {
+  const handleDeleteFromModal = (ideaId: number): void => {
     deleteIdea(ideaId);
     setEditingIdea(null);
   };
 
-  const copyAllIdeas = async () => {
+  const copyAllIdeas = async (): Promise<void> => {
     if (filteredIdeas.length === 0) return;
 
     const formattedText = filteredIdeas.map(idea => {
-      const title = idea.tags.length > 0 ? idea.tags.join(', ').toUpperCase() : 'UNTITLED IDEA';
+      const title = idea.tags && idea.tags.length > 0 ? idea.tags.join(', ').toUpperCase() : 'UNTITLED IDEA';
       const timestamp = formatDateTime(idea.timestamp);
       const contextLine = idea.context ? `Context: ${idea.context}\n` : '';
       const dueDateLine = idea.dueDate ? `Due: ${new Date(idea.dueDate).toLocaleDateString()}\n` : '';
@@ -506,8 +599,8 @@ export default function IdeaCapture({
     }
   };
 
-  const copyIdea = useCallback(async (idea) => {
-    const title = idea.tags.length > 0 ? idea.tags.join(', ').toUpperCase() : 'IDEA';
+  const copyIdea = useCallback(async (idea: Idea): Promise<void> => {
+    const title = idea.tags && idea.tags.length > 0 ? idea.tags.join(', ').toUpperCase() : 'IDEA';
     const timestamp = formatDateTime(idea.timestamp);
     const contextLine = idea.context ? `Context: ${idea.context}\n` : '';
     const dueDateLine = idea.dueDate ? `Due: ${new Date(idea.dueDate).toLocaleDateString()}\n` : '';
@@ -524,7 +617,7 @@ export default function IdeaCapture({
     }
   }, []);
 
-  const handleOrganizeIdeas = async () => {
+  const handleOrganizeIdeas = async (): Promise<void> => {
     if (filteredIdeas.length === 0) return;
 
     setIsOrganizing(true);
@@ -534,20 +627,20 @@ export default function IdeaCapture({
       const result = await organizeIdeas(filteredIdeas);
 
       if (result.success) {
-        const historyEntry = {
+        const historyEntry: OrganizationHistoryEntry = {
           id: Date.now(),
           timestamp: new Date().toISOString(),
-          data: result.data,
+          data: result.data as OrganizedData,
           ideaCount: filteredIdeas.length,
         };
 
         // Save to history (newest first)
         setOrganizationHistory(prev => [historyEntry, ...prev]);
 
-        setOrganizedData(result.data);
+        setOrganizedData(result.data as OrganizedData);
         setShowOrganized(true);
       } else {
-        setOrganizationError(result.error);
+        setOrganizationError(result.error || null);
       }
     } catch (error) {
       setOrganizationError('Unexpected error occurred. Please try again.');
@@ -556,7 +649,7 @@ export default function IdeaCapture({
     }
   };
 
-  const viewHistoryEntry = (index) => {
+  const viewHistoryEntry = (index: number): void => {
     const entry = organizationHistory[index];
     setOrganizedData(entry.data);
     setCurrentHistoryIndex(index);
@@ -564,11 +657,11 @@ export default function IdeaCapture({
     setShowOrganized(true);
   };
 
-  const deleteHistoryEntry = (id) => {
+  const deleteHistoryEntry = (id: number): void => {
     setOrganizationHistory(prev => prev.filter(entry => entry.id !== id));
   };
 
-  const handleCloseOrganizedModal = () => {
+  const handleCloseOrganizedModal = (): void => {
     setShowOrganized(false);
     // Clear the data so modal doesn't auto-show again when returning to tab
     setOrganizedData(null);
@@ -578,15 +671,15 @@ export default function IdeaCapture({
   const dragEventCount = useRef({ start: 0, over: 0, end: 0, drop: 0 });
 
   // Drag and drop handlers (wrapped with useCallback to prevent re-creating on every render)
-  const handleDragStart = useCallback((e, ideaId) => {
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, ideaId: number): void => {
     dragEventCount.current.start++;
     console.log('🔍 Drag events:', dragEventCount.current);
     setDraggedItemId(ideaId);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/html', e.currentTarget);
+    e.dataTransfer.setData('text/html', e.currentTarget.outerHTML);
   }, []);
 
-  const handleDragOver = useCallback((e, ideaId) => {
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>, ideaId: number): void => {
     dragEventCount.current.over++;
     if (dragEventCount.current.over % 100 === 0) {
       console.log('🔍 DragOver called 100 times, total:', dragEventCount.current);
@@ -617,7 +710,7 @@ export default function IdeaCapture({
         const scrollSpeed = Math.min(30, (distanceFromTop / scrollZone) * 30); // Max 30px per frame
 
         // Use requestAnimationFrame for smoother scrolling (no memory leaks)
-        const scroll = () => {
+        const scroll = (): void => {
           if (container.scrollTop > 0) {
             container.scrollTop -= scrollSpeed;
             scrollIntervalRef.current = requestAnimationFrame(scroll);
@@ -630,7 +723,7 @@ export default function IdeaCapture({
     }
   }, [draggedItemId]);
 
-  const handleDragEnd = useCallback(() => {
+  const handleDragEnd = useCallback((): void => {
     dragEventCount.current.end++;
     console.log('🔍 DragEnd called, total:', dragEventCount.current);
     setDraggedItemId(null);
@@ -643,7 +736,7 @@ export default function IdeaCapture({
     }
   }, []);
 
-  const handleDrop = useCallback((e, targetIdeaId) => {
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, targetIdeaId: number): void => {
     dragEventCount.current.drop++;
     console.log('🔍 Drop called, total:', dragEventCount.current);
     e.preventDefault();
@@ -684,11 +777,11 @@ export default function IdeaCapture({
 
   // 🔍 DIAGNOSTIC: Log memory and performance info on every render
   useEffect(() => {
-    if (performance.memory) {
+    if ((performance as any).memory) {
       console.log('🔍 Memory usage:', {
-        usedJSHeapSize: `${(performance.memory.usedJSHeapSize / 1048576).toFixed(2)} MB`,
-        totalJSHeapSize: `${(performance.memory.totalJSHeapSize / 1048576).toFixed(2)} MB`,
-        jsHeapSizeLimit: `${(performance.memory.jsHeapSizeLimit / 1048576).toFixed(2)} MB`,
+        usedJSHeapSize: `${((performance as any).memory.usedJSHeapSize / 1048576).toFixed(2)} MB`,
+        totalJSHeapSize: `${((performance as any).memory.totalJSHeapSize / 1048576).toFixed(2)} MB`,
+        jsHeapSizeLimit: `${((performance as any).memory.jsHeapSizeLimit / 1048576).toFixed(2)} MB`,
       });
     }
   });
@@ -745,7 +838,7 @@ export default function IdeaCapture({
     const monthAgo = new Date(today);
     monthAgo.setMonth(monthAgo.getMonth() - 1);
 
-    const groups = {
+    const groups: Record<string, Idea[]> = {
       today: [],
       yesterday: [],
       thisWeek: [],
@@ -776,7 +869,7 @@ export default function IdeaCapture({
   // Create a flattened list for virtual scrolling
   const virtualListData = useMemo(() => {
     console.log('🔍 virtualListData recalculating...');
-    const rows = [];
+    const rows: VirtualListRow[] = [];
     const groupConfigs = [
       { key: 'today', label: '📋 TODAY', icon: '📋', color: 'text-neural-purple' },
       { key: 'yesterday', label: '📅 YESTERDAY', icon: '📅', color: 'text-gray-300' },
@@ -826,7 +919,7 @@ export default function IdeaCapture({
   }, [groupedIdeas, collapsedGroups, itemsPerGroup]);
 
   // Load more items in a group
-  const loadMore = useCallback((groupKey) => {
+  const loadMore = useCallback((groupKey: string): void => {
     setItemsPerGroup(prev => ({
       ...prev,
       [groupKey]: (prev[groupKey] || 20) + 20
@@ -834,7 +927,7 @@ export default function IdeaCapture({
   }, []);
 
   // Toggle group collapse
-  const toggleGroup = useCallback((groupKey) => {
+  const toggleGroup = useCallback((groupKey: string): void => {
     setCollapsedGroups(prev => ({
       ...prev,
       [groupKey]: !prev[groupKey]
@@ -842,13 +935,13 @@ export default function IdeaCapture({
   }, []);
 
   // Clear all filters
-  const clearFilters = useCallback(() => {
+  const clearFilters = useCallback((): void => {
     setSelectedFilters({ tags: [], classifications: [] });
     setSearchTerm('');
   }, []);
 
   // Toggle filter
-  const toggleFilter = useCallback((type, value) => {
+  const toggleFilter = useCallback((type: 'tags' | 'classifications', value: string): void => {
     setSelectedFilters(prev => ({
       ...prev,
       [type]: prev[type].includes(value)
@@ -859,7 +952,7 @@ export default function IdeaCapture({
 
   // Keyboard shortcut: Cmd/Ctrl + K to focus
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         textareaRef.current?.focus();
@@ -869,19 +962,8 @@ export default function IdeaCapture({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Get row size for virtual list (different heights for headers vs idea cards)
-  const getItemSize = useCallback((index) => {
-    const row = virtualListData[index];
-    if (!row) return 50;
-
-    if (row.type === 'header') return 48; // Header height
-    if (row.type === 'loadMore') return 48; // Load more button height
-    if (row.type === 'idea') return 160; // Approximate idea card height
-    return 50;
-  }, [virtualListData]);
-
   // Row renderer for virtual list
-  const Row = useCallback(({ index, style }) => {
+  const Row = useCallback(({ index, style }: RowProps) => {
     const row = virtualListData[index];
     if (!row) return null;
 
@@ -1195,7 +1277,7 @@ export default function IdeaCapture({
           </div>
         ) : (
           <div ref={scrollContainerRef} className="max-h-96 overflow-y-auto neural-scrollbar">
-            {virtualListData.map((row, index) => (
+            {virtualListData.map((_row, index) => (
               <Row key={index} index={index} style={{}} />
             ))}
           </div>
@@ -1330,26 +1412,30 @@ export default function IdeaCapture({
                         )}
                         {theme.ideas && theme.ideas.length > 0 && (
                           <div className="space-y-2">
-                            {theme.ideas.map((idea, ideaIndex) => (
-                              <div
-                                key={ideaIndex}
-                                className="bg-neural-dark border border-gray-700 rounded p-3"
-                              >
-                                <p className="text-gray-200">{idea.content || idea}</p>
-                                {idea.tags && idea.tags.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-2">
-                                    {idea.tags.map(tag => (
-                                      <span
-                                        key={tag}
-                                        className="px-2 py-0.5 bg-neural-purple/20 text-neural-purple text-xs rounded-full"
-                                      >
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                            {theme.ideas.map((idea, ideaIndex) => {
+                              const ideaContent = typeof idea === 'string' ? idea : idea.content;
+                              const ideaTags = typeof idea === 'string' ? [] : idea.tags;
+                              return (
+                                <div
+                                  key={ideaIndex}
+                                  className="bg-neural-dark border border-gray-700 rounded p-3"
+                                >
+                                  <p className="text-gray-200">{ideaContent}</p>
+                                  {ideaTags && ideaTags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {ideaTags.map(tag => (
+                                        <span
+                                          key={tag}
+                                          className="px-2 py-0.5 bg-neural-purple/20 text-neural-purple text-xs rounded-full"
+                                        >
+                                          {tag}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
