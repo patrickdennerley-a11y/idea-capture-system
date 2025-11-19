@@ -34,7 +34,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
-import { Lightbulb, Tag, Mic, Save, Search, X, Copy, Check, Sparkles, Loader, AlertCircle, XCircle, History, ChevronLeft, ChevronRight, Clipboard, Settings } from 'lucide-react';
+import { Lightbulb, Tag, Mic, Save, Search, X, Copy, Check, Sparkles, Loader, AlertCircle, XCircle, History, ChevronLeft, ChevronRight, Clipboard, Settings, Upload } from 'lucide-react';
 import { formatDateTime } from '../utils/dateUtils';
 import { organizeIdeas } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
@@ -235,6 +235,11 @@ export default function IdeaCapture({
   const [isListening, setIsListening] = useState(false);
   const [editingIdea, setEditingIdea] = useState(null);
   const [isAutoClassifying, setIsAutoClassifying] = useState(false);
+
+  // Import modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importStatus, setImportStatus] = useState({ type: '', message: '' });
 
   // Pagination and grouping state
   const [collapsedGroups, setCollapsedGroups] = useState({});
@@ -523,6 +528,102 @@ export default function IdeaCapture({
       alert('Failed to copy to clipboard. Please try again.');
     }
   }, []);
+
+  // Parse exported ideas text and convert back to idea objects
+  const parseImportedIdeas = (text) => {
+    const separator = '─'.repeat(50);
+    const blocks = text.split(separator).map(block => block.trim()).filter(block => block);
+
+    const parsedIdeas = [];
+
+    for (const block of blocks) {
+      const lines = block.split('\n').map(line => line.trim()).filter(line => line);
+
+      if (lines.length < 2) continue; // Need at least title and date
+
+      // Parse title and tags
+      const titleLine = lines[0];
+      const tags = titleLine === 'UNTITLED IDEA'
+        ? []
+        : titleLine.split(',').map(tag => tag.trim().toLowerCase());
+
+      // Parse date
+      const dateLine = lines[1];
+
+      // Parse optional context and due date
+      let contextValue = '';
+      let dueDateValue = '';
+      let contentStartIndex = 2;
+
+      for (let i = 2; i < lines.length; i++) {
+        if (lines[i].startsWith('Context: ')) {
+          contextValue = lines[i].substring(9);
+          contentStartIndex = i + 1;
+        } else if (lines[i].startsWith('Due: ')) {
+          dueDateValue = lines[i].substring(5);
+          contentStartIndex = i + 1;
+        } else {
+          break;
+        }
+      }
+
+      // Rest is content
+      const content = lines.slice(contentStartIndex).join('\n');
+
+      if (!content) continue; // Skip if no content
+
+      // Create idea object
+      const idea = {
+        id: Date.now() + Math.random(), // Unique ID
+        content: content,
+        tags: tags,
+        context: contextValue,
+        dueDate: dueDateValue ? new Date(dueDateValue).toISOString().split('T')[0] : '',
+        timestamp: new Date().toISOString(), // Use current time for imported ideas
+      };
+
+      parsedIdeas.push(idea);
+    }
+
+    return parsedIdeas;
+  };
+
+  const handleImportIdeas = () => {
+    setImportStatus({ type: '', message: '' });
+
+    if (!importText.trim()) {
+      setImportStatus({ type: 'error', message: 'Please paste exported ideas text' });
+      return;
+    }
+
+    try {
+      const parsedIdeas = parseImportedIdeas(importText);
+
+      if (parsedIdeas.length === 0) {
+        setImportStatus({ type: 'error', message: 'No valid ideas found in the text. Please check the format.' });
+        return;
+      }
+
+      // Add imported ideas to the beginning of the list (newest first)
+      setIdeas(prev => [...parsedIdeas, ...prev]);
+
+      setImportStatus({
+        type: 'success',
+        message: `Successfully imported ${parsedIdeas.length} idea${parsedIdeas.length !== 1 ? 's' : ''}!`
+      });
+
+      // Clear and close after success
+      setTimeout(() => {
+        setImportText('');
+        setShowImportModal(false);
+        setImportStatus({ type: '', message: '' });
+      }, 2000);
+
+    } catch (err) {
+      console.error('Import error:', err);
+      setImportStatus({ type: 'error', message: 'Failed to parse ideas. Please check the format.' });
+    }
+  };
 
   const handleOrganizeIdeas = async () => {
     if (filteredIdeas.length === 0) return;
@@ -1096,24 +1197,33 @@ export default function IdeaCapture({
               <Lightbulb className="w-5 h-5 text-neural-purple" />
               Captured Ideas ({filteredIdeas.length})
             </h3>
-            {filteredIdeas.length > 0 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={copyAllIdeas}
+                onClick={() => setShowImportModal(true)}
                 className="neural-button-secondary flex items-center gap-2"
               >
-                {showCopied ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    Copy All
-                  </>
-                )}
+                <Upload className="w-4 h-4" />
+                Import
               </button>
-            )}
+              {filteredIdeas.length > 0 && (
+                <button
+                  onClick={copyAllIdeas}
+                  className="neural-button-secondary flex items-center gap-2"
+                >
+                  {showCopied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Export
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Search Bar */}
@@ -1482,6 +1592,109 @@ export default function IdeaCapture({
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-neural-dark border border-gray-800 rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neural-dark border-b border-gray-800 p-6 z-10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Upload className="w-6 h-6 text-neural-purple" />
+                    Import Ideas
+                  </h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Paste your exported ideas text below to restore them
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportText('');
+                    setImportStatus({ type: '', message: '' });
+                  }}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Instructions */}
+              <div className="bg-neural-darker border border-gray-800 rounded-lg p-4">
+                <h4 className="font-semibold mb-2 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-neural-purple" />
+                  How to Import
+                </h4>
+                <ul className="text-sm text-gray-400 space-y-1">
+                  <li>• Click the "Export" button to copy all your ideas</li>
+                  <li>• Paste the exported text in the textarea below</li>
+                  <li>• Click "Import Ideas" to restore them</li>
+                  <li>• Ideas will be added to your existing collection</li>
+                </ul>
+              </div>
+
+              {/* Textarea */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Exported Ideas Text *
+                </label>
+                <textarea
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  placeholder="Paste your exported ideas here..."
+                  className="w-full h-64 bg-neural-darker border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-neural-purple resize-none font-mono text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Expected format: Each idea should be separated by a line of dashes (────)
+                </p>
+              </div>
+
+              {/* Status Message */}
+              {importStatus.message && (
+                <div className={`rounded-lg p-4 border ${
+                  importStatus.type === 'success'
+                    ? 'bg-green-500/10 border-green-500/50 text-green-400'
+                    : 'bg-red-500/10 border-red-500/50 text-red-400'
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {importStatus.type === 'success' ? (
+                      <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    )}
+                    <p className="text-sm">{importStatus.message}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleImportIdeas}
+                  disabled={!importText.trim()}
+                  className="neural-button flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Upload className="w-4 h-4 inline mr-2" />
+                  Import Ideas
+                </button>
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportText('');
+                    setImportStatus({ type: '', message: '' });
+                  }}
+                  className="neural-button-secondary px-6"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
