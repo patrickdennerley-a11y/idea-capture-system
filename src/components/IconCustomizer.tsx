@@ -12,11 +12,37 @@
  * - Saved in localStorage
  */
 
-import { useState } from 'react';
+import { useState, FC, SVGProps, ChangeEvent } from 'react';
 import { X, Palette, RotateCcw, Brain as LucideBrain } from 'lucide-react';
 
+// Type definitions
+interface IconTheme {
+  icon: string;
+  strokeColor: string;
+  bgType: 'solid' | 'gradient';
+  bgColor: string;
+  bgGradientEnd: string;
+}
+
+type IconProps = SVGProps<SVGSVGElement>;
+
+type IconComponent = (props: IconProps) => JSX.Element;
+
+interface IconOption {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface IconCustomizerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  theme: IconTheme;
+  setTheme: (theme: IconTheme) => void;
+}
+
 // Default theme
-const DEFAULT_THEME = {
+const DEFAULT_THEME: IconTheme = {
   icon: 'brain-lucide',
   strokeColor: '#ffffff',
   bgType: 'gradient', // 'solid' or 'gradient'
@@ -25,12 +51,12 @@ const DEFAULT_THEME = {
 };
 
 // Icon SVG components
-const ICONS = {
-  'brain-lucide': (props) => (
+const ICONS: Record<string, IconComponent> = {
+  'brain-lucide': (props: IconProps) => (
     <LucideBrain {...props} />
   ),
 
-  brain: (props) => (
+  brain: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path
         d="M12 5c-2.5 0-4 2-4 4 0 1 .5 2 1 2.5C8 12 7 13 7 14.5c0 1.5 1 3 2.5 3 .5 0 1-.2 1.5-.5.5 1.5 2 2.5 3.5 2.5s3-1 3.5-2.5c.5.3 1 .5 1.5.5 1.5 0 2.5-1.5 2.5-3 0-1.5-1-2.5-2-3 .5-.5 1-1.5 1-2.5 0-2-1.5-4-4-4-1 0-2 .5-2.5 1-.5-.5-1.5-1-2.5-1z"
@@ -41,7 +67,7 @@ const ICONS = {
     </svg>
   ),
 
-  sine: (props) => (
+  sine: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* X-axis */}
       <path
@@ -61,7 +87,7 @@ const ICONS = {
     </svg>
   ),
 
-  neuralink: (props) => (
+  neuralink: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="8" strokeWidth="2" />
       <circle cx="12" cy="8" r="1.5" fill="currentColor" />
@@ -73,7 +99,7 @@ const ICONS = {
     </svg>
   ),
 
-  rocket: (props) => (
+  rocket: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Rocket body */}
       <path
@@ -91,7 +117,7 @@ const ICONS = {
     </svg>
   ),
 
-  wind: (props) => (
+  wind: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path d="M9 6h10a3 3 0 0 1 0 6H9" strokeWidth="2" strokeLinecap="round" />
       <path d="M5 12h14a3 3 0 0 1 0 6H5" strokeWidth="2" strokeLinecap="round" />
@@ -99,7 +125,7 @@ const ICONS = {
     </svg>
   ),
 
-  meditation: (props) => (
+  meditation: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Head */}
       <circle cx="12" cy="8" r="2.5" strokeWidth="2" />
@@ -117,7 +143,7 @@ const ICONS = {
     </svg>
   ),
 
-  angel: (props) => (
+  angel: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       {/* Halo */}
       <circle cx="12" cy="4" r="2" strokeWidth="1.5" />
@@ -175,7 +201,7 @@ const ICONS = {
     </svg>
   ),
 
-  uni: (props) => (
+  uni: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <path
         d="M12 3l9 4.5v5.5c0 4-2.5 6.5-9 9.5-6.5-3-9-5.5-9-9.5V7.5z"
@@ -188,7 +214,7 @@ const ICONS = {
   ),
 
   // Neuralink-style icons
-  constellation: (props) => (
+  constellation: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Constellation nodes */}
@@ -203,7 +229,7 @@ const ICONS = {
     </svg>
   ),
 
-  molecule: (props) => (
+  molecule: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Central node */}
@@ -221,7 +247,7 @@ const ICONS = {
     </svg>
   ),
 
-  network: (props) => (
+  network: (props: IconProps) => (
     <svg viewBox="0 0 24 24" fill="none" {...props}>
       <circle cx="12" cy="12" r="9" strokeWidth="2" />
       {/* Neural network nodes - 3 layers */}
@@ -238,7 +264,7 @@ const ICONS = {
   ),
 };
 
-const ICON_OPTIONS = [
+const ICON_OPTIONS: IconOption[] = [
   { id: 'brain-lucide', name: 'Brain (Original)', description: 'Lucide brain icon' },
   { id: 'brain', name: 'Brain (Alt)', description: 'Neural network style' },
   { id: 'sine', name: 'Sine Wave', description: 'Mathematics & flow' },
@@ -253,21 +279,45 @@ const ICON_OPTIONS = [
   { id: 'uni', name: 'University', description: 'Melbourne Uni shield' },
 ];
 
-export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
-  const [localTheme, setLocalTheme] = useState(theme);
+const IconCustomizer: FC<IconCustomizerProps> = ({ isOpen, onClose, theme, setTheme }) => {
+  const [localTheme, setLocalTheme] = useState<IconTheme>(theme);
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
+  const handleSave = (): void => {
     setTheme(localTheme);
     onClose();
   };
 
-  const handleReset = () => {
+  const handleReset = (): void => {
     setLocalTheme(DEFAULT_THEME);
   };
 
+  const handleIconChange = (iconId: string): void => {
+    setLocalTheme({ ...localTheme, icon: iconId });
+  };
+
+  const handleStrokeColorChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setLocalTheme({ ...localTheme, strokeColor: e.target.value });
+  };
+
+  const handleBgTypeChange = (bgType: 'solid' | 'gradient'): void => {
+    setLocalTheme({ ...localTheme, bgType });
+  };
+
+  const handleBgColorChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setLocalTheme({ ...localTheme, bgColor: e.target.value });
+  };
+
+  const handleBgGradientEndChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value });
+  };
+
   const SelectedIcon = ICONS[localTheme.icon];
+
+  const backgroundStyle = localTheme.bgType === 'gradient'
+    ? `linear-gradient(to bottom right, ${localTheme.bgColor}, ${localTheme.bgGradientEnd})`
+    : localTheme.bgColor;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -281,6 +331,7 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
+            aria-label="Close customizer"
           >
             <X className="w-6 h-6" />
           </button>
@@ -295,9 +346,7 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
               <div
                 className="w-20 h-20 rounded-xl flex items-center justify-center shadow-lg transition-all"
                 style={{
-                  background: localTheme.bgType === 'gradient'
-                    ? `linear-gradient(to bottom right, ${localTheme.bgColor}, ${localTheme.bgGradientEnd})`
-                    : localTheme.bgColor
+                  background: backgroundStyle
                 }}
               >
                 <SelectedIcon
@@ -317,12 +366,13 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                 return (
                   <button
                     key={option.id}
-                    onClick={() => setLocalTheme({ ...localTheme, icon: option.id })}
+                    onClick={() => handleIconChange(option.id)}
                     className={`p-4 rounded-lg border-2 transition-all ${
                       localTheme.icon === option.id
                         ? 'border-neural-purple bg-neural-purple/20'
                         : 'border-gray-800 bg-neural-darker hover:border-gray-700'
                     }`}
+                    aria-pressed={localTheme.icon === option.id}
                   >
                     <div className="flex flex-col items-center gap-2">
                       <Icon className="w-8 h-8" style={{ stroke: '#a855f7', color: '#a855f7' }} />
@@ -342,15 +392,17 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
               <input
                 type="color"
                 value={localTheme.strokeColor}
-                onChange={(e) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
+                onChange={handleStrokeColorChange}
                 className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
+                aria-label="Stroke color picker"
               />
               <input
                 type="text"
                 value={localTheme.strokeColor}
-                onChange={(e) => setLocalTheme({ ...localTheme, strokeColor: e.target.value })}
+                onChange={handleStrokeColorChange}
                 className="neural-input flex-1"
                 placeholder="#ffffff"
+                aria-label="Stroke color hex"
               />
             </div>
           </div>
@@ -360,22 +412,24 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
             <h3 className="text-lg font-bold mb-3">Background Style</h3>
             <div className="flex gap-3">
               <button
-                onClick={() => setLocalTheme({ ...localTheme, bgType: 'gradient' })}
+                onClick={() => handleBgTypeChange('gradient')}
                 className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all ${
                   localTheme.bgType === 'gradient'
                     ? 'border-neural-purple bg-neural-purple/20'
                     : 'border-gray-800 bg-neural-darker hover:border-gray-700'
                 }`}
+                aria-pressed={localTheme.bgType === 'gradient'}
               >
                 Gradient
               </button>
               <button
-                onClick={() => setLocalTheme({ ...localTheme, bgType: 'solid' })}
+                onClick={() => handleBgTypeChange('solid')}
                 className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all ${
                   localTheme.bgType === 'solid'
                     ? 'border-neural-purple bg-neural-purple/20'
                     : 'border-gray-800 bg-neural-darker hover:border-gray-700'
                 }`}
+                aria-pressed={localTheme.bgType === 'solid'}
               >
                 Solid
               </button>
@@ -391,15 +445,17 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                   <input
                     type="color"
                     value={localTheme.bgColor}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                    onChange={handleBgColorChange}
                     className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
+                    aria-label="Gradient start color picker"
                   />
                   <input
                     type="text"
                     value={localTheme.bgColor}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                    onChange={handleBgColorChange}
                     className="neural-input flex-1"
                     placeholder="#a855f7"
+                    aria-label="Gradient start color hex"
                   />
                 </div>
               </div>
@@ -409,15 +465,17 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                   <input
                     type="color"
                     value={localTheme.bgGradientEnd}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
+                    onChange={handleBgGradientEndChange}
                     className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
+                    aria-label="Gradient end color picker"
                   />
                   <input
                     type="text"
                     value={localTheme.bgGradientEnd}
-                    onChange={(e) => setLocalTheme({ ...localTheme, bgGradientEnd: e.target.value })}
+                    onChange={handleBgGradientEndChange}
                     className="neural-input flex-1"
                     placeholder="#ec4899"
+                    aria-label="Gradient end color hex"
                   />
                 </div>
               </div>
@@ -429,15 +487,17 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
                 <input
                   type="color"
                   value={localTheme.bgColor}
-                  onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                  onChange={handleBgColorChange}
                   className="w-16 h-12 rounded-lg cursor-pointer border-2 border-gray-800"
+                  aria-label="Background color picker"
                 />
                 <input
                   type="text"
                   value={localTheme.bgColor}
-                  onChange={(e) => setLocalTheme({ ...localTheme, bgColor: e.target.value })}
+                  onChange={handleBgColorChange}
                   className="neural-input flex-1"
                   placeholder="#a855f7"
+                  aria-label="Background color hex"
                 />
               </div>
             </div>
@@ -449,6 +509,7 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
           <button
             onClick={handleReset}
             className="neural-button-secondary flex items-center gap-2"
+            aria-label="Reset to default theme"
           >
             <RotateCcw className="w-4 h-4" />
             Reset to Default
@@ -463,7 +524,10 @@ export default function IconCustomizer({ isOpen, onClose, theme, setTheme }) {
       </div>
     </div>
   );
-}
+};
 
-// Export the ICONS object for use in App.jsx
+export default IconCustomizer;
+
+// Export the ICONS, DEFAULT_THEME, and IconTheme for use in App.tsx
 export { ICONS, DEFAULT_THEME };
+export type { IconTheme };

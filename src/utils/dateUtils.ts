@@ -1,11 +1,11 @@
-export function formatTime(date) {
+export function formatTime(date: string | Date): string {
   return new Date(date).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
   });
 }
 
-export function formatDate(date) {
+export function formatDate(date: string | Date): string {
   return new Date(date).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -13,7 +13,7 @@ export function formatDate(date) {
   });
 }
 
-export function formatDateTime(date) {
+export function formatDateTime(date: string | Date): string {
   return new Date(date).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -22,15 +22,17 @@ export function formatDateTime(date) {
   });
 }
 
-export function getTodayString() {
+export function getTodayString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-export function isToday(dateString) {
+export function isToday(dateString: string): boolean {
   return dateString === getTodayString();
 }
 
-export function getTimePeriod() {
+export type TimePeriod = 'morning' | 'afternoon' | 'evening' | 'night';
+
+export function getTimePeriod(): TimePeriod {
   const hour = new Date().getHours();
   if (hour < 12) return 'morning';
   if (hour < 17) return 'afternoon';

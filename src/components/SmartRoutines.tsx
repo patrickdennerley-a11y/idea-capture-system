@@ -18,10 +18,118 @@
  * - Discard: Permanently removes from this generation (with confirmation)
  */
 
-import { useState, useEffect } from 'react';
-import { Sparkles, Check, X, SkipForward, Clock, Calendar, Lightbulb, Loader, AlertCircle, History, Save, Trash2 } from 'lucide-react';
+import { useState, useEffect, FC, Dispatch, SetStateAction } from 'react';
+import {
+  Sparkles,
+  Check,
+  X,
+  SkipForward,
+  Clock,
+  Calendar,
+  Lightbulb,
+  Loader,
+  AlertCircle,
+  History,
+  Save,
+  Trash2
+} from 'lucide-react';
 
-const SmartRoutines = ({
+// Type definitions
+interface Idea {
+  id: number | string;
+  [key: string]: any;
+}
+
+interface Log {
+  id: number | string;
+  [key: string]: any;
+}
+
+interface Timetable {
+  [key: string]: any;
+}
+
+interface Routine {
+  id: number;
+  title: string;
+  description: string;
+  timeOfDay: string;
+  frequency: string;
+  duration: string;
+  type: string;
+  timestamp: string;
+  source: string;
+  [key: string]: any;
+}
+
+interface Suggestion {
+  id: number;
+  title: string;
+  description: string;
+  timeOfDay: 'morning' | 'afternoon' | 'evening' | string;
+  frequency: string;
+  duration: string;
+  type: 'direct' | 'mashup' | string;
+  sources?: string[];
+  reasoning?: string;
+  [key: string]: any;
+}
+
+interface Metadata {
+  directCount: number;
+  mashupCount: number;
+  [key: string]: any;
+}
+
+interface SuggestionStates {
+  [key: number | string]: 'pending' | 'confirmed' | 'skipped' | 'discarded';
+}
+
+interface HistoryEntry {
+  id: number;
+  timestamp: string;
+  suggestions: Suggestion[];
+  metadata: Metadata | null;
+  states: SuggestionStates;
+}
+
+interface GenerationHistory {
+  smartRoutines?: HistoryEntry[];
+  [key: string]: any;
+}
+
+interface StylesObject {
+  badge: string;
+  bg: string;
+  border: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+}
+
+interface SmartRoutinesProps {
+  ideas: Idea[];
+  logs: Log[];
+  timetable: Timetable;
+  routines: Routine[];
+  suggestions: Suggestion[];
+  setSuggestions: Dispatch<SetStateAction<Suggestion[]>>;
+  loading: boolean;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  error: string | null;
+  setError: Dispatch<SetStateAction<string | null>>;
+  showSuggestions: boolean;
+  setShowSuggestions: Dispatch<SetStateAction<boolean>>;
+  metadata: Metadata | null;
+  setMetadata: Dispatch<SetStateAction<Metadata | null>>;
+  suggestionStates: SuggestionStates;
+  setSuggestionStates: Dispatch<SetStateAction<SuggestionStates>>;
+  generationHistory: GenerationHistory | null;
+  setGenerationHistory: Dispatch<SetStateAction<GenerationHistory | null>>;
+  onRoutineAdded: (routine: Routine) => void;
+}
+
+const SmartRoutines: FC<SmartRoutinesProps> = ({
   ideas,
   logs,
   timetable,
@@ -42,8 +150,8 @@ const SmartRoutines = ({
   setGenerationHistory,
   onRoutineAdded
 }) => {
-  const [discardConfirm, setDiscardConfirm] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [discardConfirm, setDiscardConfirm] = useState<number | string | null>(null);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
 
   // Auto-show suggestions when results are ready (handles tab switch during generation)
   useEffect(() => {
@@ -53,7 +161,7 @@ const SmartRoutines = ({
     }
   }, [suggestions, showSuggestions, setShowSuggestions]);
 
-  const fetchSmartRoutines = async () => {
+  const fetchSmartRoutines = async (): Promise<void> => {
     setLoading(true);
     setError(null);
 
@@ -79,21 +187,22 @@ const SmartRoutines = ({
       setShowSuggestions(true);
 
       // Initialize all suggestions as pending
-      const initialStates = {};
-      data.routines.forEach(routine => {
+      const initialStates: SuggestionStates = {};
+      data.routines.forEach((routine: Suggestion) => {
         initialStates[routine.id] = 'pending';
       });
       setSuggestionStates(initialStates);
 
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       console.error('Error fetching smart routines:', err);
-      setError(err.message);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const confirmRoutine = (routine) => {
+  const confirmRoutine = (routine: Suggestion): void => {
     // Mark as confirmed
     setSuggestionStates(prev => ({
       ...prev,
@@ -119,7 +228,7 @@ const SmartRoutines = ({
     }, 500);
   };
 
-  const skipRoutine = (routineId) => {
+  const skipRoutine = (routineId: number | string): void => {
     setSuggestionStates(prev => ({
       ...prev,
       [routineId]: 'skipped'
@@ -131,11 +240,11 @@ const SmartRoutines = ({
     }, 300);
   };
 
-  const requestDiscard = (routineId) => {
+  const requestDiscard = (routineId: number | string): void => {
     setDiscardConfirm(routineId);
   };
 
-  const confirmDiscard = () => {
+  const confirmDiscard = (): void => {
     const routineId = discardConfirm;
     setSuggestionStates(prev => ({
       ...prev,
@@ -150,11 +259,11 @@ const SmartRoutines = ({
     setDiscardConfirm(null);
   };
 
-  const cancelDiscard = () => {
+  const cancelDiscard = (): void => {
     setDiscardConfirm(null);
   };
 
-  const handleCloseSuggestions = () => {
+  const handleCloseSuggestions = (): void => {
     setShowSuggestions(false);
     // Clear suggestions so they don't auto-show when returning to tab
     setSuggestions([]);
@@ -162,9 +271,9 @@ const SmartRoutines = ({
     setMetadata(null);
   };
 
-  const handleDismissAll = () => {
+  const handleDismissAll = (): void => {
     // Mark all as discarded
-    const allDiscarded = {};
+    const allDiscarded: SuggestionStates = {};
     suggestions.forEach(s => {
       allDiscarded[s.id] = 'discarded';
     });
@@ -176,8 +285,8 @@ const SmartRoutines = ({
     }, 300);
   };
 
-  const handleSaveToHistory = () => {
-    const historyEntry = {
+  const handleSaveToHistory = (): void => {
+    const historyEntry: HistoryEntry = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
       suggestions: suggestions,
@@ -188,14 +297,14 @@ const SmartRoutines = ({
     // Add to smart routines history
     setGenerationHistory(prev => ({
       ...prev,
-      smartRoutines: [historyEntry, ...(prev.smartRoutines || [])]
+      smartRoutines: [historyEntry, ...(prev?.smartRoutines || [])]
     }));
 
     // Close suggestions panel
     handleCloseSuggestions();
   };
 
-  const viewHistoryEntry = (entry) => {
+  const viewHistoryEntry = (entry: HistoryEntry): void => {
     setSuggestions(entry.suggestions);
     setMetadata(entry.metadata);
     setSuggestionStates(entry.states);
@@ -203,14 +312,14 @@ const SmartRoutines = ({
     setShowHistory(false);
   };
 
-  const deleteHistoryEntry = (entryId) => {
+  const deleteHistoryEntry = (entryId: number): void => {
     setGenerationHistory(prev => ({
       ...prev,
-      smartRoutines: (prev.smartRoutines || []).filter(e => e.id !== entryId)
+      smartRoutines: (prev?.smartRoutines || []).filter(e => e.id !== entryId)
     }));
   };
 
-  const getTypeStyles = (type) => {
+  const getTypeStyles = (type: string): StylesObject => {
     if (type === 'direct') {
       return {
         badge: '📝 FROM YOUR IDEAS',
@@ -232,12 +341,16 @@ const SmartRoutines = ({
     }
   };
 
-  const getTimeIcon = (timeOfDay) => {
+  const getTimeIcon = (timeOfDay: string): string => {
     switch (timeOfDay) {
-      case 'morning': return '🌅';
-      case 'afternoon': return '☀️';
-      case 'evening': return '🌙';
-      default: return '⏰';
+      case 'morning':
+        return '🌅';
+      case 'afternoon':
+        return '☀️';
+      case 'evening':
+        return '🌙';
+      default:
+        return '⏰';
     }
   };
 
@@ -250,9 +363,8 @@ const SmartRoutines = ({
         <button
           onClick={fetchSmartRoutines}
           disabled={loading || ideas.length === 0}
-          className={`neural-button flex items-center gap-2 ${
-            loading ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          className={`neural-button flex items-center gap-2 ${loading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
         >
           <Sparkles className={`w-4 h-4 ${loading ? 'animate-pulse' : ''}`} />
           {loading ? 'Generating...' : 'Generate Smart Routines'}
@@ -322,9 +434,15 @@ const SmartRoutines = ({
           <div className="bg-neural-darker rounded-lg border border-gray-800 p-3 text-sm text-gray-300">
             <p>Review each suggestion and choose:</p>
             <ul className="list-disc list-inside mt-2 space-y-1 text-xs text-gray-400">
-              <li><strong className="text-green-400">Confirm & Add</strong> - Add to your routines</li>
-              <li><strong className="text-gray-400">Skip</strong> - Hide for now</li>
-              <li><strong className="text-red-400">Discard</strong> - Remove permanently</li>
+              <li>
+                <strong className="text-green-400">Confirm & Add</strong> - Add to your routines
+              </li>
+              <li>
+                <strong className="text-gray-400">Skip</strong> - Hide for now
+              </li>
+              <li>
+                <strong className="text-red-400">Discard</strong> - Remove permanently
+              </li>
             </ul>
           </div>
 
@@ -337,14 +455,18 @@ const SmartRoutines = ({
               return (
                 <div
                   key={routine.id}
-                  className={`p-4 rounded-lg border transition-all ${styles.bg} ${styles.border} ${
-                    state === 'confirmed' ? 'border-green-500 bg-green-950/30 scale-95 opacity-50' :
-                    state === 'skipped' || state === 'discarded' ? 'scale-95 opacity-0' : ''
-                  }`}
+                  className={`p-4 rounded-lg border transition-all ${styles.bg} ${styles.border} ${state === 'confirmed'
+                    ? 'border-green-500 bg-green-950/30 scale-95 opacity-50'
+                    : state === 'skipped' || state === 'discarded'
+                      ? 'scale-95 opacity-0'
+                      : ''
+                    }`}
                 >
                   {/* Badge */}
                   <div className="mb-3">
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${styles.badgeBg} ${styles.badgeText} border ${styles.badgeBorder}`}>
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${styles.badgeBg} ${styles.badgeText} border ${styles.badgeBorder}`}
+                    >
                       {styles.badge}
                     </span>
                   </div>
@@ -431,10 +553,7 @@ const SmartRoutines = ({
           <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p className="text-lg font-medium mb-1">All suggestions reviewed!</p>
           <p className="text-sm">Generate more to see new routine ideas.</p>
-          <button
-            onClick={fetchSmartRoutines}
-            className="neural-button mt-4"
-          >
+          <button onClick={fetchSmartRoutines} className="neural-button mt-4">
             Generate More Routines
           </button>
         </div>
@@ -455,10 +574,7 @@ const SmartRoutines = ({
               This action cannot be undone. The routine will be permanently removed from this generation.
             </p>
             <div className="flex gap-3">
-              <button
-                onClick={cancelDiscard}
-                className="flex-1 neural-button-secondary"
-              >
+              <button onClick={cancelDiscard} className="flex-1 neural-button-secondary">
                 Cancel
               </button>
               <button
@@ -493,8 +609,12 @@ const SmartRoutines = ({
               {generationHistory?.smartRoutines?.length > 0 ? (
                 generationHistory.smartRoutines.map((entry) => {
                   const date = new Date(entry.timestamp);
-                  const confirmedCount = Object.values(entry.states || {}).filter(s => s === 'confirmed').length;
-                  const discardedCount = Object.values(entry.states || {}).filter(s => s === 'discarded').length;
+                  const confirmedCount = Object.values(entry.states || {}).filter(
+                    s => s === 'confirmed'
+                  ).length;
+                  const discardedCount = Object.values(entry.states || {}).filter(
+                    s => s === 'discarded'
+                  ).length;
 
                   return (
                     <div

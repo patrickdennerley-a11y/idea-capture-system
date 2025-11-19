@@ -1,10 +1,54 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, FC } from 'react';
 import { CheckCircle2, Circle, Flame, Trophy, Plus, X, Calendar, Star, Trash2 } from 'lucide-react';
 import { getTodayString, isToday } from '../utils/dateUtils';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
+// Type definitions
+interface ChecklistItem {
+  id: string;
+  category: string;
+  text: string;
+  important: boolean;
+  isDefault: boolean;
+  completed?: boolean;
+  completedAt?: string | null;
+}
+
+interface DailyChecklistData {
+  date: string;
+  items: ChecklistItem[];
+  _check?: number;
+}
+
+interface HistoryEntry {
+  completed: string[];
+  timestamps: Record<string, string>;
+  completionRate: number;
+  totalItems: number;
+  isToday?: boolean;
+}
+
+interface DailyChecklistProps {
+  checklist: DailyChecklistData;
+  setChecklist: (checklist: DailyChecklistData | ((prev: DailyChecklistData) => DailyChecklistData)) => void;
+}
+
+interface CalendarViewProps {
+  history: Record<string, HistoryEntry>;
+  checklist: DailyChecklistData;
+  onClose: () => void;
+}
+
+interface CalendarDay {
+  date: string;
+  dayOfWeek: string;
+  dayOfMonth: number;
+  data: HistoryEntry | null;
+  isToday: boolean;
+}
+
 // Your actual routines from your notes
-const DEFAULT_CHECKLIST_ITEMS = [
+const DEFAULT_CHECKLIST_ITEMS: ChecklistItem[] = [
   {
     id: 'morning-1',
     category: 'Morning',
@@ -133,31 +177,31 @@ const DEFAULT_CHECKLIST_ITEMS = [
   },
 ];
 
-const CATEGORIES = ['Morning', 'Throughout Day', 'Study', 'Evening', 'Before Bed'];
+const CATEGORIES: string[] = ['Morning', 'Throughout Day', 'Study', 'Evening', 'Before Bed'];
 
-export default function DailyChecklist({ checklist, setChecklist }) {
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [newItemText, setNewItemText] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState('Morning');
-  const [newItemImportant, setNewItemImportant] = useState(false);
-  const [customItems, setCustomItems] = useLocalStorage('neural-custom-routines', []);
-  const [disabledDefaults, setDisabledDefaults] = useLocalStorage('neural-disabled-defaults', []);
-  const [history, setHistory] = useLocalStorage('neural-checklist-history', {});
+const DailyChecklist: FC<DailyChecklistProps> = ({ checklist, setChecklist }) => {
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [showAddForm, setShowAddForm] = useState<boolean>(false);
+  const [showCalendar, setShowCalendar] = useState<boolean>(false);
+  const [newItemText, setNewItemText] = useState<string>('');
+  const [newItemCategory, setNewItemCategory] = useState<string>('Morning');
+  const [newItemImportant, setNewItemImportant] = useState<boolean>(false);
+  const [customItems, setCustomItems] = useLocalStorage<ChecklistItem[]>('neural-custom-routines', []);
+  const [disabledDefaults, setDisabledDefaults] = useLocalStorage<string[]>('neural-disabled-defaults', []);
+  const [history, setHistory] = useLocalStorage<Record<string, HistoryEntry>>('neural-checklist-history', {});
 
   // Combine default items (excluding disabled ones) with custom items
-  const allItems = [
+  const allItems: ChecklistItem[] = [
     ...DEFAULT_CHECKLIST_ITEMS.filter(item => !disabledDefaults.includes(item.id)),
     ...customItems
   ];
-  const categories = ['All', ...CATEGORIES];
+  const categories: string[] = ['All', ...CATEGORIES];
 
-  const initRef = useRef(false);
+  const initRef = useRef<boolean>(false);
 
   // Initialize or reset checklist when needed
   useEffect(() => {
-    const itemsToUse = [
+    const itemsToUse: ChecklistItem[] = [
       ...DEFAULT_CHECKLIST_ITEMS.filter(item => !disabledDefaults.includes(item.id)),
       ...customItems
     ];
@@ -185,7 +229,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
         .filter(item => item.completed)
         .map(item => item.id);
 
-      const timestamps = {};
+      const timestamps: Record<string, string> = {};
       checklist.items.forEach(item => {
         if (item.completedAt) {
           timestamps[item.id] = item.completedAt;
@@ -249,7 +293,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     );
   }
 
-  const toggleItem = (id) => {
+  const toggleItem = (id: string): void => {
     const now = new Date().toISOString();
     setChecklist(prev => ({
       ...prev,
@@ -265,10 +309,10 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     }));
   };
 
-  const addCustomItem = () => {
+  const addCustomItem = (): void => {
     if (!newItemText.trim()) return;
 
-    const newItem = {
+    const newItem: ChecklistItem = {
       id: `custom-${Date.now()}`,
       category: newItemCategory,
       text: newItemText.trim(),
@@ -290,7 +334,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     setShowAddForm(false);
   };
 
-  const deleteItem = (id) => {
+  const deleteItem = (id: string): void => {
     const isDefaultItem = DEFAULT_CHECKLIST_ITEMS.some(item => item.id === id);
 
     if (isDefaultItem) {
@@ -308,21 +352,21 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     }));
   };
 
-  const completionRate = checklist.items
+  const completionRate: number = checklist.items
     ? Math.round((checklist.items.filter(i => i.completed).length / checklist.items.length) * 100)
     : 0;
 
-  const filteredItems = checklist.items
+  const filteredItems: ChecklistItem[] = checklist.items
     ? checklist.items.filter(item =>
         selectedCategory === 'All' || item.category === selectedCategory
       )
     : [];
 
-  const completedToday = checklist.items?.filter(i => i.completed).length || 0;
-  const totalItems = checklist.items?.length || 0;
+  const completedToday: number = checklist.items?.filter(i => i.completed).length || 0;
+  const totalItems: number = checklist.items?.length || 0;
 
   // Calculate streak from history
-  const calculateStreak = () => {
+  const calculateStreak = (): number => {
     const dates = Object.keys(history).sort().reverse();
     let streak = 0;
     const today = getTodayString();
@@ -348,10 +392,10 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     return streak;
   };
 
-  const streak = calculateStreak();
+  const streak: number = calculateStreak();
 
   // Get yesterday's completion rate
-  const getYesterdayCompletion = () => {
+  const getYesterdayCompletion = (): number | null => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayString = yesterday.toISOString().split('T')[0];
@@ -362,7 +406,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
     return null;
   };
 
-  const yesterdayCompletion = getYesterdayCompletion();
+  const yesterdayCompletion: number | null = getYesterdayCompletion();
 
   // Render calendar view
   if (showCalendar) {
@@ -441,14 +485,14 @@ export default function DailyChecklist({ checklist, setChecklist }) {
         <div className="bg-neural-darker border border-neural-purple rounded-lg p-4 mb-4 animate-slide-in">
           <h3 className="font-bold mb-3">Add New Routine</h3>
 
-          <form onSubmit={(e) => {
+          <form onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
             e.preventDefault();
             addCustomItem();
           }}>
             <input
               type="text"
               value={newItemText}
-              onChange={(e) => setNewItemText(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewItemText(e.target.value)}
               placeholder="Enter routine text..."
               className="neural-input mb-3"
               autoFocus
@@ -459,7 +503,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
                 <label className="block text-sm text-gray-400 mb-1">Category</label>
                 <select
                   value={newItemCategory}
-                  onChange={(e) => setNewItemCategory(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewItemCategory(e.target.value)}
                   className="neural-input"
                 >
                   {CATEGORIES.map(cat => (
@@ -566,7 +610,7 @@ export default function DailyChecklist({ checklist, setChecklist }) {
               )}
             </div>
             <button
-              onClick={(e) => {
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                 e.stopPropagation();
                 const confirmMsg = item.isDefault
                   ? 'Remove this default routine? It won\'t appear again.'
@@ -602,21 +646,21 @@ export default function DailyChecklist({ checklist, setChecklist }) {
       </div>
     </div>
   );
-}
+};
 
 // Calendar View Component
-function CalendarView({ history, checklist, onClose }) {
-  const [selectedDate, setSelectedDate] = useState(null);
+const CalendarView: FC<CalendarViewProps> = ({ history, checklist, onClose }) => {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Calculate today's completion data from live checklist
-  const getTodayData = () => {
+  const getTodayData = (): HistoryEntry | null => {
     if (!checklist || !checklist.items || checklist.items.length === 0) return null;
 
     const completed = checklist.items
       .filter(item => item.completed)
       .map(item => item.id);
 
-    const timestamps = {};
+    const timestamps: Record<string, string> = {};
     checklist.items.forEach(item => {
       if (item.completedAt) {
         timestamps[item.id] = item.completedAt;
@@ -637,8 +681,8 @@ function CalendarView({ history, checklist, onClose }) {
   };
 
   // Generate last 30 days
-  const generateCalendarDays = () => {
-    const days = [];
+  const generateCalendarDays = (): CalendarDay[] => {
+    const days: CalendarDay[] = [];
     const today = new Date();
     const todayString = getTodayString();
     const todayData = getTodayData();
@@ -663,18 +707,18 @@ function CalendarView({ history, checklist, onClose }) {
     return days;
   };
 
-  const days = generateCalendarDays();
+  const days: CalendarDay[] = generateCalendarDays();
 
   // Calculate stats
-  const daysWithData = days.filter(d => d.data).length;
-  const avgCompletion = daysWithData > 0
+  const daysWithData: number = days.filter(d => d.data).length;
+  const avgCompletion: number = daysWithData > 0
     ? Math.round((days.reduce((sum, d) => sum + (d.data?.completionRate || 0), 0) / daysWithData) * 100)
     : 0;
-  const bestDay = days.reduce((best, d) =>
+  const bestDay: CalendarDay = days.reduce((best, d) =>
     (d.data?.completionRate || 0) > (best.data?.completionRate || 0) ? d : best
-  , { data: { completionRate: 0 } });
+  , { date: '', dayOfWeek: '', dayOfMonth: 0, data: { completed: [], timestamps: {}, completionRate: 0, totalItems: 0 }, isToday: false });
 
-  const getColorClass = (completionRate) => {
+  const getColorClass = (completionRate: number | undefined): string => {
     if (!completionRate) return 'bg-gray-800 border-gray-700';
     if (completionRate >= 0.7) return 'bg-green-600/30 border-green-600/50';
     if (completionRate >= 0.4) return 'bg-yellow-600/30 border-yellow-600/50';
@@ -834,4 +878,6 @@ function CalendarView({ history, checklist, onClose }) {
       })()}
     </div>
   );
-}
+};
+
+export default DailyChecklist;

@@ -1,8 +1,33 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Ref } from 'react';
 import { Volume2, VolumeX, Play, Pause, Radio, Sparkles } from 'lucide-react';
 import AdvancedNoiseGenerator from './AdvancedNoiseGenerator';
 
-const NOISE_TYPES = {
+// Type definitions for noise configuration
+interface NoiseConfig {
+  name: string;
+  color: string;
+  description: string;
+  url: string;
+}
+
+interface NoiseTypes {
+  [key: string]: NoiseConfig;
+}
+
+// Type for props
+interface NoiseHubProps {
+  audioContextRef: Ref<AudioContext | null>;
+  activeSession: string | null;
+  setActiveSession: (session: string | null) => void;
+}
+
+// Type for the view state
+type ViewType = 'simple' | 'advanced';
+
+// Type for active noise state
+type ActiveNoiseType = string | null;
+
+const NOISE_TYPES: NoiseTypes = {
   pink: {
     name: 'Pink Noise',
     color: 'pink',
@@ -24,25 +49,37 @@ const NOISE_TYPES = {
   },
 };
 
-export default function NoiseHub({ audioContextRef, activeSession, setActiveSession }) {
-  const [currentView, setCurrentView] = useState('simple'); // 'simple' or 'advanced'
-  const [activeNoise, setActiveNoise] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(50);
-  const [showHub, setShowHub] = useState(false);
+export default function NoiseHub({
+  audioContextRef,
+  activeSession,
+  setActiveSession
+}: NoiseHubProps): JSX.Element {
+  const [currentView, setCurrentView] = useState<ViewType>('simple'); // 'simple' or 'advanced'
+  const [activeNoise, setActiveNoise] = useState<ActiveNoiseType>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [volume, setVolume] = useState<number>(50);
+  const [showHub, setShowHub] = useState<boolean>(false);
 
-  const startNoise = (type) => {
+  const startNoise = (type: string): void => {
     setActiveNoise(type);
     setIsPlaying(true);
   };
 
-  const stopNoise = () => {
+  const stopNoise = (): void => {
     setActiveNoise(null);
     setIsPlaying(false);
   };
 
-  const togglePlayPause = () => {
+  const togglePlayPause = (): void => {
     setIsPlaying(!isPlaying);
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    setVolume(parseInt(e.target.value, 10));
+  };
+
+  const handleViewChange = (view: ViewType): void => {
+    setCurrentView(view);
   };
 
   return (
@@ -76,7 +113,7 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
       {/* Tab Navigation */}
       <div className="flex gap-2 mb-6 border-b border-gray-800">
         <button
-          onClick={() => setCurrentView('simple')}
+          onClick={() => handleViewChange('simple')}
           className={`px-4 py-2 font-medium transition-colors border-b-2 ${
             currentView === 'simple'
               ? 'text-pink-400 border-pink-400'
@@ -87,7 +124,7 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
           Simple Player
         </button>
         <button
-          onClick={() => setCurrentView('advanced')}
+          onClick={() => handleViewChange('advanced')}
           className={`px-4 py-2 font-medium transition-colors border-b-2 ${
             currentView === 'advanced'
               ? 'text-pink-400 border-pink-400'
@@ -162,7 +199,7 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
                 min="0"
                 max="100"
                 value={volume}
-                onChange={(e) => setVolume(parseInt(e.target.value))}
+                onChange={handleVolumeChange}
                 className="w-full h-2 bg-neural-dark rounded-lg appearance-none cursor-pointer"
                 style={{
                   background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${volume}%, #1a1a1f ${volume}%, #1a1a1f 100%)`
