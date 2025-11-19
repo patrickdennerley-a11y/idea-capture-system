@@ -1129,6 +1129,7 @@ export default function AdvancedNoiseGenerator({
       console.warn('⚠️ AudioContext suspended, resuming...');
       await audioContextRef.current.resume();
       console.log('✅ AudioContext resumed');
+      setAudioContextState(audioContextRef.current.state as AudioContextState);
     }
 
     const actualPinkDuration = pinkDuration;
@@ -1258,6 +1259,8 @@ export default function AdvancedNoiseGenerator({
           await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters as NoiseParameters, masterVolume);
         }
         console.log('✅ Session started successfully');
+        // Update audio context state immediately after successful start
+        setAudioContextState(audioContextRef.current.state as AudioContextState);
       } catch (error) {
         console.error('❌ Failed to start audio:', error);
         alert(`Failed to start audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
