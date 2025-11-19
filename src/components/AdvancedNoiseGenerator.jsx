@@ -30,6 +30,9 @@ class NoiseGenerator {
     // Gamma wave properties
     this.gammaSource = null;
     this.gammaGain = null;
+    // Buffer cache for rapid mode (prevent memory bloat)
+    this.bufferCache = new Map(); // key: type, value: buffer
+    this.bufferCacheEnabled = false;
   }
 
   initialize(initialVolume = 50) {
@@ -324,12 +327,29 @@ class NoiseGenerator {
       this.currentParams = params;
       this.rapidMode = useRapidMode;
 
-      // console.log(`→ Generating ${type} noise buffer...`);
-      const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
+      // Enable buffer caching in rapid mode to prevent memory bloat
+      this.bufferCacheEnabled = useRapidMode;
 
-      if (!buffer) {
-        console.error('❌ BUFFER IS NULL - CANNOT PLAY');
-        throw new Error('Buffer generation returned null');
+      // console.log(`→ Generating ${type} noise buffer...`);
+      let buffer;
+      if (this.bufferCacheEnabled && this.bufferCache.has(type)) {
+        // RAPID MODE OPTIMIZATION: Reuse cached buffer
+        buffer = this.bufferCache.get(type);
+        // console.log(`♻️ Using cached ${type} buffer (rapid mode)`);
+      } else {
+        // Generate new buffer
+        buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
+
+        if (!buffer) {
+          console.error('❌ BUFFER IS NULL - CANNOT PLAY');
+          throw new Error('Buffer generation returned null');
+        }
+
+        // Cache buffer if in rapid mode
+        if (this.bufferCacheEnabled) {
+          this.bufferCache.set(type, buffer);
+          console.log(`💾 Cached ${type} buffer for rapid mode reuse`);
+        }
       }
 
       /*
@@ -1429,8 +1449,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     return 'pink';
   }, []);
 
-  // Timer logic - runs every 100ms for millisecond precision
+  // Timer logic - ADAPTIVE INTERVAL based on duration
   const startTimer = useCallback((session) => {
+    // Calculate optimal timer interval based on shortest duration
+    const pinkDurationMs = session.settings.pinkDuration * 60 * 1000;
+    const brownDurationMs = session.settings.brownDuration * 60 * 1000;
+    const shortestDuration = Math.min(pinkDurationMs, brownDurationMs);
+
+    // Timer interval = 10% of shortest duration, capped between 1ms and 100ms
+    // This allows ~10 checks per variation for accuracy
+    const timerInterval = Math.max(1, Math.min(100, shortestDuration / 10));
+
+    console.log(`⏱️ Timer interval: ${timerInterval.toFixed(2)}ms (based on ${shortestDuration.toFixed(4)}ms shortest duration)`);
+
     intervalRef.current = setInterval(() => {
       setActiveSession(prev => {
         if (!prev || prev.isPaused) return prev;
@@ -1700,7 +1731,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           totalElapsedMs: totalElapsedMs,
         };
       });
-    }, 100); // Update every 100ms for millisecond precision
+    }, timerInterval); // ADAPTIVE: 1ms to 100ms based on duration
   }, []);
 
   // Stop generation
