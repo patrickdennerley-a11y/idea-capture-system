@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3 } from 'lucide-react';
+import { Play, Pause, Square, Save, History, Clock, Sparkles, TrendingUp, X, ChevronDown, ChevronUp, Edit2, Trash2, BarChart3, RefreshCw } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 // Web Audio API Noise Generation
@@ -30,6 +30,9 @@ class NoiseGenerator {
     // Gamma wave properties
     this.gammaSource = null;
     this.gammaGain = null;
+    // Buffer cache for rapid mode (prevent memory bloat)
+    this.bufferCache = new Map(); // key: type, value: buffer
+    this.bufferCacheEnabled = false;
   }
 
   initialize(initialVolume = 50) {
@@ -291,7 +294,7 @@ class NoiseGenerator {
     return buffer;
   }
 
-  async playNoise(type, params, volume = 50) {
+  async playNoise(type, params, volume = 50, durationMinutes = 3) {
     try {
       // console.log('═══ PLAY NOISE DEBUG START ═══');
       // console.log('Type:', type);
@@ -312,18 +315,41 @@ class NoiseGenerator {
         // console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
+      // RAPID MODE: Disable envelopes if duration is shorter than envelope times
+      const durationMs = durationMinutes * 60 * 1000;
+      const totalEnvelopeMs = params.attackTime + params.releaseTime;
+      const useRapidMode = durationMs < totalEnvelopeMs || durationMs < 100; // If duration < 100ms OR < envelope time
+
       // Stop ONLY noise (not gamma) immediately without release envelope (we're switching variations)
       this.stopNoiseOnly(false);
 
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
+      this.rapidMode = useRapidMode;
+
+      // Enable buffer caching in rapid mode to prevent memory bloat
+      this.bufferCacheEnabled = useRapidMode;
 
       // console.log(`→ Generating ${type} noise buffer...`);
-      const buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
+      let buffer;
+      if (this.bufferCacheEnabled && this.bufferCache.has(type)) {
+        // RAPID MODE OPTIMIZATION: Reuse cached buffer
+        buffer = this.bufferCache.get(type);
+        // console.log(`♻️ Using cached ${type} buffer (rapid mode)`);
+      } else {
+        // Generate new buffer
+        buffer = type === 'pink' ? this.generatePinkNoise(params) : this.generateBrownNoise(params);
 
-      if (!buffer) {
-        console.error('❌ BUFFER IS NULL - CANNOT PLAY');
-        throw new Error('Buffer generation returned null');
+        if (!buffer) {
+          console.error('❌ BUFFER IS NULL - CANNOT PLAY');
+          throw new Error('Buffer generation returned null');
+        }
+
+        // Cache buffer if in rapid mode
+        if (this.bufferCacheEnabled) {
+          this.bufferCache.set(type, buffer);
+          console.log(`💾 Cached ${type} buffer for rapid mode reuse`);
+        }
       }
 
       /*
@@ -414,20 +440,29 @@ class NoiseGenerator {
       });
       */
 
-      // Apply envelope (attack)
+      // Apply envelope (attack) - SKIP in rapid mode
       const now = this.audioContext.currentTime;
-      const attackTime = params.attackTime / 1000; // Convert ms to seconds
 
-      // Attack: fade in from 0 to target volume
-      this.gainNode.gain.cancelScheduledValues(now);
-      this.gainNode.gain.setValueAtTime(0, now);
-      this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
+      if (useRapidMode) {
+        // RAPID MODE: No envelope, instant volume
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(volume / 100, now);
+        console.log(`⚡ RAPID MODE: Instant transition (duration: ${durationMs.toFixed(2)}ms < 100ms)`);
+      } else {
+        // NORMAL MODE: Use attack envelope
+        const attackTime = params.attackTime / 1000; // Convert ms to seconds
 
-      // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+        // Attack: fade in from 0 to target volume
+        this.gainNode.gain.cancelScheduledValues(now);
+        this.gainNode.gain.setValueAtTime(0, now);
+        this.gainNode.gain.linearRampToValueAtTime(volume / 100, now + attackTime);
 
-      // Warn if attack time seems excessive (should not happen with new 20-100ms range)
-      if (attackTime > 0.15) {
-        console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
+        // console.log(`🎚️ Attack envelope: ${(attackTime * 1000).toFixed(1)}ms fade-in, target gain: ${(volume / 100).toFixed(2)}`);
+
+        // Warn if attack time seems excessive (should not happen with new 20-100ms range)
+        if (attackTime > 0.15) {
+          console.warn(`⚠️ Long attack time: ${(attackTime * 1000).toFixed(0)}ms - may cause initial silence`);
+        }
       }
 
       // Note: Release will be applied in stop() method when explicitly stopped
@@ -1000,19 +1035,32 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
 
-  // Memory management: keep only last 100 variations for distance calculation
+  // Memory management: keep only last 100 variations to prevent unbounded growth
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
-  // Force re-renders every 100ms for millisecond display when session is active
+  // Auto-refresh threshold for Rapid Mode (100-2500 switches/second)
+  // Automatically restart session at 2500 variations to prevent memory buildup and stuttering
+  const AUTO_REFRESH_THRESHOLD = 2500;
+
+  // Force re-renders for progress display when session is active
+  // PERFORMANCE: Throttle updates heavily in Rapid Mode to prevent UI lag
   useEffect(() => {
     if (!activeSession || activeSession.isPaused || activeSession.completedAt) return;
 
+    // Detect Rapid Mode: any duration < 100ms (0.00167 minutes)
+    const isRapidMode = activeSession.settings.pinkDuration < 0.00167 ||
+                        activeSession.settings.brownDuration < 0.00167;
+
+    // In Rapid Mode: update UI every 1000ms (1 FPS) to minimize overhead
+    // Normal Mode: update every 100ms (10 FPS) for smooth progress bars
+    const updateInterval = isRapidMode ? 1000 : 100;
+
     const renderInterval = setInterval(() => {
       setRenderTick(prev => prev + 1);
-    }, 100);
+    }, updateInterval);
 
     return () => clearInterval(renderInterval);
-  }, [activeSession?.isPaused, activeSession?.completedAt, activeSession]);
+  }, [activeSession?.isPaused, activeSession?.completedAt, activeSession?.settings?.pinkDuration, activeSession?.settings?.brownDuration, activeSession]);
 
   useEffect(() => {
     // Only create noise generator if we have an audioContext and don't already have one
@@ -1245,6 +1293,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       createdAt: new Date().toISOString(),
       completedAt: null,
       variations: [],
+      totalVariationCount: 0, // CRITICAL: Track true count independent of array slicing
       currentType: firstType,
       currentVariationStart: startTime,
       sessionStartTime: startTime, // Track absolute session start for accurate elapsed time
@@ -1323,7 +1372,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           );
         } else {
           // Play pink or brown noise
-          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
+          const firstDuration = firstType === 'pink' ? actualPinkDuration : actualBrownDuration;
+          await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume, firstDuration);
         }
         console.log('✅ Session started successfully');
 
@@ -1413,8 +1463,19 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     return 'pink';
   }, []);
 
-  // Timer logic - runs every 100ms for millisecond precision
+  // Timer logic - ADAPTIVE INTERVAL based on duration
   const startTimer = useCallback((session) => {
+    // Calculate optimal timer interval based on shortest duration
+    const pinkDurationMs = session.settings.pinkDuration * 60 * 1000;
+    const brownDurationMs = session.settings.brownDuration * 60 * 1000;
+    const shortestDuration = Math.min(pinkDurationMs, brownDurationMs);
+
+    // Timer interval = 10% of shortest duration, capped between 1ms and 100ms
+    const timerInterval = Math.max(1, Math.min(100, shortestDuration / 10));
+
+    console.log(`⏱️ Timer interval: ${timerInterval.toFixed(2)}ms (based on ${shortestDuration.toFixed(4)}ms shortest duration)`);
+    console.log(`♻️ Memory optimization: Variations array limited to last ${MAX_VARIATIONS_IN_MEMORY} entries`);
+
     intervalRef.current = setInterval(() => {
       setActiveSession(prev => {
         if (!prev || prev.isPaused) return prev;
@@ -1441,7 +1502,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               return prev;
             }
 
-            const nextVariationNumber = prev.variations.length + 1;
+            const nextVariationNumber = prev.totalVariationCount + 1;
+
+            // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
+            if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+              console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
+              setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+              return prev; // Don't continue with this variation
+            }
 
             // Check if we should stop
             if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
@@ -1469,7 +1537,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
 
               variationObj = {
-                id: `${prev.id}-${nextVariationNumber}`,
+                id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
                 type: 'gamma',
                 variationNumber: nextVariationNumber,
                 parameters: gammaParams, // null if no variation, or {carrierFreq} if varied
@@ -1483,7 +1551,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
               nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
               variationObj = {
-                id: `${prev.id}-${nextVariationNumber}`,
+                id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
                 type: nextType,
                 variationNumber: nextVariationNumber,
                 parameters: variation.parameters,
@@ -1509,7 +1577,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                     nextDurationMin
                   );
                 } else {
-                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                  noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, nextDurationMin);
                 }
                 // console.log(`🔊 Delay complete, playing ${nextType} ${nextType === 'gamma' ? 'wave' : 'noise'} #${nextVariationNumber}, duration: ${(nextDurationMin * 60).toFixed(3)}s`);
               } catch (error) {
@@ -1519,9 +1587,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               }
             }
 
+            // MEMORY OPTIMIZATION: Keep only last 100 variations to prevent unbounded array growth
+            const newVariations = [...prev.variations, variationObj].slice(-MAX_VARIATIONS_IN_MEMORY);
+
             return {
               ...prev,
-              variations: [...prev.variations, variationObj],
+              variations: newVariations,
+              totalVariationCount: nextVariationNumber, // Update true count
               currentVariation: variationObj,
               currentType: nextType,
               currentVariationStart: Date.now(),
@@ -1595,7 +1667,14 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             return prev;
           }
 
-          const nextVariationNumber = prev.variations.length + 1;
+          const nextVariationNumber = prev.totalVariationCount + 1;
+
+          // AUTO-REFRESH: Prevent memory buildup in Rapid Mode (100-2500 switches/second)
+          if (nextVariationNumber >= AUTO_REFRESH_THRESHOLD) {
+            console.log(`🔄 AUTO-REFRESH triggered at variation #${nextVariationNumber}`);
+            setTimeout(() => refreshSession(), 0); // Async to avoid state update conflicts
+            return prev; // Don't continue with this variation
+          }
 
           // Check if we should stop
           if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
@@ -1616,7 +1695,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             // For gamma, we don't generate variations
             nextDurationMin = prev.settings.gammaDuration;
             variationObj = {
-              id: `${prev.id}-${nextVariationNumber}`,
+              id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
               type: 'gamma',
               variationNumber: nextVariationNumber,
               parameters: null,
@@ -1630,7 +1709,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             const variation = generateMaximallyDifferentVariation(nextType, prev.variations, nextVariationNumber);
             nextDurationMin = nextType === 'pink' ? prev.settings.pinkDuration : prev.settings.brownDuration;
             variationObj = {
-              id: `${prev.id}-${nextVariationNumber}`,
+              id: `${prev.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID with timestamp + random
               type: nextType,
               variationNumber: nextVariationNumber,
               parameters: variation.parameters,
@@ -1656,7 +1735,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   nextDurationMin
                 );
               } else {
-                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current);
+                noiseGeneratorRef.current.playNoise(nextType, variationObj.parameters, masterVolumeRef.current, nextDurationMin);
               }
               // console.log(`🔊 Switched to ${nextType} noise #${nextVariationNumber}`);
             } catch (error) {
@@ -1666,9 +1745,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             }
           }
 
+          // MEMORY OPTIMIZATION: Keep only last 100 variations to prevent unbounded array growth
+          const newVariations = [...prev.variations, variationObj].slice(-MAX_VARIATIONS_IN_MEMORY);
+
           return {
             ...prev,
-            variations: [...prev.variations, variationObj],
+            variations: newVariations,
+            totalVariationCount: nextVariationNumber,
             currentVariation: variationObj,
             currentType: nextType,
             currentVariationStart: Date.now(),
@@ -1684,7 +1767,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           totalElapsedMs: totalElapsedMs,
         };
       });
-    }, 100); // Update every 100ms for millisecond precision
+    }, timerInterval); // ADAPTIVE: 1ms to 100ms based on duration
   }, []);
 
   // Stop generation
@@ -1727,6 +1810,31 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     console.log('  AudioContext final state:', audioContextRef.current?.state);
   }, [activeSession]);
 
+  // Refresh Session - restart fresh to avoid high variation count lag
+  const refreshSession = useCallback(() => {
+    console.log('🔄 ========== REFRESHING SESSION ==========');
+
+    // Stop current session
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (noiseGeneratorRef.current) {
+      noiseGeneratorRef.current.stopEverything();
+    }
+
+    // Clear active session
+    setActiveSession(null);
+
+    // Start new session immediately
+    setTimeout(() => {
+      startGeneration();
+    }, 100); // Small delay to ensure cleanup completes
+
+    console.log('✅ Session refreshed - starting new session');
+  }, [startGeneration]);
+
   // Pause/Resume
   const togglePause = useCallback(() => {
     setActiveSession(prev => {
@@ -1739,7 +1847,12 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         const newCurrentVariationStart = prev.currentVariationStart + pausedDuration;
 
         if (noiseGeneratorRef.current && prev.currentVariation) {
-          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current);
+          const resumeDuration = prev.currentType === 'pink'
+            ? prev.settings.pinkDuration
+            : prev.currentType === 'brown'
+            ? prev.settings.brownDuration
+            : prev.settings.gammaDuration || 3;
+          noiseGeneratorRef.current.playNoise(prev.currentType, prev.currentVariation.parameters, masterVolumeRef.current, resumeDuration);
 
           // Resume gamma wave if it was enabled before pause
           if (prev.gammaWasEnabled) {
@@ -1829,10 +1942,16 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
 
       if (activeSession.currentVariation) {
         try {
+          const resumeDuration = activeSession.currentType === 'pink'
+            ? activeSession.settings.pinkDuration
+            : activeSession.currentType === 'brown'
+            ? activeSession.settings.brownDuration
+            : activeSession.settings.gammaDuration || 3;
           await noiseGeneratorRef.current.playNoise(
             activeSession.currentType,
             activeSession.currentVariation.parameters,
-            masterVolumeRef.current
+            masterVolumeRef.current,
+            resumeDuration
           );
           console.log('  ✅ Resumed current variation');
 
@@ -2073,6 +2192,13 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
                   title="Pause/Resume"
                 >
                   {activeSession.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={refreshSession}
+                  className="neural-button-secondary bg-blue-900/30 border-blue-500/50 hover:bg-blue-900/50"
+                  title="Refresh session - restart fresh to reset variation count"
+                >
+                  <RefreshCw className="w-4 h-4" />
                 </button>
                 <button
                   onClick={stopGeneration}
