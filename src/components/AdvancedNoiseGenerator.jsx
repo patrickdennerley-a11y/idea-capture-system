@@ -447,11 +447,9 @@ class NoiseGenerator {
   // NEW: Stops ONLY Pink/Brown noise, leaves Gamma running
   // This enables ultra-fast noise switching (even 0.00001s) without affecting gamma
   stopNoiseOnly(applyRelease = true) {
-    // Clear any pending cleanup timeout
-    if (this.stopTimeout) {
-      clearTimeout(this.stopTimeout);
-      this.stopTimeout = null;
-    }
+    // FIX: Removed clearTimeout(this.stopTimeout) logic.
+    // Previously, rapid switching canceled the cleanup of the previous node, causing audio node leaks.
+    // Now, every node gets its own independent cleanup timer that won't be cancelled.
 
     if (this.sourceNode) {
       if (applyRelease && this.currentParams && this.gainNode) {
@@ -482,7 +480,8 @@ class NoiseGenerator {
         this.resonanceFilter = null;
 
         // Schedule cleanup of OLD nodes after release time
-        this.stopTimeout = setTimeout(() => {
+        // NOTE: We do NOT assign this to this.stopTimeout because we want independent cleanup for each node
+        setTimeout(() => {
           if (oldSourceNode) {
             try {
               this.intentionallyStopping = true; // Mark as intentional before stopping
@@ -509,7 +508,6 @@ class NoiseGenerator {
           if (oldResonanceFilter) {
             try { oldResonanceFilter.disconnect(); } catch (e) {}
           }
-          this.stopTimeout = null;
         }, releaseTime * 1000);
       } else {
         // No release envelope - stop immediately (when switching variations)
@@ -1895,7 +1893,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       pinkCount: pinkVariations.length,
       brownCount: brownVariations.length,
     };
-  }, [activeSession]);
+  }, [activeSession?.variations]); // FIX: Only recalculate when variations change, not on every timer tick
 
   // Current progress - uses milliseconds for precise tracking
   const currentProgress = useMemo(() => {
