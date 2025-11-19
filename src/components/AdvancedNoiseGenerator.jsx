@@ -1038,16 +1038,25 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   // Memory management: keep only last 100 variations to prevent unbounded growth
   const MAX_VARIATIONS_IN_MEMORY = 100;
 
-  // Force re-renders every 100ms for millisecond display when session is active
+  // Force re-renders for progress display when session is active
+  // PERFORMANCE: Throttle updates heavily in Rapid Mode to prevent UI lag
   useEffect(() => {
     if (!activeSession || activeSession.isPaused || activeSession.completedAt) return;
 
+    // Detect Rapid Mode: any duration < 100ms (0.00167 minutes)
+    const isRapidMode = activeSession.settings.pinkDuration < 0.00167 ||
+                        activeSession.settings.brownDuration < 0.00167;
+
+    // In Rapid Mode: update UI every 1000ms (1 FPS) to minimize overhead
+    // Normal Mode: update every 100ms (10 FPS) for smooth progress bars
+    const updateInterval = isRapidMode ? 1000 : 100;
+
     const renderInterval = setInterval(() => {
       setRenderTick(prev => prev + 1);
-    }, 100);
+    }, updateInterval);
 
     return () => clearInterval(renderInterval);
-  }, [activeSession?.isPaused, activeSession?.completedAt, activeSession]);
+  }, [activeSession?.isPaused, activeSession?.completedAt, activeSession?.settings?.pinkDuration, activeSession?.settings?.brownDuration, activeSession]);
 
   useEffect(() => {
     // Only create noise generator if we have an audioContext and don't already have one
