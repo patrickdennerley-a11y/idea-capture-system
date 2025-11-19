@@ -1280,6 +1280,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       createdAt: new Date().toISOString(),
       completedAt: null,
       variations: [],
+      totalVariationCount: 0, // CRITICAL: Track true count independent of array slicing
       currentType: firstType,
       currentVariationStart: startTime,
       sessionStartTime: startTime, // Track absolute session start for accurate elapsed time
@@ -1488,7 +1489,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
               return prev;
             }
 
-            const nextVariationNumber = prev.variations.length + 1;
+            const nextVariationNumber = prev.totalVariationCount + 1;
 
             // Check if we should stop
             if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
@@ -1572,6 +1573,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             return {
               ...prev,
               variations: newVariations,
+              totalVariationCount: nextVariationNumber, // Update true count
               currentVariation: variationObj,
               currentType: nextType,
               currentVariationStart: Date.now(),
@@ -1645,7 +1647,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
             return prev;
           }
 
-          const nextVariationNumber = prev.variations.length + 1;
+          const nextVariationNumber = prev.totalVariationCount + 1;
 
           // Check if we should stop
           if (prev.settings.totalCycles && nextVariationNumber > prev.settings.totalCycles * 2) {
@@ -1722,6 +1724,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           return {
             ...prev,
             variations: newVariations,
+            totalVariationCount: nextVariationNumber,
             currentVariation: variationObj,
             currentType: nextType,
             currentVariationStart: Date.now(),
