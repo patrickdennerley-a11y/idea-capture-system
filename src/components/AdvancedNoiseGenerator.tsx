@@ -998,6 +998,28 @@ export default function AdvancedNoiseGenerator({
     }
   }, [overlayGammaVolume]);
 
+  // Monitor overlay gamma enabled state during active sessions
+  useEffect(() => {
+    // Only react to changes during an active session (not paused, not completed)
+    if (activeSession && !activeSession.isPaused && !activeSession.completedAt && noiseGeneratorRef.current) {
+      if (overlayGammaEnabled) {
+        // User turned on gamma overlay during session - start it
+        const isGammaPlaying = !!noiseGeneratorRef.current['gammaSource'];
+        if (!isGammaPlaying) {
+          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
+          console.log('🌊 Gamma overlay enabled during session');
+        }
+      } else {
+        // User turned off gamma overlay during session - stop it
+        const isGammaPlaying = !!noiseGeneratorRef.current['gammaSource'];
+        if (isGammaPlaying) {
+          noiseGeneratorRef.current.stopGammaWave();
+          console.log('⏹️ Gamma overlay disabled during session');
+        }
+      }
+    }
+  }, [overlayGammaEnabled, activeSession, overlayGammaCarrier]);
+
   // Update alternating gamma settings
   useEffect(() => {
     alternatingGammaVolumeRef.current = alternatingGammaVolume;
@@ -1643,14 +1665,13 @@ export default function AdvancedNoiseGenerator({
         }
         if (noiseGeneratorRef.current) {
           noiseGeneratorRef.current.stop();
-          const wasGammaPlaying = !!noiseGeneratorRef.current['gammaSource'];
           noiseGeneratorRef.current.stopGammaWave();
 
           return {
             ...prev,
             isPaused: true,
             pauseStartTime: Date.now(),
-            gammaWasEnabled: wasGammaPlaying,
+            gammaWasEnabled: overlayGammaEnabled, // Use user preference, not physical state
           };
         }
 
@@ -1658,16 +1679,18 @@ export default function AdvancedNoiseGenerator({
           ...prev,
           isPaused: true,
           pauseStartTime: Date.now(),
+          gammaWasEnabled: overlayGammaEnabled, // Use user preference, not physical state
         };
       }
     });
-  }, [overlayGammaCarrier, startTimer, setActiveSession]);
+  }, [overlayGammaCarrier, overlayGammaEnabled, startTimer, setActiveSession]);
 
   // Auto-refresh
   const performAutoRefresh = useCallback(async () => {
     console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
 
-    const wasGammaPlaying = !!noiseGeneratorRef.current?.['gammaSource'];
+    // Use user's overlay gamma preference, not just physical state
+    const shouldRestoreGamma = overlayGammaEnabled;
 
     if (noiseGeneratorRef.current) {
       noiseGeneratorRef.current.stop();
@@ -1701,9 +1724,9 @@ export default function AdvancedNoiseGenerator({
         );
         console.log('  ✅ Resumed current variation');
 
-        if (wasGammaPlaying) {
+        if (shouldRestoreGamma) {
           noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave');
+          console.log('  ✅ Resumed gamma wave overlay');
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
@@ -1711,7 +1734,7 @@ export default function AdvancedNoiseGenerator({
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, overlayGammaCarrier, audioContextRef]);
+  }, [activeSession, overlayGammaCarrier, overlayGammaEnabled, audioContextRef]);
 
   // Force restart audio
   const forceRestartAudio = useCallback(async () => {
