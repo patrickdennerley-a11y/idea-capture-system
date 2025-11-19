@@ -982,7 +982,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const noiseGeneratorRef = useRef(null);
   const intervalRef = useRef(null);
   const masterVolumeRef = useRef(masterVolume); // Track volume for timer callbacks
+  const overlayGammaEnabledRef = useRef(overlayGammaEnabled); // Track overlay gamma enabled state for timer callbacks
   const overlayGammaVolumeRef = useRef(overlayGammaVolume); // Track overlay gamma volume for timer callbacks
+  const overlayGammaCarrierRef = useRef(overlayGammaCarrier); // Track overlay gamma carrier for timer callbacks
   const alternatingGammaVolumeRef = useRef(alternatingGammaVolume); // Track alternating gamma volume for timer callbacks
   const alternatingGammaCarrierRef = useRef(alternatingGammaCarrier); // Track alternating gamma carrier for timer callbacks
   const varyGammaCarrierRef = useRef(varyGammaCarrier); // Track gamma variation setting for timer callbacks
@@ -1028,6 +1030,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
   }, [masterVolume]);
 
+  // Update overlay gamma enabled when changed
+  useEffect(() => {
+    overlayGammaEnabledRef.current = overlayGammaEnabled; // Update ref
+  }, [overlayGammaEnabled]);
+
   // Update overlay gamma volume when changed
   useEffect(() => {
     overlayGammaVolumeRef.current = overlayGammaVolume; // Update ref
@@ -1035,6 +1042,11 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
       noiseGeneratorRef.current.setGammaVolume(overlayGammaVolume);
     }
   }, [overlayGammaVolume]);
+
+  // Update overlay gamma carrier when changed
+  useEffect(() => {
+    overlayGammaCarrierRef.current = overlayGammaCarrier; // Update ref
+  }, [overlayGammaCarrier]);
 
   // Update alternating gamma settings refs when changed
   useEffect(() => {
@@ -1300,6 +1312,9 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
           await noiseGeneratorRef.current.playNoise(firstType, variationObj.parameters, masterVolume);
         }
         console.log('✅ Session started successfully');
+
+        // Update audio context state indicator
+        setAudioContextState(audioContextRef.current.state);
       } catch (error) {
         console.error('❌ Failed to start audio:', error);
         alert(`Failed to start audio: ${error.message}`);
@@ -1787,8 +1802,8 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
   const performAutoRefresh = useCallback(async () => {
     console.log('🔄 AUTO-REFRESHING AudioContext (preventing corruption)...');
 
-    // Store current state
-    const wasGammaPlaying = !!noiseGeneratorRef.current?.gammaSource;
+    // Use user's overlay gamma preference (ref), not physical state
+    const shouldRestoreGamma = overlayGammaEnabledRef.current;
 
     // Stop audio (brief silence)
     if (noiseGeneratorRef.current) {
@@ -1828,10 +1843,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
         );
         console.log('  ✅ Resumed current variation');
 
-        // Resume gamma if it was playing
-        if (wasGammaPlaying) {
-          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrier, 40, overlayGammaVolumeRef.current);
-          console.log('  ✅ Resumed gamma wave');
+        // Resume gamma overlay if user has it enabled
+        if (shouldRestoreGamma) {
+          noiseGeneratorRef.current.startGammaWave(overlayGammaCarrierRef.current, 40, overlayGammaVolumeRef.current);
+          console.log('  ✅ Resumed gamma wave overlay');
         }
       } catch (error) {
         console.error('  ❌ Failed to resume audio after auto-refresh:', error);
@@ -1839,7 +1854,7 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     console.log('✅ Auto-refresh complete - session continues seamlessly');
-  }, [activeSession, overlayGammaCarrier]);
+  }, [activeSession]);
 
   // Force restart audio - completely recreate AudioContext (manual trigger)
   const forceRestartAudio = useCallback(async () => {
