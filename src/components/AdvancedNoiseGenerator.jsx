@@ -307,8 +307,8 @@ class NoiseGenerator {
         console.log('✅ AudioContext resumed, state:', this.audioContext.state);
       }
 
-      // Stop immediately without release envelope (we're switching variations)
-      this.stop(false);
+      // Stop ONLY noise (not gamma) immediately without release envelope (we're switching variations)
+      this.stopNoiseOnly(false);
 
       // Store params for later use (e.g., release envelope)
       this.currentParams = params;
@@ -436,7 +436,9 @@ class NoiseGenerator {
     }
   }
 
-  stop(applyRelease = true) {
+  // NEW: Stops ONLY Pink/Brown noise, leaves Gamma running
+  // This enables ultra-fast noise switching (even 0.00001s) without affecting gamma
+  stopNoiseOnly(applyRelease = true) {
     // Clear any pending cleanup timeout
     if (this.stopTimeout) {
       clearTimeout(this.stopTimeout);
@@ -536,6 +538,13 @@ class NoiseGenerator {
         }
       }
     }
+    this.isPlaying = false;
+  }
+
+  // NEW: Stops EVERYTHING (Noise + Gamma) - Used when user clicks Stop
+  stopEverything() {
+    this.stopNoiseOnly(false);
+    this.stopGammaWave();
     this.isPlaying = false;
   }
 
@@ -1717,15 +1726,10 @@ export default function AdvancedNoiseGenerator({ audioContextRef, activeSession,
     }
 
     if (noiseGeneratorRef.current) {
-      console.log('  🔇 Stopping noise...');
-      noiseGeneratorRef.current.stop();
-      console.log('  ✅ Noise stopped');
-
-      // Stop gamma wave if playing
-      console.log('  🔇 Stopping gamma wave...');
-      console.log('  Gamma source exists?', !!noiseGeneratorRef.current.gammaSource);
-      noiseGeneratorRef.current.stopGammaWave();
-      console.log('  ✅ Gamma wave stopped');
+      console.log('  🔇 Stopping EVERYTHING (noise + gamma)...');
+      console.log('  Gamma source before stop:', !!noiseGeneratorRef.current.gammaSource);
+      noiseGeneratorRef.current.stopEverything();
+      console.log('  ✅ Everything stopped (noise + gamma)');
       console.log('  Gamma source after stop:', !!noiseGeneratorRef.current?.gammaSource);
     } else {
       console.log('  ⚠️ noiseGeneratorRef.current is null, cannot stop audio or gamma');
