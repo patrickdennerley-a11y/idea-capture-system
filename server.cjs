@@ -76,6 +76,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
@@ -89,7 +90,9 @@ const anthropic = new Anthropic({
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: process.env.NODE_ENV === 'production'
+    ? true // Allow all origins in production (Railway, etc.)
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
@@ -1593,7 +1596,20 @@ Return pure JSON array (no code fences):
   }
 });
 
-// 404 handler
+// Serve static files from the React app build (in production)
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
+
+// Serve React app for all non-API routes (SPA fallback)
+app.get('*', (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith('/api') || req.path === '/health') {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// 404 handler for API routes only
 app.use((req, res) => {
   res.status(404).json({
     error: 'Endpoint not found',
