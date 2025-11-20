@@ -1600,12 +1600,13 @@ Return pure JSON array (no code fences):
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
-// Serve React app for all non-API routes (SPA fallback)
-app.get('*', (req, res, next) => {
-  // Skip API routes
+// SPA fallback - serve index.html for non-API routes (must be before 404 handler)
+app.use((req, res, next) => {
+  // If it's an API route, pass to 404 handler
   if (req.path.startsWith('/api') || req.path === '/health') {
     return next();
   }
+  // Otherwise serve the React app
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
