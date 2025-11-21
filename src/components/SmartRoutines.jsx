@@ -58,7 +58,7 @@ const SmartRoutines = ({
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/generate-smart-routines', {
+      const response = await fetch('/api/generate-smart-routines', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
