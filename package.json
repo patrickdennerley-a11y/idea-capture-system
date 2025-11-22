@@ -8,10 +8,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.cjs",
-    "start": "npm run server"
+    "start": "node server.cjs",
+    "railway:build": "npm install && npm run build",
+    "railway:start": "NODE_ENV=production node server.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
+    "@supabase/supabase-js": "^2.84.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
