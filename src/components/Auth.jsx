@@ -51,16 +51,19 @@ export default function Auth({ onAuthenticated }) {
       return;
     }
 
-    // If we have an access token, Supabase will handle it via detectSessionInUrl
+    // Check for password recovery FIRST (before checking access token)
+    // Recovery links have BOTH type=recovery AND access_token
+    if (type === 'recovery') {
+      console.log('Password recovery mode detected');
+      setIsPasswordRecovery(true);
+      return;
+    }
+
+    // If we have an access token (magic link), Supabase will handle it via detectSessionInUrl
     // Don't clean up the URL here - let Supabase process it first
     if (accessToken) {
       console.log('Access token detected in URL - Supabase will process it');
       return;
-    }
-
-    if (type === 'recovery') {
-      console.log('Password recovery mode detected');
-      setIsPasswordRecovery(true);
     }
   }, []);
 
