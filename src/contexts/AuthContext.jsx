@@ -118,6 +118,10 @@ export const AuthProvider = ({ children }) => {
       return { data, error };
     },
     signOut: async () => {
+      // CRITICAL: Clear recovery flag on sign out to prevent stale state
+      console.log('🧹 Signing out: clearing all auth-related localStorage flags');
+      localStorage.removeItem('neural_recovery_pending');
+
       const { error } = await supabase.auth.signOut();
       return { error };
     },

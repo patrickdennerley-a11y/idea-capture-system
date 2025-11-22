@@ -39,6 +39,34 @@ export default function Auth({ onAuthenticated }) {
     ]);
   };
 
+  // CRITICAL: Cleanup recovery flag when component unmounts (e.g., user navigates away)
+  useEffect(() => {
+    return () => {
+      // Only clear flag if we're not in active recovery mode
+      // (prevents clearing during password update flow)
+      if (!isPasswordRecovery) {
+        const hasPendingFlag = localStorage.getItem('neural_recovery_pending') === 'true';
+        if (hasPendingFlag) {
+          console.log('🧹 Component unmounting: clearing stale recovery flag');
+          localStorage.removeItem('neural_recovery_pending');
+        }
+      }
+    };
+  }, [isPasswordRecovery]);
+
+  // CRITICAL: Clear recovery flag when user switches authentication modes
+  // This prevents flag from persisting if user abandons recovery flow
+  useEffect(() => {
+    // If user switches away from password recovery mode, clear the flag
+    if (!isPasswordRecovery && !showPasswordReset) {
+      const hasPendingFlag = localStorage.getItem('neural_recovery_pending') === 'true';
+      if (hasPendingFlag) {
+        console.log('🧹 User exited recovery mode: clearing recovery flag');
+        localStorage.removeItem('neural_recovery_pending');
+      }
+    }
+  }, [isPasswordRecovery, showPasswordReset]);
+
   // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
   useEffect(() => {
     let safetyTimer;
@@ -294,6 +322,25 @@ export default function Auth({ onAuthenticated }) {
     }
   };
 
+  // CRITICAL: Clear recovery flag when user cancels password reset/recovery
+  const handleBackToLogin = () => {
+    console.log('🧹 User clicked "Back to login": clearing recovery flag and returning to login');
+    localStorage.removeItem('neural_recovery_pending');
+    setShowPasswordReset(false);
+    setIsPasswordRecovery(false);
+    setMessage('');
+    setError('');
+  };
+
+  // CRITICAL: Clear recovery flag when switching authentication modes
+  const handleToggleAuthMode = () => {
+    console.log('🔄 Switching authentication mode: clearing recovery flag');
+    localStorage.removeItem('neural_recovery_pending');
+    setUseMagicLink(!useMagicLink);
+    setMessage('');
+    setError('');
+  };
+
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -362,6 +409,14 @@ export default function Auth({ onAuthenticated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // CRITICAL: Prevent double-submission with processing lock
+    if (processingRef.current) {
+      console.log('Form submission already in progress, ignoring duplicate');
+      return;
+    }
+    processingRef.current = true;
+
     setLoading(true);
     setMessage('');
     setError('');
@@ -457,12 +512,23 @@ export default function Auth({ onAuthenticated }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      // CRITICAL FIX: If we need to reload (login success), do it now and skip setting loading state
+      // CRITICAL FIX: If we need to reload (login success), clear recovery flags and persist session
       if (shouldReload) {
-        console.log('✅ Authentication successful - Reloading to initialize App hooks');
-        window.location.reload();
+        console.log('✅ Authentication successful - Cleaning up flags and reloading');
+
+        // CRITICAL: Clear recovery flag to prevent getting stuck in recovery mode after reload
+        localStorage.removeItem('neural_recovery_pending');
+        console.log('🧹 Cleared neural_recovery_pending flag before reload');
+
+        // CRITICAL: Give Supabase time to persist session before reload (150ms)
+        // This prevents race condition where reload happens before session is saved
+        setTimeout(() => {
+          console.log('🔄 Reloading page to initialize App with authenticated session');
+          window.location.reload();
+        }, 150);
       } else {
         setLoading(false);
+        processingRef.current = false; // Release lock on failure
       }
     }
   };
@@ -637,7 +703,7 @@ export default function Auth({ onAuthenticated }) {
             <div className="text-center">
               <button
                 type="button"
-                onClick={() => setShowPasswordReset(false)}
+                onClick={handleBackToLogin}
                 className="text-sm text-gray-600 hover:text-gray-800"
               >
                 ← Back to login
@@ -716,7 +782,7 @@ export default function Auth({ onAuthenticated }) {
             <div className="text-center space-y-2">
               <button
                 type="button"
-                onClick={() => setUseMagicLink(!useMagicLink)}
+                onClick={handleToggleAuthMode}
                 className="text-sm text-indigo-600 hover:text-indigo-800"
               >
                 {useMagicLink ? 'Use password instead' : 'Use magic link (recommended)'}
