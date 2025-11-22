@@ -119,13 +119,19 @@ function App() {
     }
 
     if (!authLoading) {
-      // Check if we're in password recovery mode (type=recovery in URL)
-      // Don't set authenticated if in recovery mode - need to show password reset form first
+      // Check if we're in password recovery mode via URL hash OR localStorage flag
+      // Supabase automatically clears the URL hash after setSession(), so we use
+      // a persistent localStorage flag to prevent premature redirect
       const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Remove the # from hash
-      const isPasswordRecovery = urlParams.get('type') === 'recovery';
+      const isRecoveryHash = urlParams.get('type') === 'recovery';
+      const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
+      const isPasswordRecovery = isRecoveryHash || isRecoveryPending;
 
       if (isPasswordRecovery) {
-        console.log('🔐 Password recovery mode - keeping Auth component mounted');
+        console.log('🔐 Password recovery mode detected - keeping Auth component mounted');
+        if (isRecoveryPending) {
+          console.log('   (detected via localStorage flag - URL hash may have been cleared)');
+        }
         setIsAuthenticated(false); // Keep Auth component visible for password reset
       } else {
         setIsAuthenticated(!!user);
