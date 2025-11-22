@@ -31,6 +31,14 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
+  // Helper: Timeout wrapper for Supabase calls to prevent infinite hanging
+  const withTimeout = (promise, ms = 5000) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms))
+    ]);
+  };
+
   // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
   useEffect(() => {
     let safetyTimer;
@@ -38,8 +46,9 @@ export default function Auth({ onAuthenticated }) {
       safetyTimer = setTimeout(() => {
         console.warn('⚠️ Session establishment timed out. Forcing UI reset.');
         setSessionLoading(false);
+        processingRef.current = false; // Release lock
         if (!isPasswordRecovery && !error) {
-          setError('Session request timed out. Please try clicking the link again.');
+          setError('Connection took too long. Please reload the page and try again.');
         }
       }, 8000);
     }
@@ -147,11 +156,13 @@ export default function Auth({ onAuthenticated }) {
             throw new Error('No refresh token found in URL');
           }
 
-          // Explicitly set the session using the tokens from the URL
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+          // Explicitly set the session using the tokens from the URL with timeout protection
+          const { data, error } = await withTimeout(
+            supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            })
+          );
 
           if (error) throw error;
 
@@ -176,6 +187,7 @@ export default function Auth({ onAuthenticated }) {
           }
         } finally {
           setSessionLoading(false); // CRITICAL: Always turn off spinner
+          processingRef.current = false; // Release lock
         }
       };
 
@@ -209,22 +221,34 @@ export default function Auth({ onAuthenticated }) {
             return;
           }
 
-          if (!refreshToken) throw new Error('No refresh token found');
+          // 2. Manual setSession with timeout protection
+          if (refreshToken) {
+            // Standard flow with refresh token
+            const { data, error } = await withTimeout(
+              supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken
+              })
+            );
 
-          // 2. Manual setSession
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+            if (error) throw error;
 
-          if (error) throw error;
+            if (data.session) {
+              console.log('✅ Magic link session established manually');
+              window.history.replaceState(null, '', window.location.pathname);
+              onAuthenticated();
+            } else {
+              throw new Error('Session creation failed (no session returned)');
+            }
+          } else {
+            // Implicit flow (Access token only, no refresh token) - Verify by getting user
+            console.log('⚠️ No refresh token, verifying access token (implicit flow)...');
+            const { error } = await withTimeout(supabase.auth.getUser(accessToken));
+            if (error) throw error;
 
-          if (data.session) {
-            console.log('✅ Magic link session established manually');
+            console.log('✅ Magic link verified (implicit flow)');
             window.history.replaceState(null, '', window.location.pathname);
             onAuthenticated();
-          } else {
-            throw new Error('Session creation failed (no session returned)');
           }
         } catch (err) {
           console.error('Magic link failed:', err);
@@ -241,6 +265,7 @@ export default function Auth({ onAuthenticated }) {
           }
         } finally {
           setSessionLoading(false); // CRITICAL: Always turn off spinner
+          processingRef.current = false; // Release lock
         }
       };
 
