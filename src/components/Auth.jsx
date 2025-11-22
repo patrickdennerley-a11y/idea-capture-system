@@ -32,18 +32,35 @@ export default function Auth({ onAuthenticated }) {
         // Sign up with password
         result = await signUp(email, password);
         if (!result.error) {
-          setMessage('Account created! Check your email to confirm. 📧');
+          // Check if email confirmation is required
+          if (result.data?.user?.identities?.length === 0) {
+            setMessage('Account created! Check your email to confirm. 📧');
+          } else {
+            setMessage('Account created successfully!');
+            // Auth state change will trigger authentication
+          }
         }
       } else {
         // Sign in with password
         result = await signIn(email, password);
-        if (!result.error && onAuthenticated) {
-          onAuthenticated();
+        if (!result.error) {
+          // Don't call onAuthenticated manually - let AuthContext handle it
+          // The auth state change listener will update the user state
+          setMessage('Signed in successfully!');
         }
       }
 
       if (result.error) {
-        setError(result.error.message);
+        // Handle specific error cases
+        if (result.error.message.includes('Email not confirmed')) {
+          setError('Please confirm your email address before signing in. Check your inbox!');
+        } else if (result.error.message.includes('Invalid login credentials')) {
+          setError('Invalid email or password. Please try again or use the magic link option.');
+        } else if (result.error.message.includes('User already registered')) {
+          setError('An account with this email already exists. Try signing in instead, or use the magic link option.');
+        } else {
+          setError(result.error.message);
+        }
       }
     } catch (err) {
       setError(err.message);

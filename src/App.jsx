@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useSupabase } from './hooks/useSupabase';
 import { useAuth } from './contexts/AuthContext';
 import { isSupabaseConfigured } from './utils/supabaseClient';
 import { migrateAllData, hasLocalStorageData, getMigrationStatus } from './utils/dataMigration';
@@ -59,14 +60,18 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingOps, setPendingOps] = useState(0);
 
-  // State with localStorage persistence
-  const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
-  const [logs, setLogs] = useLocalStorage('neural-logs', []);
-  const [reviews, setReviews] = useLocalStorage('neural-reviews', []);
+  // State with cloud sync via Supabase (fallback to localStorage when offline or not authenticated)
+  const [ideas, setIdeas, ideasMeta] = useSupabase('ideas', 'neural-ideas', []);
+  const [logs, setLogs, logsMeta] = useSupabase('logs', 'neural-logs', []);
+  const [reviews, setReviews, reviewsMeta] = useSupabase('reviews', 'neural-reviews', []);
+
+  // Checklist stays as localStorage for now (different structure than Supabase schema)
+  // TODO: Migrate checklist to use checklist_items table with proper transform
   const [checklist, setChecklist] = useLocalStorage('neural-checklist', {
     date: getTodayString(),
     items: [],
   });
+
   const [iconTheme, setIconTheme] = useLocalStorage('neural-icon-theme', DEFAULT_THEME);
 
   // Routine generation state (persists across tab switches)
