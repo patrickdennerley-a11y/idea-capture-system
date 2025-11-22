@@ -265,12 +265,25 @@ export default function Auth({ onAuthenticated }) {
             setSessionLoading(false);
             window.history.replaceState(null, '', window.location.pathname);
             onAuthenticated();
+          } else {
+            throw new Error('Session creation failed (no session returned)');
           }
         } catch (err) {
           console.error('Magic link processing failed:', err);
+
+          // FALLBACK: Safety check - did we actually succeed despite the error?
+          const { data: lastCheck } = await supabase.auth.getSession();
+          if (lastCheck?.session) {
+            console.log('✅ Session found despite error. Logging in...');
+            setSessionLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+            return;
+          }
+
           setError('Failed to log in with magic link. Please try requesting a new one.');
           setSessionLoading(false);
-          // Clear the hash on error
+          // Clear the hash so we don't try again
           window.history.replaceState(null, '', window.location.pathname);
         }
       };
