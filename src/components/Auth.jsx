@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSupabaseConfigured, supabase } from '../utils/supabaseClient';
 
@@ -15,6 +15,9 @@ export default function Auth({ onAuthenticated }) {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  // Use a ref to prevent double-processing in React StrictMode
+  const processingRef = useRef(false);
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
@@ -54,8 +57,15 @@ export default function Auth({ onAuthenticated }) {
 
     // Check for password recovery
     // Recovery links have BOTH type=recovery AND access_token
-    // We need to explicitly verify the OTP to establish the session
+    // We need to explicitly set the session to establish it reliably
     if (type === 'recovery' && accessToken) {
+      // PREVENT DOUBLE PROCESSING (React StrictMode runs effects twice)
+      if (processingRef.current) {
+        console.log('Already processing recovery token, skipping duplicate');
+        return;
+      }
+      processingRef.current = true;
+
       console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
@@ -71,6 +81,7 @@ export default function Auth({ onAuthenticated }) {
             console.error('No refresh_token found in URL');
             setError('Invalid recovery link format. Please request a new password reset.');
             setSessionLoading(false);
+            // Clean up URL only on error
             window.history.replaceState(null, '', window.location.pathname);
             return;
           }
@@ -86,7 +97,7 @@ export default function Auth({ onAuthenticated }) {
             console.error('Failed to set session from recovery tokens:', error);
             setError(`Invalid or expired recovery link: ${error.message}`);
             setSessionLoading(false);
-            // Clean up URL
+            // Clean up URL only on error
             window.history.replaceState(null, '', window.location.pathname);
             return;
           }
@@ -96,18 +107,23 @@ export default function Auth({ onAuthenticated }) {
             console.log('Session user:', data.session.user.email);
             setSessionLoading(false);
             setIsPasswordRecovery(true);
-            // Clean up URL after successful verification
-            window.history.replaceState(null, '', window.location.pathname);
+
+            // CRITICAL FIX: Do NOT clear the URL hash here!
+            // App.jsx needs the type=recovery hash to keep this component mounted
+            // We'll clear it AFTER the password is successfully updated
+            console.log('⚠️ Keeping URL hash to prevent premature redirect');
           } else {
             console.error('No session returned after setSession');
             setError('Could not establish session. Please request a new password reset link.');
             setSessionLoading(false);
+            // Clean up URL only on error
             window.history.replaceState(null, '', window.location.pathname);
           }
         } catch (err) {
           console.error('Error processing recovery token:', err);
           setError(`An error occurred: ${err.message}`);
           setSessionLoading(false);
+          // Clean up URL only on error
           window.history.replaceState(null, '', window.location.pathname);
         }
       };
