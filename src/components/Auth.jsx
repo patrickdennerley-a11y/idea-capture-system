@@ -389,7 +389,7 @@ export default function Auth({ onAuthenticated }) {
             setMessage('Account created successfully!');
             // Ensure we redirect after signup if session is established
             if (result.data?.session) {
-              setTimeout(() => onAuthenticated(), 500);
+              onAuthenticated();
             }
           }
         }
@@ -398,13 +398,10 @@ export default function Auth({ onAuthenticated }) {
         result = await signIn(email, password);
         if (!result.error) {
           setMessage('Signed in successfully!');
-          // FIX: Explicitly call onAuthenticated() with a small delay
-          // This ensures the session is fully persisted to localStorage before
-          // the Main App mounts and tries to use the Supabase client.
-          setTimeout(() => {
-            console.log('✅ Password login successful, triggering authenticated state');
-            onAuthenticated();
-          }, 500);
+          // FIX: Explicitly call onAuthenticated to ensure session persistence matches App.jsx state
+          // This fixes the "Sync Stuck" and "Sign Out fails" issues
+          console.log('✅ Password login successful, triggering onAuthenticated');
+          onAuthenticated();
         }
       }
 
