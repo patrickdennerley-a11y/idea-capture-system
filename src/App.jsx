@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabase } from './hooks/useSupabase';
-import { useAuth } from './contexts/AuthContext';
+import { useAuth, clearAllAuthState } from './contexts/AuthContext';
 import { isSupabaseConfigured } from './utils/supabaseClient';
 import { migrateAllData, hasLocalStorageData, hasCloudData, getMigrationStatus } from './utils/dataMigration';
 import { processQueue, getSyncStatus, hasPendingOperations } from './utils/offlineQueue';
@@ -109,6 +109,15 @@ function App() {
   // Noise Generator state (persists across tab switches)
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
+
+  // NUCLEAR FIX DEBUG: Log why app reloaded (for debugging)
+  useEffect(() => {
+    const reloadReason = sessionStorage.getItem('reload_reason');
+    if (reloadReason) {
+      console.log(`🔄 App reloaded due to: ${reloadReason}`);
+      sessionStorage.removeItem('reload_reason'); // Clear after logging
+    }
+  }, []);
 
   // CRITICAL: Detect recovery mode IMMEDIATELY on mount, before auth check
   // This prevents race condition where AuthContext sets session before we check the URL
@@ -291,20 +300,20 @@ function App() {
   const handleSignOut = async () => {
     console.log('🚪 Sign out initiated');
 
-    // CRITICAL: Set false BEFORE async signOut to immediately show Auth screen
-    // This prevents UI flicker/delay while waiting for async cleanup
+    // CRITICAL: Set false BEFORE async operations for immediate UI feedback
     setIsAuthenticated(false);
 
     try {
-      const result = await signOut();
-      if (result?.error) {
-        console.error('❌ Sign out error:', result.error);
-      } else {
-        console.log('✅ Sign out successful');
-      }
+      await signOut();
+      console.log('✅ Sign out successful');
     } catch (error) {
       console.error('💥 Sign out exception:', error);
     }
+
+    // NUCLEAR FIX: Clean reload for consistent initialization
+    clearAllAuthState();
+    sessionStorage.setItem('reload_reason', 'sign_out');
+    window.location.href = '/';
   };
 
   // Helper to check if a tab has AI work in progress
