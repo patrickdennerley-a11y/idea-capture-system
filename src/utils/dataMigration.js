@@ -82,11 +82,10 @@ export const hasCloudData = async () => {
     const tables = ['ideas', 'logs', 'reviews'];
 
     for (const table of tables) {
-      const { data, error } = await supabase
+      const { count, error } = await supabase
         .from(table)
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .limit(1);
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
 
       if (error) {
         console.error(`Error checking ${table}:`, error);
@@ -94,11 +93,13 @@ export const hasCloudData = async () => {
       }
 
       // If we found any data in any table, cloud has data
-      if (data && data.length > 0) {
+      if (count && count > 0) {
+        console.log(`Found ${count} items in ${table} table`);
         return true;
       }
     }
 
+    console.log('No cloud data found - this is a brand new account');
     return false;
   } catch (error) {
     console.error('Error checking cloud data:', error);

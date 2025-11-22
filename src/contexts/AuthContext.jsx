@@ -49,7 +49,7 @@ export const AuthProvider = ({ children }) => {
         console.warn('Auth initialization timeout - continuing without session');
         setLoading(false);
       }
-    }, 10000); // 10 second timeout
+    }, 3000); // 3 second timeout - faster UX
 
     initializeAuth();
 

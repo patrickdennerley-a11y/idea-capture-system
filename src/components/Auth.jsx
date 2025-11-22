@@ -17,10 +17,28 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
-  // Check if URL contains password recovery token
+  // Check if URL contains password recovery token or errors
   useEffect(() => {
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     const type = hashParams.get('type');
+    const errorDescription = hashParams.get('error_description');
+    const errorCode = hashParams.get('error_code');
+
+    // Handle OTP errors immediately (don't wait for timeout)
+    if (errorDescription || errorCode) {
+      console.error('Auth error from URL:', { errorDescription, errorCode });
+
+      // Show appropriate error message
+      if (errorDescription?.includes('expired') || errorDescription?.includes('Token')) {
+        setError('Your login link has expired. Please request a new one.');
+      } else {
+        setError(errorDescription || 'Authentication failed. Please try again.');
+      }
+
+      // Clean up URL immediately
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
 
     if (type === 'recovery') {
       console.log('Password recovery mode detected');
