@@ -27,15 +27,29 @@ export const AuthProvider = ({ children }) => {
     // Get initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        console.log('Initializing auth...');
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Error getting session:', error);
+        }
+        console.log('Session:', initialSession ? 'Found' : 'None');
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
       } catch (error) {
         console.error('Error getting session:', error);
       } finally {
+        console.log('Auth initialization complete');
         setLoading(false);
       }
     };
+
+    // Add timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Auth initialization timed out after 10s');
+        setLoading(false);
+      }
+    }, 10000);
 
     initializeAuth();
 
@@ -48,6 +62,7 @@ export const AuthProvider = ({ children }) => {
     });
 
     return () => {
+      clearTimeout(timeout);
       subscription?.unsubscribe();
     };
   }, []);
