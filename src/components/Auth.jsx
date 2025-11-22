@@ -32,7 +32,7 @@ export default function Auth({ onAuthenticated }) {
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
   // Helper: Timeout wrapper for Supabase calls to prevent infinite hanging
-  const withTimeout = (promise, ms = 5000) => {
+  const withTimeout = (promise, ms = 8000) => {
     return Promise.race([
       promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms))
@@ -54,19 +54,6 @@ export default function Auth({ onAuthenticated }) {
     };
   }, [isPasswordRecovery]);
 
-  // CRITICAL: Clear recovery flag when user switches authentication modes
-  // This prevents flag from persisting if user abandons recovery flow
-  useEffect(() => {
-    // If user switches away from password recovery mode, clear the flag
-    if (!isPasswordRecovery && !showPasswordReset) {
-      const hasPendingFlag = localStorage.getItem('neural_recovery_pending') === 'true';
-      if (hasPendingFlag) {
-        console.log('🧹 User exited recovery mode: clearing recovery flag');
-        localStorage.removeItem('neural_recovery_pending');
-      }
-    }
-  }, [isPasswordRecovery, showPasswordReset]);
-
   // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
   useEffect(() => {
     let safetyTimer;
@@ -76,7 +63,7 @@ export default function Auth({ onAuthenticated }) {
         setSessionLoading(false);
         processingRef.current = false; // Release lock
         if (!isPasswordRecovery && !error) {
-          setError('Connection took too long. Please reload the page and try again.');
+          setError('Session request timed out. Please try clicking the link again.');
         }
       }, 8000);
     }
@@ -512,20 +499,51 @@ export default function Auth({ onAuthenticated }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      // CRITICAL FIX: If we need to reload (login success), clear recovery flags and persist session
+      // CRITICAL FIX: If we need to reload (login success), clear recovery flags and verify session persistence
       if (shouldReload) {
-        console.log('✅ Authentication successful - Cleaning up flags and reloading');
+        console.log('✅ Authentication successful - Cleaning up flags and verifying session');
 
         // CRITICAL: Clear recovery flag to prevent getting stuck in recovery mode after reload
         localStorage.removeItem('neural_recovery_pending');
         console.log('🧹 Cleared neural_recovery_pending flag before reload');
 
-        // CRITICAL: Give Supabase time to persist session before reload (150ms)
-        // This prevents race condition where reload happens before session is saved
-        setTimeout(() => {
-          console.log('🔄 Reloading page to initialize App with authenticated session');
+        // CRITICAL: Actively wait for session to be persisted (poll with verification)
+        // Don't use arbitrary timeout - verify the session actually exists in storage
+        const waitForSessionPersistence = async () => {
+          let attempts = 0;
+          const maxAttempts = 20; // 2 seconds max wait (20 × 100ms)
+
+          // Initial small delay to let Supabase start the persistence process
+          await new Promise(resolve => setTimeout(resolve, 100));
+
+          while (attempts < maxAttempts) {
+            // Verify Supabase has actually persisted the session to storage
+            const { data: sessionCheck } = await supabase.auth.getSession();
+
+            if (sessionCheck?.session) {
+              console.log('✅ Session confirmed persisted to storage');
+
+              // Extra safety buffer for any async localStorage/IndexedDB writes
+              await new Promise(resolve => setTimeout(resolve, 200));
+
+              console.log('🔄 Reloading page to initialize App with authenticated session');
+              window.location.reload();
+              return;
+            }
+
+            attempts++;
+            console.log(`⏳ Polling for session persistence... (${attempts}/${maxAttempts})`);
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+
+          // Fallback: reload anyway after 2 seconds to prevent hanging
+          // User may need to re-login, but at least UI doesn't freeze
+          console.warn('⚠️ Session verification timeout - reloading anyway (may require re-login)');
           window.location.reload();
-        }, 150);
+        };
+
+        waitForSessionPersistence();
+        // Don't turn off loading spinner - let reload handle it
       } else {
         setLoading(false);
         processingRef.current = false; // Release lock on failure
