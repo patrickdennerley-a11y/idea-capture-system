@@ -110,6 +110,16 @@ function App() {
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
 
+  // CRITICAL: Detect recovery mode IMMEDIATELY on mount, before auth check
+  // This prevents race condition where AuthContext sets session before we check the URL
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('type=recovery')) {
+      console.log('🔐 Recovery hash detected on App mount - setting lock flag immediately');
+      localStorage.setItem('neural_recovery_pending', 'true');
+    }
+  }, []);
+
   // Check authentication status
   useEffect(() => {
     if (!isSupabaseConfigured()) {
