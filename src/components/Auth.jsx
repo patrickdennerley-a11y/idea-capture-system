@@ -387,15 +387,24 @@ export default function Auth({ onAuthenticated }) {
           } else {
             // New user, no email confirmation required (or already logged in)
             setMessage('Account created successfully!');
+            // Ensure we redirect after signup if session is established
+            if (result.data?.session) {
+              setTimeout(() => onAuthenticated(), 500);
+            }
           }
         }
       } else {
         // Sign in with password
         result = await signIn(email, password);
         if (!result.error) {
-          // Don't call onAuthenticated manually - let AuthContext handle it
-          // The auth state change listener will update the user state
           setMessage('Signed in successfully!');
+          // FIX: Explicitly call onAuthenticated() with a small delay
+          // This ensures the session is fully persisted to localStorage before
+          // the Main App mounts and tries to use the Supabase client.
+          setTimeout(() => {
+            console.log('✅ Password login successful, triggering authenticated state');
+            onAuthenticated();
+          }, 500);
         }
       }
 
