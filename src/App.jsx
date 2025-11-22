@@ -250,19 +250,41 @@ function App() {
 
   // Sync handler
   const handleSync = async () => {
-    if (!isOnline || isSyncing) return;
-
-    setIsSyncing(true);
-
-    const result = await processQueue((progress) => {
-      console.log(`Syncing: ${progress.current}/${progress.total}`);
-    });
-
-    if (result.success) {
-      setPendingOps(0);
+    if (!isOnline || isSyncing) {
+      console.log('⏭️ Sync blocked:', { isOnline, isSyncing });
+      return;
     }
 
-    setIsSyncing(false);
+    console.log('🔄 Sync started');
+    setIsSyncing(true);
+
+    // 🛡️ TIMEOUT PROTECTION - force reset after 10 seconds
+    const syncTimeout = setTimeout(() => {
+      console.error('⚠️ SYNC TIMEOUT - Forcing reset');
+      setIsSyncing(false);
+      setPendingOps(0);
+    }, 10000);
+
+    try {
+      const result = await processQueue((progress) => {
+        console.log(`Syncing: ${progress.current}/${progress.total}`);
+      });
+
+      if (result.success) {
+        console.log('✅ Sync completed');
+        setPendingOps(0);
+      } else {
+        console.error('❌ Sync failed:', result.error);
+        setPendingOps(0);
+      }
+    } catch (error) {
+      console.error('💥 Sync exception:', error);
+      setPendingOps(0);
+    } finally {
+      clearTimeout(syncTimeout);
+      setIsSyncing(false);
+      console.log('🏁 Sync reset');
+    }
   };
 
   // Sign out handler

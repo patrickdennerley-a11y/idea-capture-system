@@ -412,6 +412,11 @@ export default function Auth({ onAuthenticated }) {
             // Ensure we reload after signup if session is established
             if (result.data?.session) {
               console.log('✅ Signup auto-login');
+
+              // CRITICAL: Clear recovery flag to prevent getting stuck in recovery mode after reload
+              localStorage.removeItem('neural_recovery_pending');
+              console.log('🧹 Cleared recovery flag before reload');
+
               shouldReload = true;
             }
           }
@@ -422,6 +427,11 @@ export default function Auth({ onAuthenticated }) {
         if (!result.error) {
           setMessage('Signed in successfully! Loading your data...');
           console.log('✅ Password login success');
+
+          // CRITICAL: Clear recovery flag to prevent getting stuck in recovery mode after reload
+          localStorage.removeItem('neural_recovery_pending');
+          console.log('🧹 Cleared recovery flag before reload');
+
           // CRITICAL FIX: Mark for reload to initialize sync hooks correctly
           shouldReload = true;
         }
