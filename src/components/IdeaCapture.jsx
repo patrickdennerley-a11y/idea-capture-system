@@ -384,7 +384,7 @@ export default function IdeaCapture({
   // Auto-classify idea in background after save
   const classifyIdeaInBackground = async (idea) => {
     try {
-      const response = await fetch('http://localhost:3001/api/classify-idea', {
+      const response = await fetch('/api/classify-idea', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -422,7 +422,7 @@ export default function IdeaCapture({
   // Manual classification function for edit modal
   const classifyIdea = async (content, context, tags) => {
     try {
-      const response = await fetch('http://localhost:3001/api/classify-idea', {
+      const response = await fetch('/api/classify-idea', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1364,7 +1364,7 @@ export default function IdeaCapture({
                   <p className="text-red-400 text-sm font-medium">Connection Error</p>
                   <p className="text-red-300 text-xs mt-1">{organizationError}</p>
                   <p className="text-gray-400 text-xs mt-2">
-                    Make sure your backend server is running on http://localhost:3001
+                    Make sure your backend server is running
                   </p>
                 </div>
                 <button

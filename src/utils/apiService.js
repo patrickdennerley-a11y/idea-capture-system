@@ -1,5 +1,5 @@
-// Use Vite proxy in development, direct URL in production
-const API_BASE_URL = import.meta.env.DEV ? '' : 'http://localhost:3001';
+// Use relative URLs for both dev (Vite proxy) and production (same origin)
+const API_BASE_URL = '';
 
 // Retry logic helper
 const fetchWithRetry = async (url, options, maxRetries = 3) => {
@@ -198,13 +198,41 @@ export const generateDailyRoutine = async (ideas, logs, checklist, reviews) => {
 };
 
 /**
+ * Get smart reminders based on user profile and history
+ * @param {Array} ideas - Array of idea objects
+ * @param {Array} logs - Array of activity logs
+ * @param {Object} checklist - Daily checklist data
+ * @param {Array} reviews - Array of end-of-day reviews
+ * @param {Array} reminderHistory - History of shown/dismissed reminders
+ * @returns {Promise} - Smart reminders with adaptive frequency
+ */
+export const getReminders = async (ideas, logs, checklist, reviews, reminderHistory) => {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/get-reminders`, {
+      method: 'POST',
+      body: JSON.stringify({ ideas, logs, checklist, reviews, reminderHistory }),
+    });
+
+    return {
+      success: true,
+      data: response,
+    };
+  } catch (error) {
+    console.error('Error getting reminders:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
  * Health check to verify backend is running
  * @returns {Promise<boolean>} - True if backend is healthy
  */
 export const checkBackendHealth = async () => {
   try {
-    const baseUrl = import.meta.env.DEV ? 'http://localhost:3001' : API_BASE_URL;
-    const response = await fetch(`${baseUrl}/health`, {
+    const response = await fetch(`${API_BASE_URL}/health`, {
       method: 'GET',
     });
     return response.ok;

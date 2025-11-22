@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#8b5cf6" rx="100"/>
+  <g fill="none" stroke="#ffffff" stroke-width="24" stroke-linecap="round">
+    <!-- Brain/Neural network icon -->
+    <circle cx="256" cy="200" r="80"/>
+    <circle cx="180" cy="320" r="40"/>
+    <circle cx="332" cy="320" r="40"/>
+    <circle cx="256" cy="400" r="40"/>
+
+    <!-- Connections -->
+    <line x1="256" y1="280" x2="180" y2="280"/>
+    <line x1="256" y1="280" x2="332" y2="280"/>
+    <line x1="180" y1="360" x2="256" y2="360"/>
+    <line x1="332" y1="360" x2="256" y2="360"/>
+
+    <!-- Top decorative lines -->
+    <path d="M 200 140 Q 180 100 200 60"/>
+    <path d="M 256 120 Q 256 80 256 40"/>
+    <path d="M 312 140 Q 332 100 312 60"/>
+  </g>
+</svg>

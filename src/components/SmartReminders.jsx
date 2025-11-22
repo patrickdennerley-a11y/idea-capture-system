@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, X, Volume2, VolumeX, AlertCircle, Clock, TrendingUp } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { getReminders } from '../utils/apiService';
 
 // Create AudioContext once at module level to avoid memory leaks
 let audioContext = null;
@@ -49,23 +50,13 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/get-reminders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ideas,
-          logs,
-          checklist,
-          reviews,
-          reminderHistory
-        })
-      });
+      const result = await getReminders(ideas, logs, checklist, reviews, reminderHistory);
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch reminders');
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch reminders');
       }
 
-      const data = await response.json();
+      const data = result.data;
       setReminders(data.reminders);
       setProfile(data.profile);
       setMetadata(data.metadata);
