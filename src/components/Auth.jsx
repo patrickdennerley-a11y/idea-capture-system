@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { isSupabaseConfigured } from '../utils/supabaseClient';
+import { isSupabaseConfigured, supabase } from '../utils/supabaseClient';
 
 export default function Auth({ onAuthenticated }) {
   const [email, setEmail] = useState('');
@@ -12,6 +12,7 @@ export default function Auth({ onAuthenticated }) {
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -54,17 +55,40 @@ export default function Auth({ onAuthenticated }) {
     // Check for password recovery (but don't return - let Supabase process the tokens)
     // Recovery links have BOTH type=recovery AND access_token
     // Supabase needs to establish the session before password can be updated
-    if (type === 'recovery') {
-      console.log('Password recovery mode detected - waiting for session to establish');
-      setIsPasswordRecovery(true);
-      // Don't return - let Supabase process the access_token below
-    }
+    if (type === 'recovery' && accessToken) {
+      console.log('Password recovery mode detected - waiting for session to establish...');
+      setSessionLoading(true);
 
-    // If we have an access token, Supabase will handle it via detectSessionInUrl
-    // This includes both magic links AND recovery links
-    if (accessToken) {
+      // Wait for Supabase to establish the session before showing the password form
+      let sessionCheckCount = 0;
+      const maxChecks = 10; // 5 seconds max (10 checks * 500ms)
+
+      const checkSession = setInterval(async () => {
+        sessionCheckCount++;
+        console.log(`Checking for session... (attempt ${sessionCheckCount}/${maxChecks})`);
+
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          console.log('✅ Session established for password recovery');
+          clearInterval(checkSession);
+          setSessionLoading(false);
+          setIsPasswordRecovery(true);
+        } else if (sessionCheckCount >= maxChecks) {
+          console.error('Session timeout - could not establish session');
+          clearInterval(checkSession);
+          setSessionLoading(false);
+          setError('Session could not be established. Please request a new password reset link.');
+          // Clean up URL
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }, 500);
+
+      // Don't return - let the interval handle the session check
+    } else if (accessToken && type !== 'recovery') {
+      // If we have an access token but it's not recovery (e.g., magic link),
+      // Supabase will handle it via detectSessionInUrl
       console.log('Access token detected in URL - Supabase will process it');
-      // Supabase's detectSessionInUrl will automatically establish the session
     }
   }, []);
 
@@ -110,6 +134,17 @@ export default function Auth({ onAuthenticated }) {
       setLoading(false);
       return;
     }
+
+    // Safety check: ensure we have a session before attempting to update password
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.error('No session found when trying to update password');
+      setError('Session expired. Please request a new password reset link.');
+      setLoading(false);
+      return;
+    }
+
+    console.log('Session confirmed, proceeding with password update');
 
     try {
       console.log('Calling updatePassword...');
@@ -266,7 +301,22 @@ export default function Auth({ onAuthenticated }) {
           <p className="text-gray-600">Your Personal Life OS for ADHD</p>
         </div>
 
-        {isPasswordRecovery ? (
+        {sessionLoading ? (
+          <div className="text-center space-y-4">
+            <div className="flex items-center justify-center">
+              <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <p className="text-gray-600">
+              Establishing secure session...
+            </p>
+            <p className="text-sm text-gray-500">
+              This will only take a moment
+            </p>
+          </div>
+        ) : isPasswordRecovery ? (
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <div className="mb-4">
               <p className="text-sm text-gray-600">
