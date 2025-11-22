@@ -91,18 +91,11 @@ const anthropic = new Anthropic({
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? true  // Allow all origins in production
-    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173'],
+    ? true // Allow all origins in production (Railway, etc.)
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
-
-// Serve static files from the dist folder (production build)
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, 'dist');
-  console.log('Serving static files from:', distPath);
-  app.use(express.static(distPath));
-}
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -1603,10 +1596,24 @@ Return pure JSON array (no code fences):
   }
 });
 
+// Serve static files from the React app build (in production)
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
+
+// SPA fallback - serve index.html for non-API routes (must be before 404 handler)
+app.use((req, res, next) => {
+  // If it's an API route, pass to 404 handler
+  if (req.path.startsWith('/api') || req.path === '/health') {
+    return next();
+  }
+  // Otherwise serve the React app
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
 // 404 handler for API routes only
-app.use('/api/*', (req, res) => {
+app.use((req, res) => {
   res.status(404).json({
-    error: 'API endpoint not found',
+    error: 'Endpoint not found',
     availableEndpoints: {
       'GET /health': 'Health check',
       'POST /api/organize-ideas': 'Organize ideas with AI',
@@ -1623,18 +1630,6 @@ app.use('/api/*', (req, res) => {
     }
   });
 });
-
-// SPA fallback - serve index.html for non-API routes (for React Router)
-if (process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    // If it's an API route or health check, skip to next handler (404)
-    if (req.path.startsWith('/api') || req.path === '/health') {
-      return next();
-    }
-    // Otherwise serve the React app
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-  });
-}
 
 // Error handler
 app.use((err, req, res, next) => {

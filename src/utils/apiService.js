@@ -1,4 +1,4 @@
-// Use relative URLs - works for both development (with Vite proxy) and production (same origin)
+// Use relative URLs for both dev (Vite proxy) and production (same origin)
 const API_BASE_URL = '';
 
 // Retry logic helper
@@ -190,6 +190,35 @@ export const generateDailyRoutine = async (ideas, logs, checklist, reviews) => {
     };
   } catch (error) {
     console.error('Error generating daily routine:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Get smart reminders based on user profile and history
+ * @param {Array} ideas - Array of idea objects
+ * @param {Array} logs - Array of activity logs
+ * @param {Object} checklist - Daily checklist data
+ * @param {Array} reviews - Array of end-of-day reviews
+ * @param {Array} reminderHistory - History of shown/dismissed reminders
+ * @returns {Promise} - Smart reminders with adaptive frequency
+ */
+export const getReminders = async (ideas, logs, checklist, reviews, reminderHistory) => {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/get-reminders`, {
+      method: 'POST',
+      body: JSON.stringify({ ideas, logs, checklist, reviews, reminderHistory }),
+    });
+
+    return {
+      success: true,
+      data: response,
+    };
+  } catch (error) {
+    console.error('Error getting reminders:', error);
     return {
       success: false,
       error: error.message,
