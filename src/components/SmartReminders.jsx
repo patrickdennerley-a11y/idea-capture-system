@@ -49,7 +49,7 @@ const SmartReminders = ({ ideas, logs, checklist, reviews }) => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3001/api/get-reminders', {
+      const response = await fetch('/api/get-reminders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

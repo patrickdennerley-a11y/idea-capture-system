@@ -1624,9 +1624,14 @@ app.use('/api/*', (req, res) => {
   });
 });
 
-// Catch-all handler - serve index.html for all other routes (for React Router)
+// SPA fallback - serve index.html for non-API routes (for React Router)
 if (process.env.NODE_ENV === 'production') {
-  app.get('*', (req, res) => {
+  app.use((req, res, next) => {
+    // If it's an API route or health check, skip to next handler (404)
+    if (req.path.startsWith('/api') || req.path === '/health') {
+      return next();
+    }
+    // Otherwise serve the React app
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
   });
 }
