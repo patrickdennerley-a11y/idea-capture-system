@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server.cjs",
-    "start": "npm run server"
+    "start": "node server.cjs",
+    "railway:build": "npm install && npm run build",
+    "railway:start": "NODE_ENV=production node server.cjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
