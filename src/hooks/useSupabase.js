@@ -245,15 +245,15 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
           filter: `user_id=eq.${userIdRef.current}`
         },
         (payload) => {
-          console.log('Real-time update:', payload);
-          // Reload data when changes occur
-          loadFromSupabase();
+          console.log('Real-time update received:', payload.eventType);
+          // Don't auto-reload on every change to avoid race conditions
+          // User can manually refresh if needed
         }
       )
       .subscribe();
 
     subscriptionRef.current = subscription;
-  }, [shouldUseSupabase, realtime, tableName, loadFromSupabase]);
+  }, [shouldUseSupabase, realtime, tableName]);
 
   /**
    * Monitor online/offline status
@@ -278,14 +278,15 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
   }, [processOfflineQueue]);
 
   /**
-   * Initial data load
+   * Initial data load - runs ONLY ONCE on mount
    */
   useEffect(() => {
     loadFromSupabase();
-  }, [loadFromSupabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally empty - only run on mount
 
   /**
-   * Setup real-time subscriptions
+   * Setup real-time subscriptions - runs ONLY ONCE on mount
    */
   useEffect(() => {
     setupRealtimeSubscription();
@@ -295,7 +296,8 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
         subscriptionRef.current.unsubscribe();
       }
     };
-  }, [setupRealtimeSubscription]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Intentionally empty - only run on mount
 
   /**
    * Manual refresh function
