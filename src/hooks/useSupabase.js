@@ -97,10 +97,22 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
       if (supabaseError) throw supabaseError;
 
       const transformedData = transformFromSupabase(supabaseData);
-      setData(transformedData);
 
-      // Also save to localStorage for offline access
-      saveToLocalStorage(transformedData);
+      // 🐛 BUG FIX: Don't replace local data with empty Supabase data
+      // If Supabase is empty but we have local data, keep the local data
+      // (user needs to manually migrate or data will be lost)
+      const localData = loadFromLocalStorage();
+      const hasLocalData = Array.isArray(localData) ? localData.length > 0 : !!localData;
+      const hasSupabaseData = Array.isArray(transformedData) ? transformedData.length > 0 : !!transformedData;
+
+      if (!hasSupabaseData && hasLocalData) {
+        console.warn(`⚠️ Supabase is empty but localStorage has data for ${tableName}. Keeping local data. Use migration to sync.`);
+        setData(localData);
+      } else {
+        setData(transformedData);
+        // Also save to localStorage for offline access
+        saveToLocalStorage(transformedData);
+      }
 
       setError(null);
     } catch (err) {
