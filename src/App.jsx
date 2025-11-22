@@ -304,6 +304,9 @@ function App() {
   const handleSignOut = async () => {
     console.log('🚪 Sign out initiated');
 
+    // CRITICAL: Clear any auth tokens in URL hash to prevent auto sign-in
+    window.history.replaceState(null, '', window.location.pathname);
+
     // Set false BEFORE async operations for immediate UI feedback
     setIsAuthenticated(false);
 
@@ -313,8 +316,6 @@ function App() {
     } catch (error) {
       console.error('💥 Sign out exception:', error);
     }
-
-    // No reload needed - state update triggers Auth component to show
   };
 
   // Helper to check if a tab has AI work in progress

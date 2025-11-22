@@ -175,7 +175,22 @@ export const processQueue = async (onProgress) => {
   }
 
   try {
-    const user = await getCurrentUser();
+    // Add 5-second timeout to getCurrentUser to prevent hanging
+    const getUserWithTimeout = async () => {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('User check timeout')), 5000)
+      );
+      return Promise.race([getCurrentUser(), timeoutPromise]);
+    };
+
+    let user;
+    try {
+      user = await getUserWithTimeout();
+    } catch (err) {
+      console.error('❌ getCurrentUser timeout:', err);
+      return { success: false, error: 'User authentication timeout' };
+    }
+
     if (!user) {
       console.log('User not authenticated, skipping queue processing');
       return { success: false, error: 'User not authenticated' };
