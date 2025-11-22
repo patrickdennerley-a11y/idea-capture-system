@@ -29,7 +29,16 @@ export const AuthProvider = ({ children }) => {
     // Get initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        console.log('Initializing auth - checking for session...');
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+
+        console.log('Initial session check:', {
+          hasSession: !!initialSession,
+          hasUser: !!initialSession?.user,
+          email: initialSession?.user?.email,
+          error
+        });
+
         if (mounted) {
           setSession(initialSession);
           setUser(initialSession?.user ?? null);
@@ -55,11 +64,22 @@ export const AuthProvider = ({ children }) => {
 
     // Listen for auth changes
     const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email);
+      console.log('Auth state changed:', {
+        event,
+        email: session?.user?.email,
+        hasSession: !!session,
+        timestamp: new Date().toISOString()
+      });
+
       if (mounted) {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+
+        // Log successful magic link login
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.log('✅ User successfully signed in via', event);
+        }
       }
     });
 

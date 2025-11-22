@@ -19,10 +19,21 @@ export default function Auth({ onAuthenticated }) {
 
   // Check if URL contains password recovery token or errors
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const hash = window.location.hash.substring(1);
+    if (!hash) return;
+
+    const hashParams = new URLSearchParams(hash);
     const type = hashParams.get('type');
     const errorDescription = hashParams.get('error_description');
     const errorCode = hashParams.get('error_code');
+    const accessToken = hashParams.get('access_token');
+
+    console.log('Auth URL hash detected:', {
+      type,
+      hasAccessToken: !!accessToken,
+      errorDescription,
+      errorCode
+    });
 
     // Handle OTP errors immediately (don't wait for timeout)
     if (errorDescription || errorCode) {
@@ -37,6 +48,13 @@ export default function Auth({ onAuthenticated }) {
 
       // Clean up URL immediately
       window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    // If we have an access token, Supabase will handle it via detectSessionInUrl
+    // Don't clean up the URL here - let Supabase process it first
+    if (accessToken) {
+      console.log('Access token detected in URL - Supabase will process it');
       return;
     }
 
