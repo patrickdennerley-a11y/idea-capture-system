@@ -217,11 +217,67 @@ export default function Auth({ onAuthenticated }) {
       // Don't process the rest of the auth flow
       return;
     } else if (accessToken && type !== 'recovery') {
-      // If we have an access token but it's not recovery (e.g., magic link),
-      // Supabase will handle it via detectSessionInUrl
-      console.log('Access token detected in URL - Supabase will process it');
+      // Handle Magic Links / Signups explicitly
+      // (Fixes race condition where AuthContext times out before Supabase auto-detects)
+      console.log('Access token detected in URL (Magic Link) - processing...');
+      setSessionLoading(true);
+
+      const processMagicLink = async () => {
+        try {
+          const refreshToken = hashParams.get('refresh_token');
+
+          // 1. Check for existing session (Auto-detect might have won the race)
+          const { data: existingSession } = await supabase.auth.getSession();
+          if (existingSession?.session) {
+            console.log('✅ Session already exists (auto-detected). Logging in...');
+            setSessionLoading(false);
+            // Clear hash to keep URL clean
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+            return;
+          }
+
+          if (!refreshToken) {
+            throw new Error('No refresh token found in URL');
+          }
+
+          // 2. Explicitly set the session
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (error) {
+            // Double check if session was created despite error (race condition)
+            const { data: recheckSession } = await supabase.auth.getSession();
+            if (recheckSession?.session) {
+              console.log('✅ Session established despite error. Logging in...');
+              setSessionLoading(false);
+              window.history.replaceState(null, '', window.location.pathname);
+              onAuthenticated();
+              return;
+            }
+            throw error;
+          }
+
+          if (data.session) {
+            console.log('✅ Magic link session established manually');
+            setSessionLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+          }
+        } catch (err) {
+          console.error('Magic link processing failed:', err);
+          setError('Failed to log in with magic link. Please try requesting a new one.');
+          setSessionLoading(false);
+          // Clear the hash on error
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      };
+
+      processMagicLink();
     }
-  }, []);
+  }, [onAuthenticated]);
 
   const handlePasswordReset = async (e) => {
     e.preventDefault();
