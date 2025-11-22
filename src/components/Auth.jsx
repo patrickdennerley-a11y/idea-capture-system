@@ -34,7 +34,33 @@ export default function Auth({ onAuthenticated }) {
   // Check if URL contains password recovery token or errors
   useEffect(() => {
     const hash = window.location.hash.substring(1);
-    if (!hash) return;
+
+    // CRITICAL FIX: If no hash but recovery flag is set, check for existing session
+    // This handles the race condition where Supabase auto-detected the tokens,
+    // established the session, and cleared the hash before this useEffect ran
+    if (!hash) {
+      const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
+      if (isRecoveryPending) {
+        console.log('⚠️ No hash found, but recovery flag is set. Checking for existing session...');
+
+        // Check if Supabase already established a session
+        const checkExistingSession = async () => {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            console.log('✅ Session exists (auto-detected by Supabase). Showing password form.');
+            setSessionLoading(false);
+            setIsPasswordRecovery(true);
+          } else {
+            console.log('❌ No session found. Recovery link may be invalid.');
+            setError('Recovery session not found. Please request a new password reset link.');
+            localStorage.removeItem('neural_recovery_pending');
+          }
+        };
+
+        checkExistingSession();
+      }
+      return;
+    }
 
     const hashParams = new URLSearchParams(hash);
     const type = hashParams.get('type');
@@ -95,6 +121,15 @@ export default function Auth({ onAuthenticated }) {
           const refreshToken = hashParams.get('refresh_token');
 
           if (!refreshToken) {
+            // FALLBACK: Check if Supabase auto-detected the session
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              console.log('⚠️ No refresh_token in URL, but session exists (auto-detected). Proceeding.');
+              setSessionLoading(false);
+              setIsPasswordRecovery(true);
+              return;
+            }
+
             console.error('No refresh_token found in URL');
             setError('Invalid recovery link format. Please request a new password reset.');
             setSessionLoading(false);
@@ -112,6 +147,16 @@ export default function Auth({ onAuthenticated }) {
           });
 
           if (error) {
+            // FALLBACK: Check if Supabase auto-detected the session despite the error
+            // (The error is likely "Token already used" because auto-detect ran first)
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              console.log('⚠️ Manual setSession failed, but session exists (auto-detected). Proceeding.');
+              setSessionLoading(false);
+              setIsPasswordRecovery(true);
+              return;
+            }
+
             console.error('Failed to set session from recovery tokens:', error);
             setError(`Invalid or expired recovery link: ${error.message}`);
             setSessionLoading(false);
@@ -132,6 +177,15 @@ export default function Auth({ onAuthenticated }) {
             // We'll clear it AFTER the password is successfully updated
             console.log('⚠️ Keeping URL hash to prevent premature redirect');
           } else {
+            // FALLBACK: Check session one last time
+            const { data: sessionData } = await supabase.auth.getSession();
+            if (sessionData?.session) {
+              console.log('⚠️ No session from setSession, but session exists. Proceeding.');
+              setSessionLoading(false);
+              setIsPasswordRecovery(true);
+              return;
+            }
+
             console.error('No session returned after setSession');
             setError('Could not establish session. Please request a new password reset link.');
             setSessionLoading(false);
@@ -140,6 +194,15 @@ export default function Auth({ onAuthenticated }) {
             window.history.replaceState(null, '', window.location.pathname);
           }
         } catch (err) {
+          // FALLBACK: Exception caught but maybe session exists
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            console.log('⚠️ Exception caught, but session exists. Proceeding.');
+            setSessionLoading(false);
+            setIsPasswordRecovery(true);
+            return;
+          }
+
           console.error('Error processing recovery token:', err);
           setError(`An error occurred: ${err.message}`);
           setSessionLoading(false);
