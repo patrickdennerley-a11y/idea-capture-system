@@ -31,10 +31,51 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
+  // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
+  useEffect(() => {
+    let safetyTimer;
+    if (sessionLoading) {
+      safetyTimer = setTimeout(() => {
+        console.warn('⚠️ Session establishment timed out. Forcing UI reset.');
+        setSessionLoading(false);
+        if (!isPasswordRecovery && !error) {
+          setError('Session request timed out. Please try clicking the link again.');
+        }
+      }, 8000);
+    }
+    return () => clearTimeout(safetyTimer);
+  }, [sessionLoading, isPasswordRecovery, error]);
+
   // Check if URL contains password recovery token or errors
   useEffect(() => {
     const hash = window.location.hash.substring(1);
-    if (!hash) return;
+
+    // CRITICAL FIX: If no hash but recovery flag is set, check for existing session
+    // This handles the race condition where Supabase auto-detected the tokens,
+    // established the session, and cleared the hash before this useEffect ran
+    if (!hash) {
+      const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
+      if (isRecoveryPending) {
+        console.log('⚠️ No hash found, but recovery flag is set. Checking for existing session...');
+
+        // Check if Supabase already established a session
+        const checkExistingSession = async () => {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            console.log('✅ Session exists (auto-detected by Supabase). Showing password form.');
+            setSessionLoading(false);
+            setIsPasswordRecovery(true);
+          } else {
+            console.log('❌ No session found. Recovery link may be invalid.');
+            setError('Recovery session not found. Please request a new password reset link.');
+            localStorage.removeItem('neural_recovery_pending');
+          }
+        };
+
+        checkExistingSession();
+      }
+      return;
+    }
 
     const hashParams = new URLSearchParams(hash);
     const type = hashParams.get('type');
@@ -94,58 +135,47 @@ export default function Auth({ onAuthenticated }) {
           // Get the refresh token from the URL
           const refreshToken = hashParams.get('refresh_token');
 
-          if (!refreshToken) {
-            console.error('No refresh_token found in URL');
-            setError('Invalid recovery link format. Please request a new password reset.');
-            setSessionLoading(false);
-            // Clear recovery flag and URL on error
-            localStorage.removeItem('neural_recovery_pending');
-            window.history.replaceState(null, '', window.location.pathname);
+          // Auto-detect check (in case Supabase handled it before we got here)
+          const { data: existingSession } = await supabase.auth.getSession();
+          if (existingSession?.session) {
+            console.log('✅ Session auto-detected. Proceeding.');
+            setIsPasswordRecovery(true);
             return;
           }
 
+          if (!refreshToken) {
+            throw new Error('No refresh token found in URL');
+          }
+
           // Explicitly set the session using the tokens from the URL
-          // This is more reliable than waiting for auto-detection
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken
           });
 
-          if (error) {
-            console.error('Failed to set session from recovery tokens:', error);
-            setError(`Invalid or expired recovery link: ${error.message}`);
-            setSessionLoading(false);
-            // Clear recovery flag and URL on error
-            localStorage.removeItem('neural_recovery_pending');
-            window.history.replaceState(null, '', window.location.pathname);
-            return;
-          }
+          if (error) throw error;
 
           if (data.session) {
-            console.log('✅ Recovery session established successfully');
-            console.log('Session user:', data.session.user.email);
-            setSessionLoading(false);
+            console.log('✅ Recovery session established manually');
             setIsPasswordRecovery(true);
-
-            // CRITICAL FIX: Do NOT clear the URL hash here!
-            // App.jsx needs the type=recovery hash to keep this component mounted
-            // We'll clear it AFTER the password is successfully updated
-            console.log('⚠️ Keeping URL hash to prevent premature redirect');
           } else {
-            console.error('No session returned after setSession');
-            setError('Could not establish session. Please request a new password reset link.');
-            setSessionLoading(false);
-            // Clear recovery flag and URL on error
+            throw new Error('Session establishment returned no data');
+          }
+        } catch (err) {
+          console.error('Recovery processing failed:', err);
+
+          // Final fallback check
+          const { data: lastCheck } = await supabase.auth.getSession();
+          if (lastCheck?.session) {
+            console.log('✅ Session found despite error. Proceeding.');
+            setIsPasswordRecovery(true);
+          } else {
+            setError(`Invalid or expired recovery link: ${err.message}`);
             localStorage.removeItem('neural_recovery_pending');
             window.history.replaceState(null, '', window.location.pathname);
           }
-        } catch (err) {
-          console.error('Error processing recovery token:', err);
-          setError(`An error occurred: ${err.message}`);
-          setSessionLoading(false);
-          // Clear recovery flag and URL on error
-          localStorage.removeItem('neural_recovery_pending');
-          window.history.replaceState(null, '', window.location.pathname);
+        } finally {
+          setSessionLoading(false); // CRITICAL: Always turn off spinner
         }
       };
 
@@ -154,11 +184,69 @@ export default function Auth({ onAuthenticated }) {
       // Don't process the rest of the auth flow
       return;
     } else if (accessToken && type !== 'recovery') {
-      // If we have an access token but it's not recovery (e.g., magic link),
-      // Supabase will handle it via detectSessionInUrl
-      console.log('Access token detected in URL - Supabase will process it');
+      // PREVENT DOUBLE PROCESSING (React StrictMode runs effects twice)
+      if (processingRef.current) {
+        console.log('Already processing magic link, skipping duplicate');
+        return;
+      }
+      processingRef.current = true;
+
+      // Handle Magic Links / Signups explicitly
+      // (Fixes race condition where AuthContext times out before Supabase auto-detects)
+      console.log('Access token detected in URL (Magic Link) - processing...');
+      setSessionLoading(true);
+
+      const processMagicLink = async () => {
+        try {
+          const refreshToken = hashParams.get('refresh_token');
+
+          // 1. Check if Supabase already handled it automatically
+          const { data: existingSession } = await supabase.auth.getSession();
+          if (existingSession?.session) {
+            console.log('✅ Session auto-detected. Logging in...');
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+            return;
+          }
+
+          if (!refreshToken) throw new Error('No refresh token found');
+
+          // 2. Manual setSession
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (error) throw error;
+
+          if (data.session) {
+            console.log('✅ Magic link session established manually');
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+          } else {
+            throw new Error('Session creation failed (no session returned)');
+          }
+        } catch (err) {
+          console.error('Magic link failed:', err);
+
+          // Fallback check
+          const { data: lastCheck } = await supabase.auth.getSession();
+          if (lastCheck?.session) {
+            console.log('✅ Session found despite error. Logging in...');
+            window.history.replaceState(null, '', window.location.pathname);
+            onAuthenticated();
+          } else {
+            setError('Failed to log in with magic link. Please try requesting a new one.');
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        } finally {
+          setSessionLoading(false); // CRITICAL: Always turn off spinner
+        }
+      };
+
+      processMagicLink();
     }
-  }, []);
+  }, [onAuthenticated]);
 
   const handlePasswordReset = async (e) => {
     e.preventDefault();
