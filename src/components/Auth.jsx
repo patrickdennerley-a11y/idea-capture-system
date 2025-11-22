@@ -31,6 +31,14 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
+  // Helper: Timeout wrapper for Supabase calls to prevent infinite hanging
+  const withTimeout = (promise, ms = 5000) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms))
+    ]);
+  };
+
   // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
   useEffect(() => {
     let safetyTimer;
@@ -38,8 +46,9 @@ export default function Auth({ onAuthenticated }) {
       safetyTimer = setTimeout(() => {
         console.warn('⚠️ Session establishment timed out. Forcing UI reset.');
         setSessionLoading(false);
+        processingRef.current = false; // Release lock
         if (!isPasswordRecovery && !error) {
-          setError('Session request timed out. Please try clicking the link again.');
+          setError('Connection took too long. Please reload the page and try again.');
         }
       }, 8000);
     }
@@ -147,11 +156,13 @@ export default function Auth({ onAuthenticated }) {
             throw new Error('No refresh token found in URL');
           }
 
-          // Explicitly set the session using the tokens from the URL
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+          // Explicitly set the session using the tokens from the URL with timeout protection
+          const { data, error } = await withTimeout(
+            supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            })
+          );
 
           if (error) throw error;
 
@@ -176,6 +187,7 @@ export default function Auth({ onAuthenticated }) {
           }
         } finally {
           setSessionLoading(false); // CRITICAL: Always turn off spinner
+          processingRef.current = false; // Release lock
         }
       };
 
@@ -209,22 +221,34 @@ export default function Auth({ onAuthenticated }) {
             return;
           }
 
-          if (!refreshToken) throw new Error('No refresh token found');
+          // 2. Manual setSession with timeout protection
+          if (refreshToken) {
+            // Standard flow with refresh token
+            const { data, error } = await withTimeout(
+              supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken
+              })
+            );
 
-          // 2. Manual setSession
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+            if (error) throw error;
 
-          if (error) throw error;
+            if (data.session) {
+              console.log('✅ Magic link session established manually');
+              window.history.replaceState(null, '', window.location.pathname);
+              onAuthenticated();
+            } else {
+              throw new Error('Session creation failed (no session returned)');
+            }
+          } else {
+            // Implicit flow (Access token only, no refresh token) - Verify by getting user
+            console.log('⚠️ No refresh token, verifying access token (implicit flow)...');
+            const { error } = await withTimeout(supabase.auth.getUser(accessToken));
+            if (error) throw error;
 
-          if (data.session) {
-            console.log('✅ Magic link session established manually');
+            console.log('✅ Magic link verified (implicit flow)');
             window.history.replaceState(null, '', window.location.pathname);
             onAuthenticated();
-          } else {
-            throw new Error('Session creation failed (no session returned)');
           }
         } catch (err) {
           console.error('Magic link failed:', err);
@@ -241,6 +265,7 @@ export default function Auth({ onAuthenticated }) {
           }
         } finally {
           setSessionLoading(false); // CRITICAL: Always turn off spinner
+          processingRef.current = false; // Release lock
         }
       };
 
@@ -310,6 +335,7 @@ export default function Auth({ onAuthenticated }) {
       if (result.error) {
         console.error('Password update failed:', result.error);
         setError(result.error.message);
+        setLoading(false);
       } else {
         console.log('✅ Password updated successfully');
         setMessage('Password updated successfully! Redirecting...');
@@ -320,22 +346,16 @@ export default function Auth({ onAuthenticated }) {
         window.history.replaceState(null, '', window.location.pathname);
         console.log('🧹 URL hash and recovery flag cleared after successful password update');
 
-        // Exit recovery mode and redirect after short delay
+        // CRITICAL FIX: Force reload to ensure App hooks initialize with new session
+        // instead of calling onAuthenticated() which keeps stale hooks
         setTimeout(() => {
-          setIsPasswordRecovery(false);
-          setNewPassword('');
-          setConfirmPassword('');
-          setUseMagicLink(false); // Switch to password login for future
-          // Trigger authentication success - user is already logged in with new password
-          console.log('🚀 Calling onAuthenticated to redirect to main app');
-          onAuthenticated();
-        }, 1500);
+          console.log('🔄 Reloading page to initialize App with authenticated session');
+          window.location.reload();
+        }, 1000);
       }
     } catch (err) {
       console.error('Password update exception:', err);
       setError(err.message || 'Failed to update password. Please try again.');
-    } finally {
-      console.log('Password update complete, setting loading to false');
       setLoading(false);
     }
   };
@@ -345,6 +365,8 @@ export default function Auth({ onAuthenticated }) {
     setLoading(true);
     setMessage('');
     setError('');
+
+    let shouldReload = false;
 
     try {
       let result;
@@ -386,10 +408,11 @@ export default function Auth({ onAuthenticated }) {
             setMessage('Account created! Check your email to confirm. 📧');
           } else {
             // New user, no email confirmation required (or already logged in)
-            setMessage('Account created successfully!');
-            // Ensure we redirect after signup if session is established
+            setMessage('Account created successfully! Loading your data...');
+            // Ensure we reload after signup if session is established
             if (result.data?.session) {
-              onAuthenticated();
+              console.log('✅ Signup auto-login');
+              shouldReload = true;
             }
           }
         }
@@ -397,11 +420,10 @@ export default function Auth({ onAuthenticated }) {
         // Sign in with password
         result = await signIn(email, password);
         if (!result.error) {
-          setMessage('Signed in successfully!');
-          // FIX: Explicitly call onAuthenticated to ensure session persistence matches App.jsx state
-          // This fixes the "Sync Stuck" and "Sign Out fails" issues
-          console.log('✅ Password login successful, triggering onAuthenticated');
-          onAuthenticated();
+          setMessage('Signed in successfully! Loading your data...');
+          console.log('✅ Password login success');
+          // CRITICAL FIX: Mark for reload to initialize sync hooks correctly
+          shouldReload = true;
         }
       }
 
@@ -435,7 +457,13 @@ export default function Auth({ onAuthenticated }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      // CRITICAL FIX: If we need to reload (login success), do it now and skip setting loading state
+      if (shouldReload) {
+        console.log('✅ Authentication successful - Reloading to initialize App hooks');
+        window.location.reload();
+      } else {
+        setLoading(false);
+      }
     }
   };
 
