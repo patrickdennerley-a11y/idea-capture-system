@@ -289,8 +289,22 @@ function App() {
 
   // Sign out handler
   const handleSignOut = async () => {
-    await signOut();
+    console.log('🚪 Sign out initiated');
+
+    // CRITICAL: Set false BEFORE async signOut to immediately show Auth screen
+    // This prevents UI flicker/delay while waiting for async cleanup
     setIsAuthenticated(false);
+
+    try {
+      const result = await signOut();
+      if (result?.error) {
+        console.error('❌ Sign out error:', result.error);
+      } else {
+        console.log('✅ Sign out successful');
+      }
+    } catch (error) {
+      console.error('💥 Sign out exception:', error);
+    }
   };
 
   // Helper to check if a tab has AI work in progress

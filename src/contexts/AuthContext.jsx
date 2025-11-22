@@ -118,12 +118,26 @@ export const AuthProvider = ({ children }) => {
       return { data, error };
     },
     signOut: async () => {
-      // CRITICAL: Clear recovery flag on sign out to prevent stale state
-      console.log('🧹 Signing out: clearing all auth-related localStorage flags');
-      localStorage.removeItem('neural_recovery_pending');
+      console.log('🧹 Signing out: clearing all auth state');
 
-      const { error } = await supabase.auth.signOut();
-      return { error };
+      // Clear all auth-related flags
+      localStorage.removeItem('neural_recovery_pending');
+      localStorage.removeItem('sync_in_progress');
+
+      try {
+        const { error } = await supabase.auth.signOut();
+
+        if (error) {
+          console.error('❌ Sign out error:', error);
+          return { error };
+        }
+
+        console.log('✅ Supabase sign out successful');
+        return { error: null };
+      } catch (error) {
+        console.error('💥 Sign out exception:', error);
+        return { error };
+      }
     },
     sendPasswordSetupEmail: async (email) => {
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
