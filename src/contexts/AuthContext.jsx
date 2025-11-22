@@ -101,6 +101,12 @@ export const AuthProvider = ({ children }) => {
       const { error } = await supabase.auth.signOut();
       return { error };
     },
+    sendPasswordSetupEmail: async (email) => {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}`,
+      });
+      return { data, error };
+    },
   };
 
   return (

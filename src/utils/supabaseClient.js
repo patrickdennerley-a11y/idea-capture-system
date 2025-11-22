@@ -89,6 +89,17 @@ export const signOut = async () => {
 };
 
 /**
+ * Send password setup/reset email
+ * This allows users who signed up with magic link to add password login
+ */
+export const sendPasswordSetupEmail = async (email) => {
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+  return { data, error };
+};
+
+/**
  * Listen to auth state changes
  */
 export const onAuthStateChange = (callback) => {
