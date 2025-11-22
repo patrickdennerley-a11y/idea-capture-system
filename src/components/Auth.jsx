@@ -10,7 +10,17 @@ export default function Auth({ onAuthenticated }) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [useMagicLink, setUseMagicLink] = useState(true); // Default to magic link for ADHD-friendly UX
   const [showPasswordReset, setShowPasswordReset] = useState(false);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+  // CRITICAL: Initialize from localStorage in case URL hash was already cleared by Supabase
+  // This ensures we show the password reset form even if the hash disappeared before mount
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => {
+    const isPending = localStorage.getItem('neural_recovery_pending') === 'true';
+    if (isPending) {
+      console.log('🔐 Auth.jsx initialized in recovery mode from localStorage flag');
+    }
+    return isPending;
+  });
+
   const [loading, setLoading] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -69,11 +79,12 @@ export default function Auth({ onAuthenticated }) {
       console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
-      // CRITICAL: Set localStorage flag to prevent premature redirect
-      // Supabase automatically clears the URL hash after setSession(), so App.jsx
-      // needs a persistent flag to know "don't redirect yet, password reset is in progress"
+      // CRITICAL: Reinforce localStorage flag (App.jsx may have already set it on mount)
+      // This ensures both App.jsx and Auth.jsx coordinate via the same flag
+      // Supabase automatically clears the URL hash after setSession(), so this
+      // persistent flag prevents App.jsx from redirecting too early
       localStorage.setItem('neural_recovery_pending', 'true');
-      console.log('🔒 Set neural_recovery_pending flag in localStorage');
+      console.log('🔒 Reinforced neural_recovery_pending flag in localStorage');
 
       // Explicitly process the recovery tokens to establish the session
       const processRecoveryToken = async () => {
