@@ -387,15 +387,21 @@ export default function Auth({ onAuthenticated }) {
           } else {
             // New user, no email confirmation required (or already logged in)
             setMessage('Account created successfully!');
+            // Ensure we redirect after signup if session is established
+            if (result.data?.session) {
+              onAuthenticated();
+            }
           }
         }
       } else {
         // Sign in with password
         result = await signIn(email, password);
         if (!result.error) {
-          // Don't call onAuthenticated manually - let AuthContext handle it
-          // The auth state change listener will update the user state
           setMessage('Signed in successfully!');
+          // FIX: Explicitly call onAuthenticated to ensure session persistence matches App.jsx state
+          // This fixes the "Sync Stuck" and "Sign Out fails" issues
+          console.log('✅ Password login successful, triggering onAuthenticated');
+          onAuthenticated();
         }
       }
 
