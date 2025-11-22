@@ -25,6 +25,12 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
   const subscriptionRef = useRef(null);
   const userIdRef = useRef(null);
   const offlineQueueRef = useRef([]);
+  const dataRef = useRef(data);
+
+  // Keep dataRef in sync with data
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   // Check if we should use Supabase or fallback to localStorage
   const shouldUseSupabase = isSupabaseConfigured();
@@ -292,34 +298,35 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
   }, [setupRealtimeSubscription]);
 
   /**
-   * Debounced save (maintains same behavior as useLocalStorage)
-   */
-  useEffect(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    timeoutRef.current = setTimeout(() => {
-      saveToSupabase(data);
-    }, 500); // 500ms debounce
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [data, saveToSupabase]);
-
-  /**
    * Manual refresh function
    */
   const refresh = useCallback(() => {
     loadFromSupabase();
   }, [loadFromSupabase]);
 
+  /**
+   * Wrapped setState that saves to Supabase with debouncing
+   */
+  const setDataWithSync = useCallback((newData) => {
+    // Handle function updater pattern
+    const resolvedData = typeof newData === 'function' ? newData(dataRef.current) : newData;
+
+    // Update local state immediately
+    setData(resolvedData);
+
+    // Debounce the Supabase save
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    timeoutRef.current = setTimeout(() => {
+      saveToSupabase(resolvedData);
+    }, 500);
+  }, [saveToSupabase]);
+
   return [
     data,
-    setData,
+    setDataWithSync,
     {
       loading,
       error,
