@@ -53,13 +53,35 @@ export default function Auth({ onAuthenticated }) {
       } else if (isSignUp) {
         // Sign up with password
         result = await signUp(email, password);
+
+        // Log the result for debugging
+        console.log('SignUp result:', {
+          error: result.error,
+          user: result.data?.user,
+          session: result.data?.session,
+          identities: result.data?.user?.identities
+        });
+
         if (!result.error) {
-          // Check if email confirmation is required
-          if (result.data?.user?.identities?.length === 0) {
+          // Check if this is an existing user (identities array is empty or user already confirmed)
+          const isExistingUser = result.data?.user?.identities?.length === 0 && !result.data?.session;
+
+          if (isExistingUser) {
+            // User already exists - send password setup email instead
+            console.log('Existing user detected, sending password setup email');
+            const setupResult = await sendPasswordSetupEmail(email);
+            if (setupResult.error) {
+              console.error('Password setup email error:', setupResult.error);
+              setError(`Couldn't send password setup email: ${setupResult.error.message}`);
+            } else {
+              setMessage('Account exists! We\'ve sent you an email to set up password login. Check your inbox! 📧');
+            }
+          } else if (result.data?.user?.identities?.length === 0) {
+            // New user, email confirmation required
             setMessage('Account created! Check your email to confirm. 📧');
           } else {
+            // New user, no email confirmation required (or already logged in)
             setMessage('Account created successfully!');
-            // Auth state change will trigger authentication
           }
         }
       } else {
@@ -78,7 +100,12 @@ export default function Auth({ onAuthenticated }) {
           setError('Please confirm your email address before signing in. Check your inbox!');
         } else if (result.error.message.includes('Invalid login credentials')) {
           setError('Invalid email or password. Please try again or use the magic link option.');
-        } else if (result.error.message.includes('User already registered')) {
+        } else if (
+          result.error.message.includes('User already registered') ||
+          result.error.message.includes('already been registered') ||
+          result.error.message.includes('already registered') ||
+          result.error.message.toLowerCase().includes('already exists')
+        ) {
           // User exists but trying to set up password - send password setup email
           try {
             const setupResult = await sendPasswordSetupEmail(email);
