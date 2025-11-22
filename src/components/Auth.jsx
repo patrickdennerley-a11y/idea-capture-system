@@ -69,6 +69,12 @@ export default function Auth({ onAuthenticated }) {
       console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
+      // CRITICAL: Set localStorage flag to prevent premature redirect
+      // Supabase automatically clears the URL hash after setSession(), so App.jsx
+      // needs a persistent flag to know "don't redirect yet, password reset is in progress"
+      localStorage.setItem('neural_recovery_pending', 'true');
+      console.log('🔒 Set neural_recovery_pending flag in localStorage');
+
       // Explicitly process the recovery tokens to establish the session
       const processRecoveryToken = async () => {
         try {
@@ -81,7 +87,8 @@ export default function Auth({ onAuthenticated }) {
             console.error('No refresh_token found in URL');
             setError('Invalid recovery link format. Please request a new password reset.');
             setSessionLoading(false);
-            // Clean up URL only on error
+            // Clear recovery flag and URL on error
+            localStorage.removeItem('neural_recovery_pending');
             window.history.replaceState(null, '', window.location.pathname);
             return;
           }
@@ -97,7 +104,8 @@ export default function Auth({ onAuthenticated }) {
             console.error('Failed to set session from recovery tokens:', error);
             setError(`Invalid or expired recovery link: ${error.message}`);
             setSessionLoading(false);
-            // Clean up URL only on error
+            // Clear recovery flag and URL on error
+            localStorage.removeItem('neural_recovery_pending');
             window.history.replaceState(null, '', window.location.pathname);
             return;
           }
@@ -116,14 +124,16 @@ export default function Auth({ onAuthenticated }) {
             console.error('No session returned after setSession');
             setError('Could not establish session. Please request a new password reset link.');
             setSessionLoading(false);
-            // Clean up URL only on error
+            // Clear recovery flag and URL on error
+            localStorage.removeItem('neural_recovery_pending');
             window.history.replaceState(null, '', window.location.pathname);
           }
         } catch (err) {
           console.error('Error processing recovery token:', err);
           setError(`An error occurred: ${err.message}`);
           setSessionLoading(false);
-          // Clean up URL only on error
+          // Clear recovery flag and URL on error
+          localStorage.removeItem('neural_recovery_pending');
           window.history.replaceState(null, '', window.location.pathname);
         }
       };
@@ -205,10 +215,11 @@ export default function Auth({ onAuthenticated }) {
         console.log('✅ Password updated successfully');
         setMessage('Password updated successfully! Redirecting...');
 
-        // CRITICAL: Clear the URL hash FIRST, before calling onAuthenticated
-        // This allows App.jsx to see no type=recovery and proceed with normal auth flow
+        // CRITICAL: Clear BOTH the URL hash AND the localStorage flag
+        // This signals to App.jsx that recovery is complete and it's safe to redirect
+        localStorage.removeItem('neural_recovery_pending');
         window.history.replaceState(null, '', window.location.pathname);
-        console.log('🧹 URL hash cleared after successful password update');
+        console.log('🧹 URL hash and recovery flag cleared after successful password update');
 
         // Exit recovery mode and redirect after short delay
         setTimeout(() => {
