@@ -278,12 +278,42 @@ export function useSupabase(tableName, localStorageKey, initialValue, options = 
   }, [processOfflineQueue]);
 
   /**
-   * Initial data load - runs ONLY ONCE on mount
+   * Initial data load on mount
    */
   useEffect(() => {
     loadFromSupabase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Intentionally empty - only run on mount
+  }, []); // Run once on mount
+
+  /**
+   * Listen for Supabase auth state changes and reload data
+   */
+  useEffect(() => {
+    if (!shouldUseSupabase) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const newUserId = session?.user?.id || null;
+
+      // Only reload if user actually changed
+      if (newUserId !== userIdRef.current) {
+        console.log(`Auth state changed: ${event}, user ${userIdRef.current} -> ${newUserId}`);
+        console.log(`Reloading ${tableName} data for new user...`);
+
+        // Update the user ref
+        userIdRef.current = newUserId;
+
+        // Reload data from Supabase for new user
+        await loadFromSupabase();
+
+        // Resubscribe to realtime with new user
+        setupRealtimeSubscription();
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [shouldUseSupabase, tableName, loadFromSupabase, setupRealtimeSubscription]);
 
   /**
    * Setup real-time subscriptions - runs ONLY ONCE on mount
