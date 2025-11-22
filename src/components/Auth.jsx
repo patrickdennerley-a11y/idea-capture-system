@@ -203,16 +203,23 @@ export default function Auth({ onAuthenticated }) {
         setError(result.error.message);
       } else {
         console.log('✅ Password updated successfully');
-        setMessage('Password updated successfully! You can now sign in with your new password.');
-        // Clear the hash from URL
+        setMessage('Password updated successfully! Redirecting...');
+
+        // CRITICAL: Clear the URL hash FIRST, before calling onAuthenticated
+        // This allows App.jsx to see no type=recovery and proceed with normal auth flow
         window.history.replaceState(null, '', window.location.pathname);
-        // Exit recovery mode after short delay
+        console.log('🧹 URL hash cleared after successful password update');
+
+        // Exit recovery mode and redirect after short delay
         setTimeout(() => {
           setIsPasswordRecovery(false);
           setNewPassword('');
           setConfirmPassword('');
-          setUseMagicLink(false); // Switch to password login
-        }, 2000);
+          setUseMagicLink(false); // Switch to password login for future
+          // Trigger authentication success - user is already logged in with new password
+          console.log('🚀 Calling onAuthenticated to redirect to main app');
+          onAuthenticated();
+        }, 1500);
       }
     } catch (err) {
       console.error('Password update exception:', err);
