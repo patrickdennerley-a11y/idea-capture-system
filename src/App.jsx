@@ -131,48 +131,52 @@ function App() {
 
   // Check authentication status
   useEffect(() => {
+    console.log('🔍 Auth state check:', {
+      user: !!user,
+      authLoading,
+      isSupabaseConfigured: isSupabaseConfigured()
+    });
+
     if (!isSupabaseConfigured()) {
-      // No Supabase, always authenticated (localStorage mode)
+      console.log('📦 No Supabase - using localStorage mode');
       setIsAuthenticated(true);
       return;
     }
 
-    if (!authLoading) {
-      // Check if we're in password recovery mode via URL hash OR localStorage flag
-      // Supabase automatically clears the URL hash after setSession(), so we use
-      // a persistent localStorage flag to prevent premature redirect
-      const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Remove the # from hash
-      const isRecoveryHash = urlParams.get('type') === 'recovery';
-      const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
-      const isPasswordRecovery = isRecoveryHash || isRecoveryPending;
+    // CRITICAL: Don't make ANY decisions until auth finishes loading
+    if (authLoading) {
+      console.log('⏳ Auth still loading - waiting...');
+      return; // Do nothing until authLoading = false
+    }
 
-      if (isPasswordRecovery) {
-        console.log('🔐 Password recovery mode detected - keeping Auth component mounted');
-        if (isRecoveryPending) {
-          console.log('   (detected via localStorage flag - URL hash may have been cleared)');
-        }
-        setIsAuthenticated(false); // Keep Auth component visible for password reset
-      } else {
-        setIsAuthenticated(!!user);
-      }
+    // NOW we know user is correct (loaded from storage if exists)
+    console.log('✅ Auth loaded - user:', !!user);
+
+    // Check if we're in password recovery mode via URL hash OR localStorage flag
+    const urlParams = new URLSearchParams(window.location.hash.substring(1));
+    const isRecoveryHash = urlParams.get('type') === 'recovery';
+    const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
+    const isPasswordRecovery = isRecoveryHash || isRecoveryPending;
+
+    if (isPasswordRecovery) {
+      console.log('🔐 Password recovery mode detected');
+      setIsAuthenticated(false);
+    } else {
+      const shouldBeAuthenticated = !!user;
+      console.log('🎯 Setting isAuthenticated:', shouldBeAuthenticated);
+      setIsAuthenticated(shouldBeAuthenticated);
 
       // Check for migration needs after auth
-      if (user && !isPasswordRecovery) {
+      if (shouldBeAuthenticated && user) {
         const checkMigrationNeeded = async () => {
           const migrationStatus = getMigrationStatus();
 
-          // Only show migration prompt if:
-          // 1. Migration not completed
-          // 2. Local storage has data
-          // 3. Cloud is empty (brand new account or no cloud data)
           if (!migrationStatus?.completed && hasLocalStorageData()) {
             const cloudHasData = await hasCloudData();
 
             if (!cloudHasData) {
-              // Cloud is empty and local has data - show migration prompt
               setShowMigrationPrompt(true);
             } else {
-              // Cloud already has data - mark migration as completed to avoid showing prompt again
               console.log('Cloud already has data, skipping migration prompt');
             }
           }
@@ -300,7 +304,7 @@ function App() {
   const handleSignOut = async () => {
     console.log('🚪 Sign out initiated');
 
-    // CRITICAL: Set false BEFORE async operations for immediate UI feedback
+    // Set false BEFORE async operations for immediate UI feedback
     setIsAuthenticated(false);
 
     try {
@@ -310,10 +314,7 @@ function App() {
       console.error('💥 Sign out exception:', error);
     }
 
-    // NUCLEAR FIX: Clean reload for consistent initialization
-    clearAllAuthState();
-    sessionStorage.setItem('reload_reason', 'sign_out');
-    window.location.href = '/';
+    // No reload needed - state update triggers Auth component to show
   };
 
   // Helper to check if a tab has AI work in progress

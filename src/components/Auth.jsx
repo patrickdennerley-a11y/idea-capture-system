@@ -230,12 +230,9 @@ export default function Auth({ onAuthenticated }) {
           // 1. Check if Supabase already handled it automatically
           const { data: existingSession } = await supabase.auth.getSession();
           if (existingSession?.session) {
-            console.log('✅ Session auto-detected. Redirecting to app...');
+            console.log('✅ Session auto-detected. Calling onAuthenticated()...');
             window.history.replaceState(null, '', window.location.pathname);
-            // NUCLEAR FIX: Clean reload for consistent initialization
-            clearAllAuthState();
-            sessionStorage.setItem('reload_reason', 'magic_link_auto');
-            window.location.href = '/';
+            onAuthenticated();
             return;
           }
 
@@ -254,10 +251,7 @@ export default function Auth({ onAuthenticated }) {
             if (data.session) {
               console.log('✅ Magic link session established manually');
               window.history.replaceState(null, '', window.location.pathname);
-              // NUCLEAR FIX: Clean reload for consistent initialization
-              clearAllAuthState();
-              sessionStorage.setItem('reload_reason', 'magic_link_manual');
-              window.location.href = '/';
+              onAuthenticated();
             } else {
               throw new Error('Session creation failed (no session returned)');
             }
@@ -269,10 +263,7 @@ export default function Auth({ onAuthenticated }) {
 
             console.log('✅ Magic link verified (implicit flow)');
             window.history.replaceState(null, '', window.location.pathname);
-            // NUCLEAR FIX: Clean reload for consistent initialization
-            clearAllAuthState();
-            sessionStorage.setItem('reload_reason', 'magic_link_implicit');
-            window.location.href = '/';
+            onAuthenticated();
           }
         } catch (err) {
           console.error('Magic link failed:', err);
@@ -280,12 +271,9 @@ export default function Auth({ onAuthenticated }) {
           // Fallback check
           const { data: lastCheck } = await supabase.auth.getSession();
           if (lastCheck?.session) {
-            console.log('✅ Session found despite error. Redirecting to app...');
+            console.log('✅ Session found despite error. Calling onAuthenticated()...');
             window.history.replaceState(null, '', window.location.pathname);
-            // NUCLEAR FIX: Clean reload for consistent initialization
-            clearAllAuthState();
-            sessionStorage.setItem('reload_reason', 'magic_link_fallback');
-            window.location.href = '/';
+            onAuthenticated();
           } else {
             setError('Failed to log in with magic link. Please try requesting a new one.');
             window.history.replaceState(null, '', window.location.pathname);
@@ -386,12 +374,13 @@ export default function Auth({ onAuthenticated }) {
         console.log('✅ Password updated successfully');
         setMessage('Password updated successfully! Redirecting...');
 
-        // NUCLEAR FIX: Clean reload for consistent initialization
+        // Clear recovery flag and redirect to app
+        localStorage.removeItem('neural_recovery_pending');
+        window.history.replaceState(null, '', window.location.pathname);
+
         setTimeout(() => {
-          clearAllAuthState();
-          sessionStorage.setItem('reload_reason', 'password_reset');
-          console.log('🔄 Redirecting to app with clean state');
-          window.location.href = '/';
+          console.log('🎯 Calling onAuthenticated() - password reset complete');
+          onAuthenticated();
         }, 1000);
       }
     } catch (err) {
@@ -515,7 +504,7 @@ export default function Auth({ onAuthenticated }) {
         console.log('🧹 Cleared neural_recovery_pending flag before reload');
 
         // CRITICAL: Actively wait for session to be persisted (poll with verification)
-        // Don't use arbitrary timeout - verify the session actually exists in storage
+        // Then call onAuthenticated() to let AuthContext update naturally
         const waitForSessionPersistence = async () => {
           let attempts = 0;
           const maxAttempts = 20; // 2 seconds max wait (20 × 100ms)
@@ -533,11 +522,11 @@ export default function Auth({ onAuthenticated }) {
               // Extra safety buffer for any async localStorage/IndexedDB writes
               await new Promise(resolve => setTimeout(resolve, 200));
 
-              // NUCLEAR FIX: Clean reload for consistent initialization
-              console.log('🔄 Redirecting to app with clean state');
-              clearAllAuthState();
-              sessionStorage.setItem('reload_reason', 'password_login');
-              window.location.href = '/';
+              // THE FIX: Call onAuthenticated() instead of reloading
+              // This lets AuthContext update user naturally, and App re-renders
+              // with user ALREADY loaded, so useSupabase hooks see it immediately
+              console.log('🎯 Calling onAuthenticated() - NO RELOAD');
+              onAuthenticated();
               return;
             }
 
@@ -546,11 +535,9 @@ export default function Auth({ onAuthenticated }) {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
 
-          // Fallback: reload anyway after 2 seconds to prevent hanging
-          console.warn('⚠️ Session verification timeout - reloading anyway');
-          clearAllAuthState();
-          sessionStorage.setItem('reload_reason', 'password_login_timeout');
-          window.location.href = '/';
+          // Fallback: call onAuthenticated() anyway after timeout
+          console.warn('⚠️ Session verification timeout - calling onAuthenticated() anyway');
+          onAuthenticated();
         };
 
         waitForSessionPersistence();
@@ -574,12 +561,7 @@ export default function Auth({ onAuthenticated }) {
               Supabase is not configured. Running in localStorage-only mode.
             </p>
             <button
-              onClick={() => {
-                // NUCLEAR FIX: Even localStorage-only mode gets clean reload
-                clearAllAuthState();
-                sessionStorage.setItem('reload_reason', 'localhost_only');
-                window.location.href = '/';
-              }}
+              onClick={onAuthenticated}
               className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors font-medium"
             >
               Continue with Local Storage
