@@ -335,6 +335,7 @@ export default function Auth({ onAuthenticated }) {
       if (result.error) {
         console.error('Password update failed:', result.error);
         setError(result.error.message);
+        setLoading(false);
       } else {
         console.log('✅ Password updated successfully');
         setMessage('Password updated successfully! Redirecting...');
@@ -345,22 +346,16 @@ export default function Auth({ onAuthenticated }) {
         window.history.replaceState(null, '', window.location.pathname);
         console.log('🧹 URL hash and recovery flag cleared after successful password update');
 
-        // Exit recovery mode and redirect after short delay
+        // CRITICAL FIX: Force reload to ensure App hooks initialize with new session
+        // instead of calling onAuthenticated() which keeps stale hooks
         setTimeout(() => {
-          setIsPasswordRecovery(false);
-          setNewPassword('');
-          setConfirmPassword('');
-          setUseMagicLink(false); // Switch to password login for future
-          // Trigger authentication success - user is already logged in with new password
-          console.log('🚀 Calling onAuthenticated to redirect to main app');
-          onAuthenticated();
-        }, 1500);
+          console.log('🔄 Reloading page to initialize App with authenticated session');
+          window.location.reload();
+        }, 1000);
       }
     } catch (err) {
       console.error('Password update exception:', err);
       setError(err.message || 'Failed to update password. Please try again.');
-    } finally {
-      console.log('Password update complete, setting loading to false');
       setLoading(false);
     }
   };
@@ -370,6 +365,8 @@ export default function Auth({ onAuthenticated }) {
     setLoading(true);
     setMessage('');
     setError('');
+
+    let shouldReload = false;
 
     try {
       let result;
@@ -411,12 +408,11 @@ export default function Auth({ onAuthenticated }) {
             setMessage('Account created! Check your email to confirm. 📧');
           } else {
             // New user, no email confirmation required (or already logged in)
-            setMessage('Account created successfully!');
-            // Ensure we redirect after signup if session is established
+            setMessage('Account created successfully! Loading your data...');
+            // Ensure we reload after signup if session is established
             if (result.data?.session) {
               console.log('✅ Signup auto-login');
-              // Small delay to ensure AuthContext updates the user object
-              setTimeout(() => onAuthenticated(), 100);
+              shouldReload = true;
             }
           }
         }
@@ -424,16 +420,10 @@ export default function Auth({ onAuthenticated }) {
         // Sign in with password
         result = await signIn(email, password);
         if (!result.error) {
-          setMessage('Signed in successfully!');
+          setMessage('Signed in successfully! Loading your data...');
           console.log('✅ Password login success');
-
-          // CRITICAL FIX: Small delay to ensure AuthContext updates the user object
-          // before we render the main App. Without this, Sync/SignOut will break
-          // because App renders with user=null.
-          setTimeout(() => {
-            console.log('🚀 Triggering Authenticated State...');
-            onAuthenticated();
-          }, 100);
+          // CRITICAL FIX: Mark for reload to initialize sync hooks correctly
+          shouldReload = true;
         }
       }
 
@@ -467,7 +457,13 @@ export default function Auth({ onAuthenticated }) {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      // CRITICAL FIX: If we need to reload (login success), do it now and skip setting loading state
+      if (shouldReload) {
+        console.log('✅ Authentication successful - Reloading to initialize App hooks');
+        window.location.reload();
+      } else {
+        setLoading(false);
+      }
     }
   };
 
