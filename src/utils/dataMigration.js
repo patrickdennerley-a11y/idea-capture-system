@@ -64,6 +64,49 @@ export const hasLocalStorageData = () => {
 };
 
 /**
+ * Check if user already has data in the cloud (Supabase)
+ * Returns true if ANY table has data for the current user
+ */
+export const hasCloudData = async () => {
+  if (!isSupabaseConfigured()) {
+    return false;
+  }
+
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return false;
+    }
+
+    // Check each table for existing data
+    const tables = ['ideas', 'logs', 'reviews'];
+
+    for (const table of tables) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (error) {
+        console.error(`Error checking ${table}:`, error);
+        continue;
+      }
+
+      // If we found any data in any table, cloud has data
+      if (data && data.length > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error checking cloud data:', error);
+    return false;
+  }
+};
+
+/**
  * Get data from localStorage
  */
 const getLocalData = (key) => {
