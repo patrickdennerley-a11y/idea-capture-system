@@ -59,23 +59,32 @@ export default function Auth({ onAuthenticated }) {
       console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
-      // Explicitly verify the recovery OTP to establish the session
+      // Explicitly process the recovery tokens to establish the session
       const processRecoveryToken = async () => {
         try {
-          // Get the refresh token from the URL as well
+          console.log('Processing recovery tokens with Supabase...');
+
+          // Get the refresh token from the URL
           const refreshToken = hashParams.get('refresh_token');
 
-          console.log('Verifying recovery tokens with Supabase...');
+          if (!refreshToken) {
+            console.error('No refresh_token found in URL');
+            setError('Invalid recovery link format. Please request a new password reset.');
+            setSessionLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+            return;
+          }
 
-          // Verify the OTP token for password recovery
-          const { data, error } = await supabase.auth.verifyOtp({
-            token_hash: accessToken,
-            type: 'recovery'
+          // Explicitly set the session using the tokens from the URL
+          // This is more reliable than waiting for auto-detection
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
           });
 
           if (error) {
-            console.error('Failed to verify recovery token:', error);
-            setError('Invalid or expired recovery link. Please request a new password reset.');
+            console.error('Failed to set session from recovery tokens:', error);
+            setError(`Invalid or expired recovery link: ${error.message}`);
             setSessionLoading(false);
             // Clean up URL
             window.history.replaceState(null, '', window.location.pathname);
@@ -84,19 +93,20 @@ export default function Auth({ onAuthenticated }) {
 
           if (data.session) {
             console.log('✅ Recovery session established successfully');
+            console.log('Session user:', data.session.user.email);
             setSessionLoading(false);
             setIsPasswordRecovery(true);
             // Clean up URL after successful verification
             window.history.replaceState(null, '', window.location.pathname);
           } else {
-            console.error('No session returned after OTP verification');
+            console.error('No session returned after setSession');
             setError('Could not establish session. Please request a new password reset link.');
             setSessionLoading(false);
             window.history.replaceState(null, '', window.location.pathname);
           }
         } catch (err) {
           console.error('Error processing recovery token:', err);
-          setError('An error occurred. Please request a new password reset link.');
+          setError(`An error occurred: ${err.message}`);
           setSessionLoading(false);
           window.history.replaceState(null, '', window.location.pathname);
         }
