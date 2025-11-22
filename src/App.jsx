@@ -1,5 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useSupabase } from './hooks/useSupabase';
+import { useAuth } from './contexts/AuthContext';
+import { isSupabaseConfigured } from './utils/supabaseClient';
+import { migrateAllData, hasLocalStorageData, getMigrationStatus } from './utils/dataMigration';
+import { processQueue, getSyncStatus, hasPendingOperations } from './utils/offlineQueue';
+import Auth from './components/Auth';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
 import QuickLogger from './components/QuickLogger';
@@ -18,6 +24,11 @@ import {
   X,
   Compass,
   Calendar,
+  LogOut,
+  Cloud,
+  CloudOff,
+  Upload,
+  RefreshCw,
 } from 'lucide-react';
 import { getTodayString } from './utils/dateUtils';
 
@@ -32,18 +43,35 @@ const TABS = [
 ];
 
 function App() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('capture');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  // State with localStorage persistence
-  const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
-  const [logs, setLogs] = useLocalStorage('neural-logs', []);
-  const [reviews, setReviews] = useLocalStorage('neural-reviews', []);
+  // Migration state
+  const [showMigrationPrompt, setShowMigrationPrompt] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationComplete, setMigrationComplete] = useState(false);
+  const [migrationError, setMigrationError] = useState(null);
+
+  // Sync state
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingOps, setPendingOps] = useState(0);
+
+  // State with cloud sync via Supabase (fallback to localStorage when offline or not authenticated)
+  const [ideas, setIdeas, ideasMeta] = useSupabase('ideas', 'neural-ideas', []);
+  const [logs, setLogs, logsMeta] = useSupabase('logs', 'neural-logs', []);
+  const [reviews, setReviews, reviewsMeta] = useSupabase('reviews', 'neural-reviews', []);
+
+  // Checklist stays as localStorage for now (different structure than Supabase schema)
+  // TODO: Migrate checklist to use checklist_items table with proper transform
   const [checklist, setChecklist] = useLocalStorage('neural-checklist', {
     date: getTodayString(),
     items: [],
   });
+
   const [iconTheme, setIconTheme] = useLocalStorage('neural-icon-theme', DEFAULT_THEME);
 
   // Routine generation state (persists across tab switches)
@@ -82,6 +110,56 @@ function App() {
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
 
+  // Check authentication status
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      // No Supabase, always authenticated (localStorage mode)
+      setIsAuthenticated(true);
+      return;
+    }
+
+    if (!authLoading) {
+      setIsAuthenticated(!!user);
+
+      // Check for migration needs after auth
+      if (user) {
+        const migrationStatus = getMigrationStatus();
+        if (!migrationStatus?.completed && hasLocalStorageData()) {
+          setShowMigrationPrompt(true);
+        }
+      }
+    }
+  }, [user, authLoading]);
+
+  // Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = async () => {
+      setIsOnline(true);
+      // Auto-sync when coming back online
+      if (hasPendingOperations()) {
+        await handleSync();
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Update pending ops count
+    const interval = setInterval(() => {
+      setPendingOps(hasPendingOperations() ? getSyncStatus().pending : 0);
+    }, 5000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Initialize audio context once at app level (never destroyed)
   useEffect(() => {
     if (!audioContextRef.current && typeof window !== 'undefined') {
@@ -106,6 +184,49 @@ function App() {
       console.log('🔊 Audio context cleanup skipped (preserving for tab switches)');
     };
   }, []);
+
+  // Migration handler
+  const handleMigration = async () => {
+    setIsMigrating(true);
+    setMigrationError(null);
+
+    const result = await migrateAllData();
+
+    if (result.success) {
+      setMigrationComplete(true);
+      setTimeout(() => {
+        setShowMigrationPrompt(false);
+        setMigrationComplete(false);
+      }, 3000);
+    } else {
+      setMigrationError(result.error || 'Migration failed');
+    }
+
+    setIsMigrating(false);
+  };
+
+  // Sync handler
+  const handleSync = async () => {
+    if (!isOnline || isSyncing) return;
+
+    setIsSyncing(true);
+
+    const result = await processQueue((progress) => {
+      console.log(`Syncing: ${progress.current}/${progress.total}`);
+    });
+
+    if (result.success) {
+      setPendingOps(0);
+    }
+
+    setIsSyncing(false);
+  };
+
+  // Sign out handler
+  const handleSignOut = async () => {
+    await signOut();
+    setIsAuthenticated(false);
+  };
 
   // Helper to check if a tab has AI work in progress
   const isTabProcessing = (tabId) => {
@@ -258,8 +379,78 @@ function App() {
     setActiveSession,
   ]);
 
+  // Show auth screen if not authenticated
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-neural-darker flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🧠</div>
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Auth onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-neural-darker">
+      {/* Migration Prompt Modal */}
+      {showMigrationPrompt && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-neural-dark rounded-2xl shadow-xl p-6 max-w-md w-full border border-gray-800">
+            <div className="text-center mb-6">
+              <Upload className="w-16 h-16 mx-auto text-neural-purple mb-4" />
+              <h2 className="text-2xl font-bold text-white mb-2">
+                Migrate Your Data to Cloud
+              </h2>
+              <p className="text-gray-400">
+                We found {ideas.length + logs.length + (checklist.items?.length || 0) + reviews.length} items in your local storage.
+                Would you like to sync them to the cloud?
+              </p>
+            </div>
+
+            {migrationComplete && (
+              <div className="mb-4 p-4 bg-green-900 bg-opacity-30 border border-green-700 rounded-lg text-green-400 text-sm">
+                ✓ Migration completed successfully!
+              </div>
+            )}
+
+            {migrationError && (
+              <div className="mb-4 p-4 bg-red-900 bg-opacity-30 border border-red-700 rounded-lg text-red-400 text-sm">
+                {migrationError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowMigrationPrompt(false)}
+                disabled={isMigrating}
+                className="flex-1 px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                Skip for Now
+              </button>
+              <button
+                onClick={handleMigration}
+                disabled={isMigrating}
+                className="flex-1 px-4 py-2 bg-neural-purple text-white rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isMigrating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Migrating...
+                  </>
+                ) : (
+                  'Migrate Now'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-neural-dark border-b border-gray-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -319,6 +510,41 @@ function App() {
                   </button>
                 );
               })}
+
+              {/* Sync Status & Actions */}
+              {isSupabaseConfigured() && user && (
+                <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-700">
+                  {/* Sync Status */}
+                  <button
+                    onClick={handleSync}
+                    disabled={!isOnline || isSyncing}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={isOnline ? 'Sync now' : 'Offline'}
+                  >
+                    {isSyncing ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : isOnline ? (
+                      <Cloud className="w-4 h-4" />
+                    ) : (
+                      <CloudOff className="w-4 h-4" />
+                    )}
+                    {pendingOps > 0 && (
+                      <span className="text-xs bg-neural-purple rounded-full px-2 py-0.5">
+                        {pendingOps}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Sign Out */}
+                  <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </nav>
 
             {/* Mobile Menu Button */}
@@ -379,9 +605,20 @@ function App() {
               Built for an ADHD brain that generates ideas faster than it can execute them.
             </p>
             <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span>v0.1.0 MVP</span>
+              <span>v0.2.0</span>
               <span>•</span>
-              <span>Data stored locally</span>
+              <span className="flex items-center gap-1">
+                {isSupabaseConfigured() && user ? (
+                  <>
+                    <Cloud className="w-3 h-3" />
+                    <span>Cloud sync enabled</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Local storage only</span>
+                  </>
+                )}
+              </span>
               <span className="hidden sm:inline">•</span>
               <span className="hidden sm:inline">
                 {ideas.length} ideas • {logs.length} logs
@@ -390,7 +627,15 @@ function App() {
           </div>
           <div className="mt-4 p-3 bg-neural-darker rounded-lg border border-gray-800">
             <p className="text-xs text-gray-500 text-center">
-              💡 <strong>Next Phase:</strong> Connect Claude API for AI organization, pattern analysis, and personalized suggestions
+              {isSupabaseConfigured() && user ? (
+                <>
+                  ✨ <strong>Cloud Sync Active:</strong> Your data syncs across all devices. Works offline!
+                </>
+              ) : (
+                <>
+                  💡 <strong>Pro Tip:</strong> Set up Supabase for cloud sync across devices
+                </>
+              )}
             </p>
           </div>
         </div>
