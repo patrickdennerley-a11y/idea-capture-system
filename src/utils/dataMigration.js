@@ -85,7 +85,7 @@ const migrateIdeas = async (userId) => {
 
   try {
     const dataToInsert = ideas.map(idea => ({
-      id: idea.id,
+      // Don't include id - let Supabase generate new UUIDs
       user_id: userId,
       content: idea.content,
       tags: idea.tags || [],
@@ -102,14 +102,14 @@ const migrateIdeas = async (userId) => {
 
     const { error } = await supabase
       .from(TABLE_NAMES.ideas)
-      .upsert(dataToInsert, { onConflict: 'id' });
+      .insert(dataToInsert);
 
     if (error) throw error;
 
     return { success: true, count: ideas.length };
   } catch (error) {
     console.error('Error migrating ideas:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, details: error };
   }
 };
 
@@ -122,7 +122,7 @@ const migrateLogs = async (userId) => {
 
   try {
     const dataToInsert = logs.map(log => ({
-      id: log.id,
+      // Don't include id - let Supabase generate new UUIDs
       user_id: userId,
       timestamp: log.timestamp,
       activity: log.activity,
@@ -136,14 +136,14 @@ const migrateLogs = async (userId) => {
 
     const { error } = await supabase
       .from(TABLE_NAMES.logs)
-      .upsert(dataToInsert, { onConflict: 'id' });
+      .insert(dataToInsert);
 
     if (error) throw error;
 
     return { success: true, count: logs.length };
   } catch (error) {
     console.error('Error migrating logs:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, details: error };
   }
 };
 
@@ -156,7 +156,7 @@ const migrateChecklist = async (userId) => {
 
   try {
     const dataToInsert = checklist.items.map(item => ({
-      id: item.id,
+      // Don't include id - let Supabase generate new UUIDs
       user_id: userId,
       text: item.text,
       completed: item.completed || false,
@@ -169,14 +169,14 @@ const migrateChecklist = async (userId) => {
 
     const { error } = await supabase
       .from(TABLE_NAMES.checklist)
-      .upsert(dataToInsert, { onConflict: 'id' });
+      .insert(dataToInsert);
 
     if (error) throw error;
 
     return { success: true, count: checklist.items.length };
   } catch (error) {
     console.error('Error migrating checklist:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, details: error };
   }
 };
 
@@ -189,7 +189,7 @@ const migrateReviews = async (userId) => {
 
   try {
     const dataToInsert = reviews.map(review => ({
-      id: review.id,
+      // Don't include id - let Supabase generate new UUIDs
       user_id: userId,
       date: review.date,
       achievements: review.achievements || null,
@@ -204,14 +204,14 @@ const migrateReviews = async (userId) => {
 
     const { error } = await supabase
       .from(TABLE_NAMES.reviews)
-      .upsert(dataToInsert, { onConflict: 'id' });
+      .insert(dataToInsert);
 
     if (error) throw error;
 
     return { success: true, count: reviews.length };
   } catch (error) {
     console.error('Error migrating reviews:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, details: error };
   }
 };
 
@@ -224,7 +224,7 @@ const migrateRoutines = async (userId) => {
 
   try {
     const dataToInsert = routines.map(routine => ({
-      id: routine.id,
+      // Don't include id - let Supabase generate new UUIDs
       user_id: userId,
       title: routine.title || routine.name || 'Untitled Routine',
       description: routine.description || null,
@@ -239,14 +239,14 @@ const migrateRoutines = async (userId) => {
 
     const { error } = await supabase
       .from(TABLE_NAMES.routines)
-      .upsert(dataToInsert, { onConflict: 'id' });
+      .insert(dataToInsert);
 
     if (error) throw error;
 
     return { success: true, count: routines.length };
   } catch (error) {
     console.error('Error migrating routines:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, details: error };
   }
 };
 
@@ -312,10 +312,18 @@ export const migrateAllData = async () => {
         totalItems: totalMigrated
       };
     } else {
+      // Find which migrations failed
+      const failedMigrations = Object.entries(results)
+        .filter(([_, result]) => !result.success)
+        .map(([name, result]) => `${name}: ${result.error}`);
+
+      const errorMessage = `Migration failed for: ${failedMigrations.join(', ')}`;
+      console.error(errorMessage, results);
+
       return {
         success: false,
         results,
-        error: 'Some migrations failed'
+        error: errorMessage
       };
     }
   } catch (error) {
