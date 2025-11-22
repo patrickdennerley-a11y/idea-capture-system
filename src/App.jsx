@@ -119,10 +119,20 @@ function App() {
     }
 
     if (!authLoading) {
-      setIsAuthenticated(!!user);
+      // Check if we're in password recovery mode (type=recovery in URL)
+      // Don't set authenticated if in recovery mode - need to show password reset form first
+      const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Remove the # from hash
+      const isPasswordRecovery = urlParams.get('type') === 'recovery';
+
+      if (isPasswordRecovery) {
+        console.log('🔐 Password recovery mode - keeping Auth component mounted');
+        setIsAuthenticated(false); // Keep Auth component visible for password reset
+      } else {
+        setIsAuthenticated(!!user);
+      }
 
       // Check for migration needs after auth
-      if (user) {
+      if (user && !isPasswordRecovery) {
         const checkMigrationNeeded = async () => {
           const migrationStatus = getMigrationStatus();
 

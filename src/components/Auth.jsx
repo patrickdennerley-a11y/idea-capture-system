@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSupabaseConfigured, supabase } from '../utils/supabaseClient';
 
@@ -15,6 +15,9 @@ export default function Auth({ onAuthenticated }) {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  // Use a ref to prevent double-processing in React StrictMode
+  const processingRef = useRef(false);
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
@@ -52,39 +55,83 @@ export default function Auth({ onAuthenticated }) {
       return;
     }
 
-    // Check for password recovery (but don't return - let Supabase process the tokens)
+    // Check for password recovery
     // Recovery links have BOTH type=recovery AND access_token
-    // Supabase needs to establish the session before password can be updated
+    // We need to explicitly set the session to establish it reliably
     if (type === 'recovery' && accessToken) {
-      console.log('Password recovery mode detected - waiting for session to establish...');
+      // PREVENT DOUBLE PROCESSING (React StrictMode runs effects twice)
+      if (processingRef.current) {
+        console.log('Already processing recovery token, skipping duplicate');
+        return;
+      }
+      processingRef.current = true;
+
+      console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
-      // Wait for Supabase to establish the session before showing the password form
-      let sessionCheckCount = 0;
-      const maxChecks = 10; // 5 seconds max (10 checks * 500ms)
+      // Explicitly process the recovery tokens to establish the session
+      const processRecoveryToken = async () => {
+        try {
+          console.log('Processing recovery tokens with Supabase...');
 
-      const checkSession = setInterval(async () => {
-        sessionCheckCount++;
-        console.log(`Checking for session... (attempt ${sessionCheckCount}/${maxChecks})`);
+          // Get the refresh token from the URL
+          const refreshToken = hashParams.get('refresh_token');
 
-        const { data: { session } } = await supabase.auth.getSession();
+          if (!refreshToken) {
+            console.error('No refresh_token found in URL');
+            setError('Invalid recovery link format. Please request a new password reset.');
+            setSessionLoading(false);
+            // Clean up URL only on error
+            window.history.replaceState(null, '', window.location.pathname);
+            return;
+          }
 
-        if (session) {
-          console.log('✅ Session established for password recovery');
-          clearInterval(checkSession);
+          // Explicitly set the session using the tokens from the URL
+          // This is more reliable than waiting for auto-detection
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (error) {
+            console.error('Failed to set session from recovery tokens:', error);
+            setError(`Invalid or expired recovery link: ${error.message}`);
+            setSessionLoading(false);
+            // Clean up URL only on error
+            window.history.replaceState(null, '', window.location.pathname);
+            return;
+          }
+
+          if (data.session) {
+            console.log('✅ Recovery session established successfully');
+            console.log('Session user:', data.session.user.email);
+            setSessionLoading(false);
+            setIsPasswordRecovery(true);
+
+            // CRITICAL FIX: Do NOT clear the URL hash here!
+            // App.jsx needs the type=recovery hash to keep this component mounted
+            // We'll clear it AFTER the password is successfully updated
+            console.log('⚠️ Keeping URL hash to prevent premature redirect');
+          } else {
+            console.error('No session returned after setSession');
+            setError('Could not establish session. Please request a new password reset link.');
+            setSessionLoading(false);
+            // Clean up URL only on error
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        } catch (err) {
+          console.error('Error processing recovery token:', err);
+          setError(`An error occurred: ${err.message}`);
           setSessionLoading(false);
-          setIsPasswordRecovery(true);
-        } else if (sessionCheckCount >= maxChecks) {
-          console.error('Session timeout - could not establish session');
-          clearInterval(checkSession);
-          setSessionLoading(false);
-          setError('Session could not be established. Please request a new password reset link.');
-          // Clean up URL
+          // Clean up URL only on error
           window.history.replaceState(null, '', window.location.pathname);
         }
-      }, 500);
+      };
 
-      // Don't return - let the interval handle the session check
+      processRecoveryToken();
+
+      // Don't process the rest of the auth flow
+      return;
     } else if (accessToken && type !== 'recovery') {
       // If we have an access token but it's not recovery (e.g., magic link),
       // Supabase will handle it via detectSessionInUrl
@@ -156,16 +203,23 @@ export default function Auth({ onAuthenticated }) {
         setError(result.error.message);
       } else {
         console.log('✅ Password updated successfully');
-        setMessage('Password updated successfully! You can now sign in with your new password.');
-        // Clear the hash from URL
+        setMessage('Password updated successfully! Redirecting...');
+
+        // CRITICAL: Clear the URL hash FIRST, before calling onAuthenticated
+        // This allows App.jsx to see no type=recovery and proceed with normal auth flow
         window.history.replaceState(null, '', window.location.pathname);
-        // Exit recovery mode after short delay
+        console.log('🧹 URL hash cleared after successful password update');
+
+        // Exit recovery mode and redirect after short delay
         setTimeout(() => {
           setIsPasswordRecovery(false);
           setNewPassword('');
           setConfirmPassword('');
-          setUseMagicLink(false); // Switch to password login
-        }, 2000);
+          setUseMagicLink(false); // Switch to password login for future
+          // Trigger authentication success - user is already logged in with new password
+          console.log('🚀 Calling onAuthenticated to redirect to main app');
+          onAuthenticated();
+        }, 1500);
       }
     } catch (err) {
       console.error('Password update exception:', err);
