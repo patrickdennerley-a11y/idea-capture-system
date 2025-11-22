@@ -17,14 +17,54 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
-  // Check if URL contains password recovery token
+  // Check if URL contains password recovery token or errors
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const type = hashParams.get('type');
+    const hash = window.location.hash.substring(1);
+    if (!hash) return;
 
+    const hashParams = new URLSearchParams(hash);
+    const type = hashParams.get('type');
+    const errorDescription = hashParams.get('error_description');
+    const errorCode = hashParams.get('error_code');
+    const accessToken = hashParams.get('access_token');
+
+    console.log('Auth URL hash detected:', {
+      type,
+      hasAccessToken: !!accessToken,
+      errorDescription,
+      errorCode
+    });
+
+    // Handle OTP errors immediately (don't wait for timeout)
+    if (errorDescription || errorCode) {
+      console.error('Auth error from URL:', { errorDescription, errorCode });
+
+      // Show appropriate error message
+      if (errorDescription?.includes('expired') || errorDescription?.includes('Token')) {
+        setError('Your login link has expired. Please request a new one.');
+      } else {
+        setError(errorDescription || 'Authentication failed. Please try again.');
+      }
+
+      // Clean up URL immediately
+      window.history.replaceState(null, '', window.location.pathname);
+      return;
+    }
+
+    // Check for password recovery (but don't return - let Supabase process the tokens)
+    // Recovery links have BOTH type=recovery AND access_token
+    // Supabase needs to establish the session before password can be updated
     if (type === 'recovery') {
-      console.log('Password recovery mode detected');
+      console.log('Password recovery mode detected - waiting for session to establish');
       setIsPasswordRecovery(true);
+      // Don't return - let Supabase process the access_token below
+    }
+
+    // If we have an access token, Supabase will handle it via detectSessionInUrl
+    // This includes both magic links AND recovery links
+    if (accessToken) {
+      console.log('Access token detected in URL - Supabase will process it');
+      // Supabase's detectSessionInUrl will automatically establish the session
     }
   }, []);
 
@@ -55,6 +95,8 @@ export default function Auth({ onAuthenticated }) {
     setMessage('');
     setError('');
 
+    console.log('🔐 Starting password update...');
+
     // Validate passwords match
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
@@ -70,10 +112,15 @@ export default function Auth({ onAuthenticated }) {
     }
 
     try {
+      console.log('Calling updatePassword...');
       const result = await updatePassword(newPassword);
+      console.log('updatePassword result:', { error: result.error, success: !result.error });
+
       if (result.error) {
+        console.error('Password update failed:', result.error);
         setError(result.error.message);
       } else {
+        console.log('✅ Password updated successfully');
         setMessage('Password updated successfully! You can now sign in with your new password.');
         // Clear the hash from URL
         window.history.replaceState(null, '', window.location.pathname);
@@ -86,8 +133,10 @@ export default function Auth({ onAuthenticated }) {
         }, 2000);
       }
     } catch (err) {
-      setError(err.message);
+      console.error('Password update exception:', err);
+      setError(err.message || 'Failed to update password. Please try again.');
     } finally {
+      console.log('Password update complete, setting loading to false');
       setLoading(false);
     }
   };

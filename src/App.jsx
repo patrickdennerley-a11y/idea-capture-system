@@ -3,7 +3,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabase } from './hooks/useSupabase';
 import { useAuth } from './contexts/AuthContext';
 import { isSupabaseConfigured } from './utils/supabaseClient';
-import { migrateAllData, hasLocalStorageData, getMigrationStatus } from './utils/dataMigration';
+import { migrateAllData, hasLocalStorageData, hasCloudData, getMigrationStatus } from './utils/dataMigration';
 import { processQueue, getSyncStatus, hasPendingOperations } from './utils/offlineQueue';
 import Auth from './components/Auth';
 import IdeaCapture from './components/IdeaCapture';
@@ -123,10 +123,27 @@ function App() {
 
       // Check for migration needs after auth
       if (user) {
-        const migrationStatus = getMigrationStatus();
-        if (!migrationStatus?.completed && hasLocalStorageData()) {
-          setShowMigrationPrompt(true);
-        }
+        const checkMigrationNeeded = async () => {
+          const migrationStatus = getMigrationStatus();
+
+          // Only show migration prompt if:
+          // 1. Migration not completed
+          // 2. Local storage has data
+          // 3. Cloud is empty (brand new account or no cloud data)
+          if (!migrationStatus?.completed && hasLocalStorageData()) {
+            const cloudHasData = await hasCloudData();
+
+            if (!cloudHasData) {
+              // Cloud is empty and local has data - show migration prompt
+              setShowMigrationPrompt(true);
+            } else {
+              // Cloud already has data - mark migration as completed to avoid showing prompt again
+              console.log('Cloud already has data, skipping migration prompt');
+            }
+          }
+        };
+
+        checkMigrationNeeded();
       }
     }
   }, [user, authLoading]);
