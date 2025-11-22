@@ -52,39 +52,60 @@ export default function Auth({ onAuthenticated }) {
       return;
     }
 
-    // Check for password recovery (but don't return - let Supabase process the tokens)
+    // Check for password recovery
     // Recovery links have BOTH type=recovery AND access_token
-    // Supabase needs to establish the session before password can be updated
+    // We need to explicitly verify the OTP to establish the session
     if (type === 'recovery' && accessToken) {
-      console.log('Password recovery mode detected - waiting for session to establish...');
+      console.log('Password recovery mode detected - processing tokens...');
       setSessionLoading(true);
 
-      // Wait for Supabase to establish the session before showing the password form
-      let sessionCheckCount = 0;
-      const maxChecks = 10; // 5 seconds max (10 checks * 500ms)
+      // Explicitly verify the recovery OTP to establish the session
+      const processRecoveryToken = async () => {
+        try {
+          // Get the refresh token from the URL as well
+          const refreshToken = hashParams.get('refresh_token');
 
-      const checkSession = setInterval(async () => {
-        sessionCheckCount++;
-        console.log(`Checking for session... (attempt ${sessionCheckCount}/${maxChecks})`);
+          console.log('Verifying recovery tokens with Supabase...');
 
-        const { data: { session } } = await supabase.auth.getSession();
+          // Verify the OTP token for password recovery
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: accessToken,
+            type: 'recovery'
+          });
 
-        if (session) {
-          console.log('✅ Session established for password recovery');
-          clearInterval(checkSession);
+          if (error) {
+            console.error('Failed to verify recovery token:', error);
+            setError('Invalid or expired recovery link. Please request a new password reset.');
+            setSessionLoading(false);
+            // Clean up URL
+            window.history.replaceState(null, '', window.location.pathname);
+            return;
+          }
+
+          if (data.session) {
+            console.log('✅ Recovery session established successfully');
+            setSessionLoading(false);
+            setIsPasswordRecovery(true);
+            // Clean up URL after successful verification
+            window.history.replaceState(null, '', window.location.pathname);
+          } else {
+            console.error('No session returned after OTP verification');
+            setError('Could not establish session. Please request a new password reset link.');
+            setSessionLoading(false);
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        } catch (err) {
+          console.error('Error processing recovery token:', err);
+          setError('An error occurred. Please request a new password reset link.');
           setSessionLoading(false);
-          setIsPasswordRecovery(true);
-        } else if (sessionCheckCount >= maxChecks) {
-          console.error('Session timeout - could not establish session');
-          clearInterval(checkSession);
-          setSessionLoading(false);
-          setError('Session could not be established. Please request a new password reset link.');
-          // Clean up URL
           window.history.replaceState(null, '', window.location.pathname);
         }
-      }, 500);
+      };
 
-      // Don't return - let the interval handle the session check
+      processRecoveryToken();
+
+      // Don't process the rest of the auth flow
+      return;
     } else if (accessToken && type !== 'recovery') {
       // If we have an access token but it's not recovery (e.g., magic link),
       // Supabase will handle it via detectSessionInUrl
