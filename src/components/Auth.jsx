@@ -1,18 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSupabaseConfigured } from '../utils/supabaseClient';
 
 export default function Auth({ onAuthenticated }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [useMagicLink, setUseMagicLink] = useState(true); // Default to magic link for ADHD-friendly UX
   const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail } = useAuth();
+  const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
+
+  // Check if URL contains password recovery token
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+
+    if (type === 'recovery') {
+      console.log('Password recovery mode detected');
+      setIsPasswordRecovery(true);
+    }
+  }, []);
 
   const handlePasswordReset = async (e) => {
     e.preventDefault();
@@ -27,6 +41,49 @@ export default function Auth({ onAuthenticated }) {
       } else {
         setMessage('Check your email for the password setup link! 📧');
         setShowPasswordReset(false);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+    setError('');
+
+    // Validate passwords match
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    // Validate password length
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const result = await updatePassword(newPassword);
+      if (result.error) {
+        setError(result.error.message);
+      } else {
+        setMessage('Password updated successfully! You can now sign in with your new password.');
+        // Clear the hash from URL
+        window.history.replaceState(null, '', window.location.pathname);
+        // Exit recovery mode after short delay
+        setTimeout(() => {
+          setIsPasswordRecovery(false);
+          setNewPassword('');
+          setConfirmPassword('');
+          setUseMagicLink(false); // Switch to password login
+        }, 2000);
       }
     } catch (err) {
       setError(err.message);
@@ -160,7 +217,75 @@ export default function Auth({ onAuthenticated }) {
           <p className="text-gray-600">Your Personal Life OS for ADHD</p>
         </div>
 
-        {showPasswordReset ? (
+        {isPasswordRecovery ? (
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Enter your new password below.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                New Password
+              </label>
+              <input
+                id="newPassword"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                Confirm Password
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {message && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm">
+                {message}
+              </div>
+            )}
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-indigo-600 text-white py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Loading...
+                </span>
+              ) : (
+                '🔐 Update Password'
+              )}
+            </button>
+          </form>
+        ) : showPasswordReset ? (
           <form onSubmit={handlePasswordReset} className="space-y-4">
             <div className="mb-4">
               <p className="text-sm text-gray-600">
