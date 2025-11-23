@@ -220,6 +220,9 @@ export default function Auth({ onAuthenticated }) {
 
       const processMagicLink = async () => {
         try {
+          // Clear any recovery flags for magic links
+          localStorage.removeItem('neural_recovery_pending');
+
           const refreshToken = hashParams.get('refresh_token');
 
           // 1. Check if Supabase already handled it automatically

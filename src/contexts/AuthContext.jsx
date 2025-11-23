@@ -106,12 +106,15 @@ export const AuthProvider = ({ children }) => {
     };
 
     // Set timeout as safety net to prevent infinite loading
+    // CRITICAL FIX: Increased timeout from 3000ms to 10000ms
+    // This gives magic links enough time to complete processing
+    // Magic links need 5-10 seconds to establish session
     const timeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn('Auth initialization timeout - continuing without session');
+        console.warn('⚠️ Auth initialization timeout - continuing without session');
         setLoading(false);
       }
-    }, 3000); // 3 second timeout - faster UX
+    }, 10000); // INCREASED FROM 3000 TO 10000
 
     initializeAuth();
 

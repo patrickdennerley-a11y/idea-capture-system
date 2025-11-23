@@ -121,11 +121,27 @@ function App() {
 
   // CRITICAL: Detect recovery mode IMMEDIATELY on mount, before auth check
   // This prevents race condition where AuthContext sets session before we check the URL
+  // CRITICAL FIX: Only set recovery flag for type=recovery, NOT all access tokens
+  // This prevents magic links from being confused with password recovery
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash && hash.includes('type=recovery')) {
-      console.log('🔐 Recovery hash detected on App mount - setting lock flag immediately');
-      localStorage.setItem('neural_recovery_pending', 'true');
+
+    if (hash.includes('access_token')) {
+      // Parse the hash to check the type parameter
+      const hashParams = new URLSearchParams(hash.substring(1));
+      const type = hashParams.get('type');
+
+      // ONLY set recovery flag if this is actually a password recovery link
+      if (type === 'recovery') {
+        console.log('Password recovery link detected - setting flag');
+        localStorage.setItem('neural_recovery_pending', 'true');
+      } else if (type === 'magiclink') {
+        console.log('Magic link detected - NOT setting recovery flag');
+        // Explicitly ensure no recovery flag is set for magic links
+        localStorage.removeItem('neural_recovery_pending');
+      } else {
+        console.log('Access token detected with type:', type || 'none');
+      }
     }
   }, []);
 
