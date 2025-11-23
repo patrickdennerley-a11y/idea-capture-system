@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,8 +12,7 @@ const withTimeout = (promise, timeoutMs = 10000) => {
   ]);
 };
 
-const Auth = () => {
-  const navigate = useNavigate();
+const Auth = ({ onAuthenticated }) => {
   const { user, isAuthenticated } = useAuth();
 
   const [loading, setLoading] = useState(false);
@@ -124,7 +122,7 @@ const Auth = () => {
               if (data.session) {
                 console.log('✅ Magic link session established manually');
                 window.history.replaceState({}, document.title, window.location.pathname);
-                navigate('/');
+                onAuthenticated();
               }
             })(),
             5000 // 5 seconds for magic link
@@ -138,7 +136,7 @@ const Auth = () => {
             if (session) {
               console.log('✅ Session auto-detected. Logging in...');
               window.history.replaceState({}, document.title, window.location.pathname);
-              navigate('/');
+              onAuthenticated();
               return;
             }
           } catch (checkErr) {
@@ -161,14 +159,14 @@ const Auth = () => {
     };
 
     checkAuthUrl();
-  }, [navigate]);
+  }, [onAuthenticated]);
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user && !sessionLoading && !showPasswordReset) {
-      navigate('/');
+      onAuthenticated();
     }
-  }, [isAuthenticated, user, navigate, sessionLoading, showPasswordReset]);
+  }, [isAuthenticated, user, onAuthenticated, sessionLoading, showPasswordReset]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -197,7 +195,7 @@ const Auth = () => {
 
         if (error) throw error;
 
-        navigate('/');
+        onAuthenticated();
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -243,10 +241,10 @@ const Auth = () => {
       setMessage('Password updated successfully!');
       localStorage.removeItem('neural_recovery_pending');
 
-      // Wait a moment then navigate
+      // Wait a moment then authenticate
       setTimeout(() => {
         setShowPasswordReset(false);
-        navigate('/');
+        onAuthenticated();
       }, 1500);
     } catch (err) {
       setError(err.message);
