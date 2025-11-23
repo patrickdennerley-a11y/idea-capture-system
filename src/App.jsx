@@ -703,6 +703,43 @@ function App() {
                     </button>
                   );
                 })}
+
+                {/* Mobile Sync & Logout Buttons */}
+                {isSupabaseConfigured() && user && (
+                  <>
+                    <div className="border-t border-gray-700 my-2"></div>
+                    {/* Sync Button */}
+                    <button
+                      onClick={() => {
+                        handleSync();
+                        setMobileMenuOpen(false);
+                      }}
+                      disabled={!isOnline || isSyncing}
+                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? (
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                      ) : isOnline ? (
+                        <Cloud className="w-5 h-5" />
+                      ) : (
+                        <CloudOff className="w-5 h-5" />
+                      )}
+                      <span>Sync {pendingOps > 0 ? `(${pendingOps})` : ''}</span>
+                    </button>
+
+                    {/* Logout Button */}
+                    <button
+                      onClick={() => {
+                        handleSignOut();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      <span>Log Out</span>
+                    </button>
+                  </>
+                )}
               </nav>
             </div>
           )}
