@@ -20,13 +20,49 @@ export const AuthProvider = ({ children }) => {
     let mounted = true;
 
     // 🚀 SMART TIMEOUT LOGIC
-    // If URL has #access_token, it's a magic link -> Wait 15s
-    // If not, it's a normal load -> Wait only 2s (Fixes black screen)
+    // If URL has #access_token, it's a magic link -> Wait 4s (enough for manual exchange)
+    // If not, it's a normal load -> Wait only 2s
     const isMagicLink = window.location.hash.includes('access_token');
-    const TIMEOUT_DURATION = isMagicLink ? 15000 : 2000;
+    const TIMEOUT_DURATION = isMagicLink ? 4000 : 2000;
 
     const initAuth = async () => {
       try {
+        // 1. Manual Magic Link Handling
+        // If we see tokens in the URL, we try to set the session immediately.
+        // This avoids the race condition where AuthContext waits for Auth.jsx,
+        // but Auth.jsx is blocked by AuthContext.
+        const hash = window.location.hash;
+        if (mounted && hash && hash.includes('access_token') && hash.includes('refresh_token')) {
+          console.log('🔗 Magic Link/Recovery hash detected in AuthContext - processing manually...');
+          try {
+             // Parse the hash manually
+             const params = new URLSearchParams(hash.substring(1)); // remove #
+             const access_token = params.get('access_token');
+             const refresh_token = params.get('refresh_token');
+
+             if (access_token && refresh_token) {
+               const { data, error } = await supabase.auth.setSession({
+                 access_token,
+                 refresh_token,
+               });
+
+               if (!error && data?.session?.user) {
+                 console.log('✅ Manual session exchange successful');
+                 setUser(data.session.user);
+                 setIsAuthenticated(true);
+                 setLoading(false);
+                 return; // DONE! No need to run getSession below
+               } else if (error) {
+                 console.error('Manual session exchange failed:', error);
+                 // Fall through to getSession just in case
+               }
+             }
+          } catch (e) {
+            console.error('Error parsing hash:', e);
+          }
+        }
+
+        // 2. Standard Session Check (Fallback or Normal Load)
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (mounted) {
