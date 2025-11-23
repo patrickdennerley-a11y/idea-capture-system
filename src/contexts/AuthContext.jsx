@@ -15,30 +15,31 @@ export const AuthProvider = ({ children }) => {
 
     const initializeAuth = async () => {
       try {
-        // 1. Check if we are coming back from a Magic Link
+        // 1. MANUAL HASH PARSING
+        // Since detectSessionInUrl is false, we MUST do this ourselves.
         const hash = window.location.hash;
 
-        // Only process if we see an access token and we haven't processed it yet
-        if (hash && hash.includes('access_token')) {
+        // Check for access_token AND refresh_token to be sure
+        if (hash && hash.includes('access_token') && hash.includes('refresh_token')) {
           console.log('🔗 Magic Link detected. Processing manually...');
 
-          // Parse the hash
-          const params = new URLSearchParams(hash.substring(1)); // remove the '#'
+          // Parse tokens
+          const params = new URLSearchParams(hash.substring(1));
           const access_token = params.get('access_token');
           const refresh_token = params.get('refresh_token');
 
-          // Clean the URL immediately so we don't try to use it again
+          // Clean URL immediately so we don't try to use it again
           window.history.replaceState(null, '', window.location.pathname);
 
           if (access_token && refresh_token) {
-            // Manually set the session
+            // Manually exchange the token
             const { data, error } = await supabase.auth.setSession({
               access_token,
               refresh_token,
             });
 
             if (error) {
-              console.error('❌ Error exchanging token:', error.message);
+              console.error('❌ Token exchange failed:', error.message);
             } else if (data.session) {
               console.log('✅ Session established via Magic Link');
               if (mounted) {
@@ -46,12 +47,13 @@ export const AuthProvider = ({ children }) => {
                 setIsAuthenticated(true);
                 setLoading(false);
               }
-              return; // We are done, don't run the standard check
+              return; // STOP HERE. Don't run the standard check.
             }
           }
         }
 
-        // 2. Standard Session Check (for normal page loads)
+        // 2. STANDARD SESSION CHECK
+        // If no hash, or hash failed, check for existing session in storage
         const { data: { session } } = await supabase.auth.getSession();
 
         if (mounted) {
@@ -66,7 +68,7 @@ export const AuthProvider = ({ children }) => {
           }
         }
       } catch (error) {
-        console.error('💥 Auth Initialization Error:', error);
+        console.error('💥 Auth Init Error:', error);
       } finally {
         if (mounted) {
           setLoading(false);
@@ -76,11 +78,11 @@ export const AuthProvider = ({ children }) => {
 
     initializeAuth();
 
-    // 3. Listen for future auth changes (login/logout/token refresh)
+    // 3. LISTEN FOR CHANGES
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (mounted) {
-          console.log(`🔔 Auth State Changed: ${event}`);
+          console.log(`🔔 Auth State: ${event}`);
           if (session?.user) {
             setUser(session.user);
             setIsAuthenticated(true);
@@ -109,7 +111,7 @@ export const AuthProvider = ({ children }) => {
       await supabase.auth.signOut();
       setUser(null);
       setIsAuthenticated(false);
-      localStorage.clear(); // Clean up specific keys if needed, but strict clear is safer
+      localStorage.clear();
       window.location.href = '/';
     },
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),

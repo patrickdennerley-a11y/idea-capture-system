@@ -9,15 +9,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // This is the critical fix. We tell Supabase NOT to auto-detect.
-    // We will handle the token manually in AuthContext.
+    // 🛑 CRITICAL: Stop Supabase from handling the URL automatically.
+    // We will handle it manually in AuthContext.
     detectSessionInUrl: false,
     persistSession: true,
     autoRefreshToken: true,
   }
 })
 
-// Helper to check configuration
 export const isSupabaseConfigured = () => {
   return !!(supabaseUrl && supabaseAnonKey);
 };
