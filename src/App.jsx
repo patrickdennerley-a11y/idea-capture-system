@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabase } from './hooks/useSupabase';
-import { useAuth } from './contexts/AuthContext';
+import { useAuth, clearAllAuthState } from './contexts/AuthContext';
 import { isSupabaseConfigured } from './utils/supabaseClient';
 import { migrateAllData, hasLocalStorageData, hasCloudData, getMigrationStatus } from './utils/dataMigration';
 import { processQueue, getSyncStatus, hasPendingOperations } from './utils/offlineQueue';
@@ -110,6 +110,15 @@ function App() {
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
 
+  // NUCLEAR FIX DEBUG: Log why app reloaded (for debugging)
+  useEffect(() => {
+    const reloadReason = sessionStorage.getItem('reload_reason');
+    if (reloadReason) {
+      console.log(`🔄 App reloaded due to: ${reloadReason}`);
+      sessionStorage.removeItem('reload_reason'); // Clear after logging
+    }
+  }, []);
+
   // CRITICAL: Detect recovery mode IMMEDIATELY on mount, before auth check
   // This prevents race condition where AuthContext sets session before we check the URL
   useEffect(() => {
@@ -122,48 +131,52 @@ function App() {
 
   // Check authentication status
   useEffect(() => {
+    console.log('🔍 Auth state check:', {
+      user: !!user,
+      authLoading,
+      isSupabaseConfigured: isSupabaseConfigured()
+    });
+
     if (!isSupabaseConfigured()) {
-      // No Supabase, always authenticated (localStorage mode)
+      console.log('📦 No Supabase - using localStorage mode');
       setIsAuthenticated(true);
       return;
     }
 
-    if (!authLoading) {
-      // Check if we're in password recovery mode via URL hash OR localStorage flag
-      // Supabase automatically clears the URL hash after setSession(), so we use
-      // a persistent localStorage flag to prevent premature redirect
-      const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Remove the # from hash
-      const isRecoveryHash = urlParams.get('type') === 'recovery';
-      const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
-      const isPasswordRecovery = isRecoveryHash || isRecoveryPending;
+    // CRITICAL: Don't make ANY decisions until auth finishes loading
+    if (authLoading) {
+      console.log('⏳ Auth still loading - waiting...');
+      return; // Do nothing until authLoading = false
+    }
 
-      if (isPasswordRecovery) {
-        console.log('🔐 Password recovery mode detected - keeping Auth component mounted');
-        if (isRecoveryPending) {
-          console.log('   (detected via localStorage flag - URL hash may have been cleared)');
-        }
-        setIsAuthenticated(false); // Keep Auth component visible for password reset
-      } else {
-        setIsAuthenticated(!!user);
-      }
+    // NOW we know user is correct (loaded from storage if exists)
+    console.log('✅ Auth loaded - user:', !!user);
+
+    // Check if we're in password recovery mode via URL hash OR localStorage flag
+    const urlParams = new URLSearchParams(window.location.hash.substring(1));
+    const isRecoveryHash = urlParams.get('type') === 'recovery';
+    const isRecoveryPending = localStorage.getItem('neural_recovery_pending') === 'true';
+    const isPasswordRecovery = isRecoveryHash || isRecoveryPending;
+
+    if (isPasswordRecovery) {
+      console.log('🔐 Password recovery mode detected');
+      setIsAuthenticated(false);
+    } else {
+      const shouldBeAuthenticated = !!user;
+      console.log('🎯 Setting isAuthenticated:', shouldBeAuthenticated);
+      setIsAuthenticated(shouldBeAuthenticated);
 
       // Check for migration needs after auth
-      if (user && !isPasswordRecovery) {
+      if (shouldBeAuthenticated && user) {
         const checkMigrationNeeded = async () => {
           const migrationStatus = getMigrationStatus();
 
-          // Only show migration prompt if:
-          // 1. Migration not completed
-          // 2. Local storage has data
-          // 3. Cloud is empty (brand new account or no cloud data)
           if (!migrationStatus?.completed && hasLocalStorageData()) {
             const cloudHasData = await hasCloudData();
 
             if (!cloudHasData) {
-              // Cloud is empty and local has data - show migration prompt
               setShowMigrationPrompt(true);
             } else {
-              // Cloud already has data - mark migration as completed to avoid showing prompt again
               console.log('Cloud already has data, skipping migration prompt');
             }
           }
@@ -291,17 +304,15 @@ function App() {
   const handleSignOut = async () => {
     console.log('🚪 Sign out initiated');
 
-    // CRITICAL: Set false BEFORE async signOut to immediately show Auth screen
-    // This prevents UI flicker/delay while waiting for async cleanup
+    // CRITICAL: Clear any auth tokens in URL hash to prevent auto sign-in
+    window.history.replaceState(null, '', window.location.pathname);
+
+    // Set false BEFORE async operations for immediate UI feedback
     setIsAuthenticated(false);
 
     try {
-      const result = await signOut();
-      if (result?.error) {
-        console.error('❌ Sign out error:', result.error);
-      } else {
-        console.log('✅ Sign out successful');
-      }
+      await signOut();
+      console.log('✅ Sign out successful');
     } catch (error) {
       console.error('💥 Sign out exception:', error);
     }

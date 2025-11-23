@@ -3,6 +3,15 @@ import { supabase, onAuthStateChange, getCurrentUser, isSupabaseConfigured } fro
 
 const AuthContext = createContext({});
 
+// NUCLEAR CLEANUP: Clear ALL auth-related state
+// This ensures every auth event starts with a clean slate
+export const clearAllAuthState = () => {
+  console.log('🧹 NUCLEAR CLEANUP - Clearing all auth state');
+  localStorage.removeItem('neural_recovery_pending');
+  localStorage.removeItem('sync_in_progress');
+  sessionStorage.clear();
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
