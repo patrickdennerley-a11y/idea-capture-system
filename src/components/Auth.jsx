@@ -31,11 +31,14 @@ export default function Auth({ onAuthenticated }) {
 
   const { signUp, signIn, signInWithMagicLink, sendPasswordSetupEmail, updatePassword } = useAuth();
 
-  // Helper: Timeout wrapper for Supabase calls to prevent infinite hanging
-  const withTimeout = (promise, ms = 8000) => {
+  // Helper: Timeout wrapper for Supabase calls with custom duration
+  // FIXED: Default to 10s (reasonable), include timeout in error message
+  const withTimeout = (promise, ms = 10000) => {
     return Promise.race([
       promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), ms))
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms)
+      )
     ]);
   };
 
@@ -54,29 +57,6 @@ export default function Auth({ onAuthenticated }) {
     };
   }, [isPasswordRecovery]);
 
-  // Safety Timeout: Force stop loading if Supabase hangs for > 12 seconds
-  useEffect(() => {
-    let safetyTimer;
-    if (sessionLoading) {
-      safetyTimer = setTimeout(async () => {
-        console.warn('⚠️ Session establishment timeout reached');
-        setSessionLoading(false);
-        processingRef.current = false;
-
-        // CRITICAL: Check if session was actually established despite timeout
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          console.log('✅ Session exists - showing password form');
-          setIsPasswordRecovery(true);
-        } else if (!error) {
-          console.error('❌ No session found after timeout');
-          setError('Session request timed out. Please request a new password reset link.');
-        }
-      }, 12000); // 12 seconds - longer than withTimeout's 8 seconds
-    }
-    return () => clearTimeout(safetyTimer);
-  }, [sessionLoading, error]);
-
   // Check if URL contains password recovery token or errors
   useEffect(() => {
     const hash = window.location.hash.substring(1);
@@ -94,12 +74,13 @@ export default function Auth({ onAuthenticated }) {
           const { data: sessionData } = await supabase.auth.getSession();
           if (sessionData?.session) {
             console.log('✅ Session exists (auto-detected by Supabase). Showing password form.');
-            setSessionLoading(false);
             setIsPasswordRecovery(true);
+            // No setSessionLoading(false) - was never set to true in this path
           } else {
             console.log('❌ No session found. Recovery link may be invalid.');
             setError('Recovery session not found. Please request a new password reset link.');
             localStorage.removeItem('neural_recovery_pending');
+            // No setSessionLoading(false) - was never set to true in this path
           }
         };
 
@@ -171,28 +152,30 @@ export default function Auth({ onAuthenticated }) {
           if (existingSession?.session) {
             console.log('✅ Session auto-detected. Proceeding.');
             setIsPasswordRecovery(true);
-            return;
-          }
-
-          if (!refreshToken) {
-            throw new Error('No refresh token found in URL');
-          }
-
-          // Explicitly set the session using the tokens from the URL with timeout protection
-          const { data, error } = await withTimeout(
-            supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken
-            })
-          );
-
-          if (error) throw error;
-
-          if (data.session) {
-            console.log('✅ Recovery session established manually');
-            setIsPasswordRecovery(true);
+            // Don't return - let finally block run
           } else {
-            throw new Error('Session establishment returned no data');
+            // Continue with manual setSession only if no existing session
+            if (!refreshToken) {
+              throw new Error('No refresh token found in URL');
+            }
+
+            // FIXED: Use 12-second timeout for recovery (Supabase processes these slowly)
+            const { data, error } = await withTimeout(
+              supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken
+              }),
+              12000 // Recovery needs longer timeout
+            );
+
+            if (error) throw error;
+
+            if (data.session) {
+              console.log('✅ Recovery session established manually');
+              setIsPasswordRecovery(true);
+            } else {
+              throw new Error('Session establishment returned no data');
+            }
           }
         } catch (err) {
           console.error('Recovery processing failed:', err);
@@ -203,7 +186,12 @@ export default function Auth({ onAuthenticated }) {
             console.log('✅ Session found despite error. Proceeding.');
             setIsPasswordRecovery(true);
           } else {
-            setError(`Invalid or expired recovery link: ${err.message}`);
+            // FIXED: Better error messages
+            if (err.message.includes('timed out')) {
+              setError('Recovery link verification is taking too long. Please try requesting a new link.');
+            } else {
+              setError(`Invalid or expired recovery link. Please request a new one.`);
+            }
             localStorage.removeItem('neural_recovery_pending');
             window.history.replaceState(null, '', window.location.pathname);
           }
@@ -240,37 +228,39 @@ export default function Auth({ onAuthenticated }) {
             console.log('✅ Session auto-detected. Calling onAuthenticated()...');
             window.history.replaceState(null, '', window.location.pathname);
             onAuthenticated();
-            return;
-          }
+            // Don't return - let finally block run
+          } else {
+            // 2. Manual setSession with timeout protection
+            if (refreshToken) {
+              // Standard flow with refresh token
+              // FIXED: Use 5-second timeout for magic links (they're fast)
+              const { data, error } = await withTimeout(
+                supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken
+                }),
+                5000 // Magic links are fast - 5s is plenty
+              );
 
-          // 2. Manual setSession with timeout protection
-          if (refreshToken) {
-            // Standard flow with refresh token
-            const { data, error } = await withTimeout(
-              supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken
-              })
-            );
+              if (error) throw error;
 
-            if (error) throw error;
+              if (data.session) {
+                console.log('✅ Magic link session established manually');
+                window.history.replaceState(null, '', window.location.pathname);
+                onAuthenticated();
+              } else {
+                throw new Error('Session creation failed (no session returned)');
+              }
+            } else {
+              // Implicit flow (Access token only, no refresh token) - Verify by getting user
+              console.log('⚠️ No refresh token, verifying access token (implicit flow)...');
+              const { error } = await withTimeout(supabase.auth.getUser(accessToken), 5000);
+              if (error) throw error;
 
-            if (data.session) {
-              console.log('✅ Magic link session established manually');
+              console.log('✅ Magic link verified (implicit flow)');
               window.history.replaceState(null, '', window.location.pathname);
               onAuthenticated();
-            } else {
-              throw new Error('Session creation failed (no session returned)');
             }
-          } else {
-            // Implicit flow (Access token only, no refresh token) - Verify by getting user
-            console.log('⚠️ No refresh token, verifying access token (implicit flow)...');
-            const { error } = await withTimeout(supabase.auth.getUser(accessToken));
-            if (error) throw error;
-
-            console.log('✅ Magic link verified (implicit flow)');
-            window.history.replaceState(null, '', window.location.pathname);
-            onAuthenticated();
           }
         } catch (err) {
           console.error('Magic link failed:', err);
