@@ -54,21 +54,28 @@ export default function Auth({ onAuthenticated }) {
     };
   }, [isPasswordRecovery]);
 
-  // Safety Timeout: Force stop loading if Supabase hangs for > 8 seconds
+  // Safety Timeout: Force stop loading if Supabase hangs for > 12 seconds
   useEffect(() => {
     let safetyTimer;
     if (sessionLoading) {
-      safetyTimer = setTimeout(() => {
-        console.warn('⚠️ Session establishment timed out. Forcing UI reset.');
+      safetyTimer = setTimeout(async () => {
+        console.warn('⚠️ Session establishment timeout reached');
         setSessionLoading(false);
-        processingRef.current = false; // Release lock
-        if (!isPasswordRecovery && !error) {
-          setError('Session request timed out. Please try clicking the link again.');
+        processingRef.current = false;
+
+        // CRITICAL: Check if session was actually established despite timeout
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.log('✅ Session exists - showing password form');
+          setIsPasswordRecovery(true);
+        } else if (!error) {
+          console.error('❌ No session found after timeout');
+          setError('Session request timed out. Please request a new password reset link.');
         }
-      }, 8000);
+      }, 12000); // 12 seconds - longer than withTimeout's 8 seconds
     }
     return () => clearTimeout(safetyTimer);
-  }, [sessionLoading, isPasswordRecovery, error]);
+  }, [sessionLoading, error]);
 
   // Check if URL contains password recovery token or errors
   useEffect(() => {
