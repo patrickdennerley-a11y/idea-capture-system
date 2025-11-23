@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
+// 1. IMPORT CREATECLIENT DIRECTLY
+import { createClient } from '@supabase/supabase-js';
 
 const AuthContext = createContext({});
 
@@ -28,77 +30,79 @@ export const AuthProvider = ({ children }) => {
 
         if (hasToken) {
           console.log('⚡ AuthContext: Magic Link detected.');
-          setLoadingMessage('Finalizing Secure Login...');
+          setLoadingMessage('Securing Session...');
 
           const params = new URLSearchParams(hash.substring(1));
           const access_token = params.get('access_token');
           const refresh_token = params.get('refresh_token');
 
-          // Wipe URL immediately to prevent re-use
+          // Clean URL immediately
           window.history.replaceState(null, '', window.location.pathname);
 
           if (access_token && refresh_token) {
-            console.log('⚡ AuthContext: Exchanging tokens...');
+            console.log('⚡ AuthContext: Bypassing main client with Fresh Client Injection...');
 
-            // WORKAROUND FOR SUPABASE BUG #1441
-            // setSession() sometimes hangs indefinitely even after success.
-            // We race it against a short timeout. If it times out, we assume it
-            // worked and verify via getSession().
+            // 2. THE FRESH CLIENT INJECTION
+            // The main 'supabase' client is deadlocking. We create a fresh, temporary instance
+            // solely to handle this handshake. It has no baggage.
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+            const tempClient = createClient(supabaseUrl, supabaseKey, {
+              auth: {
+                storage: window.localStorage,
+                storageKey: 'neural-auth-token', // MUST match your main client config
+                persistSession: true,
+                detectSessionInUrl: false
+              }
+            });
+
             try {
-              const setSessionPromise = supabase.auth.setSession({
+              // Force the session into storage using the fresh client
+              const { data, error } = await tempClient.auth.setSession({
                 access_token,
                 refresh_token
               });
 
-              // Give it 2 seconds to be polite
-              await Promise.race([
-                setSessionPromise,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('HangingPromise')), 2000))
-              ]);
+              if (error) throw error;
 
+              if (data?.session) {
+                console.log('✅ Fresh Client: Session secured in LocalStorage.');
+                console.log('🔄 Reloading to apply session...');
+                // 3. HARD RELOAD
+                // We reload the page. The main app will wake up, read the LocalStorage
+                // we just wrote, and log in instantly as if nothing happened.
+                window.location.reload();
+                return;
+              }
             } catch (err) {
-              if (err.message === 'HangingPromise') {
-                console.log('⚠️ AuthContext: setSession hung (known bug). Checking session anyway...');
-              } else {
-                console.error('💥 AuthContext Error:', err);
-              }
-            }
-
-            // IMMEDIATELY CHECK SESSION
-            // Even if the promise above hung, the session is likely set in memory/storage now.
-            const { data } = await supabase.auth.getSession();
-            if (data?.session?.user) {
-              console.log('✅ AuthContext: Login verified via getSession!');
-              if (mounted) {
-                setUser(data.session.user);
-                setIsAuthenticated(true);
-                setLoading(false);
-                return; // SUCCESS
-              }
-            } else {
-               console.warn('❌ AuthContext: Login failed verification.');
-               // Fall through to normal load
+              console.error('💥 Fresh Client Error:', err);
+              // If even the fresh client fails, we are likely offline or credentials are bad.
+              // We fall through to normal loading to at least show the login screen.
             }
           }
         }
 
-        // 2. Normal Load / Fallback
-        console.log('🔍 AuthContext: Checking existing session...');
+        // 2. Normal Load (Or after the reload)
+        // Checks if the session exists in storage (which we just wrote above if magic link)
+        console.log('🔍 AuthContext: Reading storage...');
         const { data: { session } } = await supabase.auth.getSession();
 
         if (mounted) {
           if (session?.user) {
-            console.log('✅ AuthContext: Session found.');
+            console.log('✅ AuthContext: Session active.');
             setUser(session.user);
             setIsAuthenticated(true);
+            setLoading(false);
           } else {
+            console.log('ℹ️ AuthContext: No session found.');
             setUser(null);
             setIsAuthenticated(false);
+            setLoading(false);
           }
         }
       } catch (error) {
-        console.error('Auth check error:', error);
-      } finally {
+        console.error('Auth initialization error:', error);
         if (mounted) setLoading(false);
       }
     };
@@ -152,6 +156,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
   };
 
+  // If loading, show the spinner
   if (loading) {
      return (
        <div className="min-h-screen bg-neural-darker flex items-center justify-center flex-col">
