@@ -119,38 +119,28 @@ function App() {
     }
   }, []);
 
-  // CRITICAL FIX: Check type parameter and handle recovery vs magic link appropriately
-  // This prevents race condition and ensures proper flag management
+  // Check for password recovery links
   useEffect(() => {
     const hash = window.location.hash;
 
     if (hash.includes('access_token')) {
-      // Parse the hash to check the type parameter
       const hashParams = new URLSearchParams(hash.substring(1));
       const type = hashParams.get('type');
 
-      // ONLY set recovery flag if this is actually a password recovery link
+      // Set flag for password recovery
       if (type === 'recovery') {
-        console.log('Password recovery link detected - setting flag');
+        console.log('Password recovery link detected');
         localStorage.setItem('neural_recovery_pending', 'true');
-      } else if (type === 'magiclink') {
-        console.log('Magic link detected - NOT setting recovery flag');
-        // Explicitly ensure no recovery flag is set for magic links
-        localStorage.removeItem('neural_recovery_pending');
-      } else {
-        console.log('Access token detected with type:', type || 'none');
       }
     }
   }, []);
 
-  // FIX #1: Cleanup recovery flag on unmount to prevent stale errors
+  // Cleanup recovery flag on unmount
   useEffect(() => {
     return () => {
-      // Only cleanup if user never completed password reset
-      // (if they did, the flag is already cleared by Auth.jsx)
       const hasRecoveryFlag = localStorage.getItem('neural_recovery_pending') === 'true';
       if (hasRecoveryFlag) {
-        console.log('🧹 App unmounting with recovery flag still set - clearing to prevent stale error');
+        console.log('Cleaning up recovery flag');
         localStorage.removeItem('neural_recovery_pending');
       }
     };

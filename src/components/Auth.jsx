@@ -2,16 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 
-// Timeout wrapper utility for auth operations
-const withTimeout = (promise, timeoutMs = 10000) => {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
-    )
-  ]);
-};
-
 const Auth = ({ onAuthenticated }) => {
   const { user, isAuthenticated } = useAuth();
 
@@ -21,19 +11,17 @@ const Auth = ({ onAuthenticated }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
-  const [useMagicLink, setUseMagicLink] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [sessionLoading, setSessionLoading] = useState(false);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
 
-  // Check for auth URL parameters on mount
+  // Check for password recovery URL parameters on mount
   useEffect(() => {
     const checkAuthUrl = async () => {
       const hash = window.location.hash;
 
       if (!hash || !hash.includes('access_token')) {
-        console.log('No auth hash detected');
         return;
       }
 
@@ -41,120 +29,34 @@ const Auth = ({ onAuthenticated }) => {
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       const type = hashParams.get('type');
-      const errorDescription = hashParams.get('error_description');
-      const errorCode = hashParams.get('error_code');
 
-      console.log('Auth URL hash detected:', {
-        type,
-        hasAccessToken: !!accessToken,
-        errorDescription,
-        errorCode
-      });
-
-      // Check if this is a password recovery link
-      const isRecovery = type === 'recovery' || localStorage.getItem('neural_recovery_pending') === 'true';
-
-      if (isRecovery) {
-        console.log('Password recovery mode detected - processing tokens...');
+      // Only handle password recovery
+      if (type === 'recovery') {
+        console.log('Password recovery mode detected');
         setSessionLoading(true);
         setShowPasswordReset(true);
 
         try {
-          // Use 12-second timeout for recovery operations
-          await withTimeout(
-            (async () => {
-              console.log('Processing recovery tokens with Supabase...');
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
 
-              const { data, error } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-
-              if (error) {
-                console.error('Recovery session error:', error);
-                throw error;
-              }
-
-              if (data.session) {
-                console.log('✅ Recovery session established manually');
-                localStorage.removeItem('neural_recovery_pending');
-                window.history.replaceState({}, document.title, window.location.pathname);
-              }
-            })(),
-            12000 // 12 seconds for recovery
-          );
+          if (error) {
+            console.error('Recovery session error:', error);
+            setError('Failed to process password recovery link. Please request a new one.');
+            setShowPasswordReset(false);
+          } else if (data.session) {
+            console.log('Recovery session established');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
         } catch (err) {
-          console.error('Recovery flow error:', err);
+          console.error('Recovery error:', err);
           setError('Failed to process password recovery link. Please request a new one.');
-          localStorage.removeItem('neural_recovery_pending');
           setShowPasswordReset(false);
         } finally {
           setSessionLoading(false);
         }
-
-        return;
-      }
-
-      // Handle magic link authentication
-      if (type === 'magiclink') {
-        console.log('Access token detected in URL (Magic Link) - processing...');
-        setSessionLoading(true);
-
-        try {
-          // Clear any recovery flags for magic links
-          localStorage.removeItem('neural_recovery_pending');
-
-          // Use 5-second timeout for magic link operations
-          await withTimeout(
-            (async () => {
-              console.log('Setting magic link session...');
-
-              const { data, error } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-
-              if (error) {
-                console.error('Magic link session error:', error);
-                throw error;
-              }
-
-              if (data.session) {
-                console.log('✅ Magic link session established manually');
-                window.history.replaceState({}, document.title, window.location.pathname);
-                onAuthenticated();
-              }
-            })(),
-            15000 // 15 seconds for magic link - gives Supabase time to breathe
-          );
-        } catch (err) {
-          console.error('Magic link flow error:', err);
-
-          // Try to check if session exists anyway
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-              console.log('✅ Session auto-detected. Logging in...');
-              window.history.replaceState({}, document.title, window.location.pathname);
-              onAuthenticated();
-              return;
-            }
-          } catch (checkErr) {
-            console.error('Session check error:', checkErr);
-          }
-
-          setError('Failed to process magic link. Please try again or use password login.');
-        } finally {
-          setSessionLoading(false);
-        }
-
-        return;
-      }
-
-      // Handle other auth types or errors
-      if (errorDescription) {
-        console.error('Auth URL error:', errorDescription);
-        setError(errorDescription);
       }
     };
 
@@ -175,19 +77,7 @@ const Auth = ({ onAuthenticated }) => {
     setLoading(true);
 
     try {
-      if (useMagicLink) {
-        const { error } = await supabase.auth.signInWithOtp({
-          email,
-          options: {
-            emailRedirectTo: window.location.origin,
-          },
-        });
-
-        if (error) throw error;
-
-        setMessage('Check your email for the magic link!');
-        setEmail('');
-      } else if (isLogin) {
+      if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -395,28 +285,26 @@ const Auth = ({ onAuthenticated }) => {
                 disabled={loading}
               />
             </div>
-            {!useMagicLink && (
-              <div>
-                <label htmlFor="password" className="sr-only">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete={isLogin ? 'current-password' : 'new-password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="Password"
-                  disabled={loading}
-                />
-              </div>
-            )}
+            <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                disabled={loading}
+              />
+            </div>
           </div>
 
-          {!useMagicLink && isLogin && (
+          {isLogin && (
             <div className="flex items-center justify-between">
               <div className="text-sm">
                 <button
@@ -443,36 +331,13 @@ const Auth = ({ onAuthenticated }) => {
             </div>
           )}
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="magic-link"
-                name="magic-link"
-                type="checkbox"
-                checked={useMagicLink}
-                onChange={(e) => setUseMagicLink(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                disabled={loading}
-              />
-              <label htmlFor="magic-link" className="ml-2 block text-sm text-gray-900">
-                Use magic link (passwordless)
-              </label>
-            </div>
-          </div>
-
           <div>
             <button
               type="submit"
               disabled={loading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading
-                ? 'Processing...'
-                : useMagicLink
-                ? 'Send magic link'
-                : isLogin
-                ? 'Sign in'
-                : 'Sign up'}
+              {loading ? 'Processing...' : isLogin ? 'Sign in' : 'Sign up'}
             </button>
           </div>
 
