@@ -19,86 +19,77 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
 
-    // 🚀 SMART TIMEOUT LOGIC
-    // If URL has #access_token, it's a magic link -> Wait 4s (enough for manual exchange)
-    // If not, it's a normal load -> Wait only 2s
+    // 🚀 POLLING STRATEGY (Non-Conflicting)
+    // If URL has #access_token, Supabase's internal client (detectSessionInUrl: true)
+    // will try to auto-login. We must NOT interfere by calling setSession manually.
+    // Instead, we wait and watch for the session to appear.
     const isMagicLink = window.location.hash.includes('access_token');
-    const TIMEOUT_DURATION = isMagicLink ? 4000 : 2000;
+
+    // Give Supabase 8 seconds to process the token internally
+    const POLL_INTERVAL = 500;
+    const MAX_RETRIES = 16; // 8 seconds total
 
     const initAuth = async () => {
-      try {
-        // 1. Manual Magic Link Handling
-        // If we see tokens in the URL, we try to set the session immediately.
-        // This avoids the race condition where AuthContext waits for Auth.jsx,
-        // but Auth.jsx is blocked by AuthContext.
-        const hash = window.location.hash;
-        if (mounted && hash && hash.includes('access_token') && hash.includes('refresh_token')) {
-          console.log('🔗 Magic Link/Recovery hash detected in AuthContext - processing manually...');
-          try {
-             // Parse the hash manually
-             const params = new URLSearchParams(hash.substring(1)); // remove #
-             const access_token = params.get('access_token');
-             const refresh_token = params.get('refresh_token');
+      let attempts = 0;
 
-             if (access_token && refresh_token) {
-               const { data, error } = await supabase.auth.setSession({
-                 access_token,
-                 refresh_token,
-               });
+      const checkSession = async () => {
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
 
-               if (!error && data?.session?.user) {
-                 console.log('✅ Manual session exchange successful');
-                 setUser(data.session.user);
-                 setIsAuthenticated(true);
-                 setLoading(false);
-                 return; // DONE! No need to run getSession below
-               } else if (error) {
-                 console.error('Manual session exchange failed:', error);
-                 // Fall through to getSession just in case
-               }
-             }
-          } catch (e) {
-            console.error('Error parsing hash:', e);
-          }
-        }
-
-        // 2. Standard Session Check (Fallback or Normal Load)
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (mounted) {
           if (session?.user) {
-            console.log('✅ Auth loaded - user found');
-            setUser(session.user);
-            setIsAuthenticated(true);
-          } else {
-            // Only log this if it's a magic link to keep console clean
-            if (isMagicLink) console.log('⚠️ Auth loaded - no user found yet');
-            setUser(null);
-            setIsAuthenticated(false);
+            console.log('✅ Auth loaded via Polling - user found');
+            if (mounted) {
+              setUser(session.user);
+              setIsAuthenticated(true);
+              setLoading(false);
+            }
+            return true; // Found!
           }
-
-          // If we found a session or it's NOT a magic link, stop loading immediately
-          if (session?.user || !isMagicLink) {
-            setLoading(false);
-          }
+          return false; // Not yet
+        } catch (err) {
+          console.error('Session check error:', err);
+          return false;
         }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        if (mounted) setLoading(false);
-      }
-    };
+      };
 
-    // Safety timeout
-    const timeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn(`⚠️ Auth initialization timeout (${TIMEOUT_DURATION}ms) - forcing UI load`);
-        setLoading(false);
+      // 1. If this is a Magic Link, we enter the Polling Loop
+      if (isMagicLink) {
+        console.log('🔗 Magic Link detected - Starting Polling (waiting for auto-login)...');
+
+        const pollTimer = setInterval(async () => {
+          if (!mounted) {
+            clearInterval(pollTimer);
+            return;
+          }
+
+          const found = await checkSession();
+
+          if (found) {
+            console.log('🎉 Magic Link Login Successful!');
+            clearInterval(pollTimer);
+            // Clean URL to look nice
+            window.history.replaceState(null, '', window.location.pathname);
+          } else {
+            attempts++;
+            if (attempts >= MAX_RETRIES) {
+              console.warn('⚠️ Magic Link polling timed out - Auto-login failed or took too long.');
+              clearInterval(pollTimer);
+              if (mounted) setLoading(false); // Give up and show UI
+            }
+          }
+        }, POLL_INTERVAL);
+
+        return; // Exit main initAuth, let the interval handle it
       }
-    }, TIMEOUT_DURATION);
+
+      // 2. Normal Load (Not a magic link) - Just check once
+      await checkSession();
+      if (mounted) setLoading(false);
+    };
 
     initAuth();
 
-    // Listen for auth changes
+    // Listen for auth changes (Backup mechanism)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log(`Auth event: ${event}`);
@@ -107,9 +98,8 @@ export const AuthProvider = ({ children }) => {
           if (session?.user) {
             setUser(session.user);
             setIsAuthenticated(true);
-            setLoading(false); // Ensure loading stops on sign in
+            setLoading(false);
           } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-             // Handle explicit sign out events
             setUser(null);
             setIsAuthenticated(false);
             setLoading(false);
@@ -120,34 +110,22 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
       subscription?.unsubscribe();
     };
   }, []);
 
-  // ☢️ NUCLEAR LOGOUT FUNCTION
+  // ☢️ NUCLEAR LOGOUT
   const signOut = async () => {
     try {
-      console.log('🚪 Sign out initiated - Clearing EVERYTHING');
-
-      // 1. Clear React state IMMEDIATELY (Updates UI)
+      console.log('🚪 Sign out initiated');
       setUser(null);
       setIsAuthenticated(false);
-
-      // 2. Clear Storage (Prevents "Zombie" sessions from auto-reloading)
       localStorage.clear();
       sessionStorage.clear();
-
-      // 3. Tell Supabase to kill the session
       await supabase.auth.signOut();
-
-      console.log('✅ Sign out complete');
-
-      // 4. Force reload to ensure clean state
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);
-      // Force clear even if network fails
       localStorage.clear();
       window.location.href = '/';
     }
