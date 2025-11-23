@@ -1,16 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, onAuthStateChange, getCurrentUser, isSupabaseConfigured } from '../utils/supabaseClient';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext({});
-
-// NUCLEAR CLEANUP: Clear ALL auth-related state
-// This ensures every auth event starts with a clean slate
-export const clearAllAuthState = () => {
-  console.log('🧹 NUCLEAR CLEANUP - Clearing all auth state');
-  localStorage.removeItem('neural_recovery_pending');
-  localStorage.removeItem('sync_in_progress');
-  sessionStorage.clear();
-};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -23,118 +14,71 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check if Supabase is configured
-    if (!isSupabaseConfigured()) {
-      console.log('Supabase not configured, running in localStorage-only mode');
-      setLoading(false);
-      return;
-    }
-
     let mounted = true;
 
-    // Get initial session
-    const initializeAuth = async () => {
+    // Initialize auth state
+    const initAuth = async () => {
       try {
-        console.log('Initializing auth - checking for session...');
-
-        // CRITICAL FIX: Check for magic link/recovery tokens in URL FIRST
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        const type = hashParams.get('type');
-
-        if (accessToken && refreshToken) {
-          console.log('Auth URL hash detected:', { type });
-
-          if (type === 'magiclink') {
-            console.log('Access token detected in URL (Magic Link) - processing...');
-
-            // CRITICAL: Await setSession to ensure it persists before continuing
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken
-            });
-
-            if (sessionError) {
-              console.error('Failed to set magic link session:', sessionError);
-              // Fall through to normal session check
-            } else if (sessionData?.session?.user) {
-              console.log('✅ Magic link session established:', sessionData.session.user.email);
-
-              if (mounted) {
-                setSession(sessionData.session);
-                setUser(sessionData.session.user);
-                setLoading(false);
-              }
-
-              // Clean URL hash
-              window.history.replaceState(null, '', window.location.pathname);
-              return; // SUCCESS - don't continue to normal session check
-            }
-          } else if (type === 'recovery') {
-            // Password recovery - don't auto-process, let Auth.jsx handle it
-            console.log('Password recovery detected in URL - deferring to Auth component');
-            // Mark as pending for Auth.jsx to process
-            localStorage.setItem('neural_recovery_pending', 'true');
-          }
-        }
-
-        // Normal session check (only if no magic link or magic link failed)
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-
-        console.log('Initial session check:', {
-          hasSession: !!initialSession,
-          hasUser: !!initialSession?.user,
-          email: initialSession?.user?.email,
-          error
-        });
+        const { data: { session }, error } = await supabase.auth.getSession();
 
         if (mounted) {
-          setSession(initialSession);
-          setUser(initialSession?.user ?? null);
+          if (error) {
+            console.error('Error getting session:', error);
+          }
+
+          if (session?.user) {
+            console.log('Auth loaded - user:', !!session.user);
+            setUser(session.user);
+            setIsAuthenticated(true);
+          } else {
+            console.log('Auth loaded - user:', false);
+            setUser(null);
+            setIsAuthenticated(false);
+          }
           setLoading(false);
         }
       } catch (error) {
-        console.error('Error getting session:', error);
+        console.error('Auth initialization error:', error);
         if (mounted) {
           setLoading(false);
         }
       }
     };
 
-    // Set timeout as safety net to prevent infinite loading
+    // CRITICAL FIX: Increased timeout from 3000ms to 10000ms
+    // This gives magic links enough time to complete processing
+    // Magic links need 5-10 seconds to establish session
     const timeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn('Auth initialization timeout - continuing without session');
+        console.warn('⚠️ Auth initialization timeout - continuing without session');
         setLoading(false);
       }
-    }, 3000); // 3 second timeout - faster UX
+    }, 10000); // INCREASED FROM 3000 TO 10000
 
-    initializeAuth();
+    initAuth();
 
-    // Listen for auth changes
-    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', {
-        event,
-        email: session?.user?.email,
-        hasSession: !!session,
-        timestamp: new Date().toISOString()
-      });
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
 
-      if (mounted) {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-
-        // Log successful magic link login
-        if (event === 'SIGNED_IN' && session?.user) {
-          console.log('✅ User successfully signed in via', event);
+        if (mounted) {
+          if (session?.user) {
+            setUser(session.user);
+            setIsAuthenticated(true);
+            console.log('Setting isAuthenticated: true');
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+            console.log('Setting isAuthenticated: false');
+          }
+          setLoading(false);
         }
       }
-    });
+    );
 
     return () => {
       mounted = false;
@@ -145,65 +89,12 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    session,
     loading,
-    signUp: async (email, password) => {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-      return { data, error };
-    },
-    signIn: async (email, password) => {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      return { data, error };
-    },
-    signInWithMagicLink: async (email) => {
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: window.location.origin,
-        }
-      });
-      return { data, error };
-    },
-    signOut: async () => {
-      console.log('🧹 Signing out: clearing all auth state');
-
-      // Clear all auth-related flags
-      localStorage.removeItem('neural_recovery_pending');
-      localStorage.removeItem('sync_in_progress');
-
-      try {
-        const { error } = await supabase.auth.signOut();
-
-        if (error) {
-          console.error('❌ Sign out error:', error);
-          return { error };
-        }
-
-        console.log('✅ Supabase sign out successful');
-        return { error: null };
-      } catch (error) {
-        console.error('💥 Sign out exception:', error);
-        return { error };
-      }
-    },
-    sendPasswordSetupEmail: async (email) => {
-      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}`,
-      });
-      return { data, error };
-    },
-    updatePassword: async (newPassword) => {
-      const { data, error } = await supabase.auth.updateUser({
-        password: newPassword
-      });
-      return { data, error };
-    },
+    isAuthenticated,
+    signUp: (email, password) => supabase.auth.signUp({ email, password }),
+    signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
+    signOut: () => supabase.auth.signOut(),
+    resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
   };
 
   return (
@@ -212,3 +103,5 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+
+export default AuthContext;
