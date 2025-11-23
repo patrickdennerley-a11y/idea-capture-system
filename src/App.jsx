@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useSupabase } from './hooks/useSupabase';
-import { useAuth, clearAllAuthState } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { isSupabaseConfigured } from './utils/supabaseClient';
 import { migrateAllData, hasLocalStorageData, hasCloudData, getMigrationStatus } from './utils/dataMigration';
 import { processQueue, getSyncStatus, hasPendingOperations } from './utils/offlineQueue';
@@ -43,7 +43,7 @@ const TABS = [
 ];
 
 function App() {
-  const { user, loading: authLoading, signOut } = useAuth();
+  const { user, loading: authLoading, isAuthenticated: authIsAuthenticated, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('capture');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
@@ -629,7 +629,7 @@ function App() {
               })}
 
               {/* Sync Status & Actions */}
-              {isSupabaseConfigured() && user && (
+              {isSupabaseConfigured() && authIsAuthenticated && (
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-700">
                   {/* Sync Status */}
                   <button
@@ -703,6 +703,43 @@ function App() {
                     </button>
                   );
                 })}
+
+                {/* Mobile Sync & Logout Buttons */}
+                {isSupabaseConfigured() && authIsAuthenticated && (
+                  <>
+                    <div className="border-t border-gray-700 my-2"></div>
+                    {/* Sync Button */}
+                    <button
+                      onClick={() => {
+                        handleSync();
+                        setMobileMenuOpen(false);
+                      }}
+                      disabled={!isOnline || isSyncing}
+                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? (
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                      ) : isOnline ? (
+                        <Cloud className="w-5 h-5" />
+                      ) : (
+                        <CloudOff className="w-5 h-5" />
+                      )}
+                      <span>Sync {pendingOps > 0 ? `(${pendingOps})` : ''}</span>
+                    </button>
+
+                    {/* Logout Button */}
+                    <button
+                      onClick={() => {
+                        handleSignOut();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-all"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      <span>Log Out</span>
+                    </button>
+                  </>
+                )}
               </nav>
             </div>
           )}
@@ -725,7 +762,7 @@ function App() {
               <span>v0.2.0</span>
               <span>•</span>
               <span className="flex items-center gap-1">
-                {isSupabaseConfigured() && user ? (
+                {isSupabaseConfigured() && authIsAuthenticated ? (
                   <>
                     <Cloud className="w-3 h-3" />
                     <span>Cloud sync enabled</span>
@@ -744,7 +781,7 @@ function App() {
           </div>
           <div className="mt-4 p-3 bg-neural-darker rounded-lg border border-gray-800">
             <p className="text-xs text-gray-500 text-center">
-              {isSupabaseConfigured() && user ? (
+              {isSupabaseConfigured() && authIsAuthenticated ? (
                 <>
                   ✨ <strong>Cloud Sync Active:</strong> Your data syncs across all devices. Works offline!
                 </>

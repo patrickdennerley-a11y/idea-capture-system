@@ -1,114 +1,27 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Validate environment variables
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase environment variables not configured. Running in localStorage-only mode.');
+  throw new Error('Missing Supabase Environment Variables')
 }
 
-// Create Supabase client with offline support and real-time capabilities
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
-    persistSession: true,
+    // 🛑 CRITICAL: Stop Supabase from handling the URL automatically.
+    // We will handle it manually in AuthContext.
     detectSessionInUrl: false,
-    storage: window.localStorage,
-    storageKey: 'neural-auth-token'
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  },
-  global: {
-    headers: {
-      'X-Client-Info': 'neural-capture-web'
-    }
+    persistSession: true,
+    autoRefreshToken: true,
   }
-});
+})
 
-/**
- * Check if user is authenticated
- */
-export const isAuthenticated = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  return !!session;
+export const isSupabaseConfigured = () => {
+  return !!(supabaseUrl && supabaseAnonKey);
 };
 
-/**
- * Get current user
- */
 export const getCurrentUser = async () => {
   const { data: { user } } = await supabase.auth.getUser();
   return user;
-};
-
-/**
- * Sign up with email and password
- */
-export const signUp = async (email, password) => {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-  return { data, error };
-};
-
-/**
- * Sign in with email and password
- */
-export const signIn = async (email, password) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
-};
-
-/**
- * Sign in with magic link (passwordless)
- */
-export const signInWithMagicLink = async (email) => {
-  const { data, error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      emailRedirectTo: window.location.origin,
-    }
-  });
-  return { data, error };
-};
-
-/**
- * Sign out
- */
-export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  return { error };
-};
-
-/**
- * Send password setup/reset email
- * This allows users who signed up with magic link to add password login
- */
-export const sendPasswordSetupEmail = async (email) => {
-  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin,
-  });
-  return { data, error };
-};
-
-/**
- * Listen to auth state changes
- */
-export const onAuthStateChange = (callback) => {
-  return supabase.auth.onAuthStateChange(callback);
-};
-
-/**
- * Check if Supabase is properly configured
- */
-export const isSupabaseConfigured = () => {
-  return !!(supabaseUrl && supabaseAnonKey);
 };
