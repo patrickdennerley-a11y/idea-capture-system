@@ -19,63 +19,65 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
 
-    // Initialize auth state
+    // 🚀 SMART TIMEOUT LOGIC
+    // If URL has #access_token, it's a magic link -> Wait 15s
+    // If not, it's a normal load -> Wait only 2s (Fixes black screen)
+    const isMagicLink = window.location.hash.includes('access_token');
+    const TIMEOUT_DURATION = isMagicLink ? 15000 : 2000;
+
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (mounted) {
-          if (error) {
-            console.error('Error getting session:', error);
-          }
-
           if (session?.user) {
-            console.log('Auth loaded - user:', !!session.user);
+            console.log('✅ Auth loaded - user found');
             setUser(session.user);
             setIsAuthenticated(true);
           } else {
-            console.log('Auth loaded - user:', false);
+            // Only log this if it's a magic link to keep console clean
+            if (isMagicLink) console.log('⚠️ Auth loaded - no user found yet');
             setUser(null);
             setIsAuthenticated(false);
           }
-          setLoading(false);
+
+          // If we found a session or it's NOT a magic link, stop loading immediately
+          if (session?.user || !isMagicLink) {
+            setLoading(false);
+          }
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
-    // CRITICAL FIX: Increased timeout from 3000ms to 10000ms
-    // This gives magic links enough time to complete processing
-    // Magic links need 5-10 seconds to establish session
+    // Safety timeout
     const timeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn('⚠️ Auth initialization timeout - continuing without session');
+        console.warn(`⚠️ Auth initialization timeout (${TIMEOUT_DURATION}ms) - forcing UI load`);
         setLoading(false);
       }
-    }, 20000); // 20 seconds safety net - INCREASED FROM 3000 -> 10000 -> 20000
+    }, TIMEOUT_DURATION);
 
     initAuth();
 
-    // Listen for auth state changes
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event);
+        console.log(`Auth event: ${event}`);
 
         if (mounted) {
           if (session?.user) {
             setUser(session.user);
             setIsAuthenticated(true);
-            console.log('Setting isAuthenticated: true');
-          } else {
+            setLoading(false); // Ensure loading stops on sign in
+          } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+             // Handle explicit sign out events
             setUser(null);
             setIsAuthenticated(false);
-            console.log('Setting isAuthenticated: false');
+            setLoading(false);
           }
-          setLoading(false);
         }
       }
     );
@@ -87,13 +89,41 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  // ☢️ NUCLEAR LOGOUT FUNCTION
+  const signOut = async () => {
+    try {
+      console.log('🚪 Sign out initiated - Clearing EVERYTHING');
+
+      // 1. Clear React state IMMEDIATELY (Updates UI)
+      setUser(null);
+      setIsAuthenticated(false);
+
+      // 2. Clear Storage (Prevents "Zombie" sessions from auto-reloading)
+      localStorage.clear();
+      sessionStorage.clear();
+
+      // 3. Tell Supabase to kill the session
+      await supabase.auth.signOut();
+
+      console.log('✅ Sign out complete');
+
+      // 4. Force reload to ensure clean state
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Sign out error:', error);
+      // Force clear even if network fails
+      localStorage.clear();
+      window.location.href = '/';
+    }
+  };
+
   const value = {
     user,
     loading,
     isAuthenticated,
     signUp: (email, password) => supabase.auth.signUp({ email, password }),
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-    signOut: () => supabase.auth.signOut(),
+    signOut, // Use our custom nuclear logout
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
   };
 
