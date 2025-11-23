@@ -129,6 +129,19 @@ function App() {
     }
   }, []);
 
+  // FIX #1: Cleanup recovery flag on unmount to prevent stale errors
+  useEffect(() => {
+    return () => {
+      // Only cleanup if user never completed password reset
+      // (if they did, the flag is already cleared by Auth.jsx)
+      const hasRecoveryFlag = localStorage.getItem('neural_recovery_pending') === 'true';
+      if (hasRecoveryFlag) {
+        console.log('🧹 App unmounting with recovery flag still set - clearing to prevent stale error');
+        localStorage.removeItem('neural_recovery_pending');
+      }
+    };
+  }, []);
+
   // Check authentication status
   useEffect(() => {
     console.log('🔍 Auth state check:', {
