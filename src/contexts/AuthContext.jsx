@@ -39,6 +39,50 @@ export const AuthProvider = ({ children }) => {
     const initializeAuth = async () => {
       try {
         console.log('Initializing auth - checking for session...');
+
+        // CRITICAL FIX: Check for magic link/recovery tokens in URL FIRST
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
+
+        if (accessToken && refreshToken) {
+          console.log('Auth URL hash detected:', { type });
+
+          if (type === 'magiclink') {
+            console.log('Access token detected in URL (Magic Link) - processing...');
+
+            // CRITICAL: Await setSession to ensure it persists before continuing
+            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken
+            });
+
+            if (sessionError) {
+              console.error('Failed to set magic link session:', sessionError);
+              // Fall through to normal session check
+            } else if (sessionData?.session?.user) {
+              console.log('✅ Magic link session established:', sessionData.session.user.email);
+
+              if (mounted) {
+                setSession(sessionData.session);
+                setUser(sessionData.session.user);
+                setLoading(false);
+              }
+
+              // Clean URL hash
+              window.history.replaceState(null, '', window.location.pathname);
+              return; // SUCCESS - don't continue to normal session check
+            }
+          } else if (type === 'recovery') {
+            // Password recovery - don't auto-process, let Auth.jsx handle it
+            console.log('Password recovery detected in URL - deferring to Auth component');
+            // Mark as pending for Auth.jsx to process
+            localStorage.setItem('neural_recovery_pending', 'true');
+          }
+        }
+
+        // Normal session check (only if no magic link or magic link failed)
         const { data: { session: initialSession }, error } = await supabase.auth.getSession();
 
         console.log('Initial session check:', {
