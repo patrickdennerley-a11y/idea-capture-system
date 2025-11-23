@@ -125,7 +125,7 @@ const Auth = ({ onAuthenticated }) => {
                 onAuthenticated();
               }
             })(),
-            5000 // 5 seconds for magic link
+            15000 // 15 seconds for magic link - gives Supabase time to breathe
           );
         } catch (err) {
           console.error('Magic link flow error:', err);
