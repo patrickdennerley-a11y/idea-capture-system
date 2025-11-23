@@ -3,13 +3,7 @@ import { supabase } from '../utils/supabaseClient';
 
 const AuthContext = createContext({});
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -17,57 +11,93 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Handle magic link tokens in URL if present
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token')) {
-      const params = new URLSearchParams(hash.substring(1));
-      const access_token = params.get('access_token');
-      const refresh_token = params.get('refresh_token');
+    let mounted = true;
 
-      // Clean up URL immediately
-      window.history.replaceState(null, '', window.location.pathname);
+    const initializeAuth = async () => {
+      try {
+        // 1. Check if we are coming back from a Magic Link
+        const hash = window.location.hash;
 
-      if (access_token && refresh_token) {
-        // Set session - don't await, let onAuthStateChange handle it
-        supabase.auth.setSession({
-          access_token,
-          refresh_token
-        });
+        // Only process if we see an access token and we haven't processed it yet
+        if (hash && hash.includes('access_token')) {
+          console.log('🔗 Magic Link detected. Processing manually...');
+
+          // Parse the hash
+          const params = new URLSearchParams(hash.substring(1)); // remove the '#'
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+
+          // Clean the URL immediately so we don't try to use it again
+          window.history.replaceState(null, '', window.location.pathname);
+
+          if (access_token && refresh_token) {
+            // Manually set the session
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+
+            if (error) {
+              console.error('❌ Error exchanging token:', error.message);
+            } else if (data.session) {
+              console.log('✅ Session established via Magic Link');
+              if (mounted) {
+                setUser(data.session.user);
+                setIsAuthenticated(true);
+                setLoading(false);
+              }
+              return; // We are done, don't run the standard check
+            }
+          }
+        }
+
+        // 2. Standard Session Check (for normal page loads)
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (mounted) {
+          if (session?.user) {
+            console.log('✅ Existing session found');
+            setUser(session.user);
+            setIsAuthenticated(true);
+          } else {
+            console.log('ℹ️ No active session');
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        }
+      } catch (error) {
+        console.error('💥 Auth Initialization Error:', error);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-    }
+    };
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-        setIsAuthenticated(true);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-      }
-      setLoading(false);
-    });
+    initializeAuth();
 
-    // Listen to auth changes - this is the single source of truth
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setUser(session.user);
-        setIsAuthenticated(true);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
+    // 3. Listen for future auth changes (login/logout/token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (mounted) {
+          console.log(`🔔 Auth State Changed: ${event}`);
+          if (session?.user) {
+            setUser(session.user);
+            setIsAuthenticated(true);
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+          setLoading(false);
+        }
       }
-      setLoading(false);
-    });
+    );
 
     return () => {
-      subscription.unsubscribe();
+      mounted = false;
+      subscription?.unsubscribe();
     };
   }, []);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
 
   const value = {
     user,
@@ -75,22 +105,26 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     signUp: (email, password) => supabase.auth.signUp({ email, password }),
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-    signOut,
+    signOut: async () => {
+      await supabase.auth.signOut();
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.clear(); // Clean up specific keys if needed, but strict clear is safer
+      window.location.href = '/';
+    },
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-neural-darker flex items-center justify-center flex-col">
-        <div className="text-6xl mb-4 animate-bounce">🧠</div>
-        <p className="text-gray-400 font-medium">Loading...</p>
-      </div>
-    );
-  }
-
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      {!loading ? children : (
+        <div className="min-h-screen bg-neural-darker flex items-center justify-center">
+           <div className="text-center">
+             <div className="text-6xl mb-4 animate-bounce">🧠</div>
+             <p className="text-gray-400">Loading Neural Capture...</p>
+           </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };
