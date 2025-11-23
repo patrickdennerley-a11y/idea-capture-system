@@ -175,10 +175,10 @@ export const processQueue = async (onProgress) => {
   }
 
   try {
-    // Add 5-second timeout to getCurrentUser to prevent hanging
+    // Add 10-second timeout to getCurrentUser to prevent hanging (increased from 5s)
     const getUserWithTimeout = async () => {
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('User check timeout')), 5000)
+        setTimeout(() => reject(new Error('User check timeout')), 10000)
       );
       return Promise.race([getCurrentUser(), timeoutPromise]);
     };
