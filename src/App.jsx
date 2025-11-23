@@ -629,7 +629,7 @@ function App() {
               })}
 
               {/* Sync Status & Actions */}
-              {isSupabaseConfigured() && authIsAuthenticated && (
+              {isSupabaseConfigured() && isAuthenticated && (
                 <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-700">
                   {/* Sync Status */}
                   <button
@@ -705,7 +705,7 @@ function App() {
                 })}
 
                 {/* Mobile Sync & Logout Buttons */}
-                {isSupabaseConfigured() && authIsAuthenticated && (
+                {isSupabaseConfigured() && isAuthenticated && (
                   <>
                     <div className="border-t border-gray-700 my-2"></div>
                     {/* Sync Button */}
@@ -762,7 +762,7 @@ function App() {
               <span>v0.2.0</span>
               <span>•</span>
               <span className="flex items-center gap-1">
-                {isSupabaseConfigured() && authIsAuthenticated ? (
+                {isSupabaseConfigured() && isAuthenticated ? (
                   <>
                     <Cloud className="w-3 h-3" />
                     <span>Cloud sync enabled</span>
@@ -781,7 +781,7 @@ function App() {
           </div>
           <div className="mt-4 p-3 bg-neural-darker rounded-lg border border-gray-800">
             <p className="text-xs text-gray-500 text-center">
-              {isSupabaseConfigured() && authIsAuthenticated ? (
+              {isSupabaseConfigured() && isAuthenticated ? (
                 <>
                   ✨ <strong>Cloud Sync Active:</strong> Your data syncs across all devices. Works offline!
                 </>
