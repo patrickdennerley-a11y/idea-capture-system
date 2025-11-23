@@ -15,65 +15,105 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Loading...');
 
   useEffect(() => {
     let mounted = true;
 
-    // 🚀 SMART TIMEOUT LOGIC
-    // If URL has #access_token, it's a magic link -> Wait 15s
-    // If not, it's a normal load -> Wait only 2s (Fixes black screen)
-    const isMagicLink = window.location.hash.includes('access_token');
-    const TIMEOUT_DURATION = isMagicLink ? 15000 : 2000;
-
     const initAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // 1. Check for Magic Link
+        const hash = window.location.hash;
+        const hasToken = hash.includes('access_token') && hash.includes('refresh_token');
+
+        if (hasToken) {
+          console.log('⚡ AuthContext: Magic Link detected.');
+          setLoadingMessage('Finalizing Secure Login...');
+
+          const params = new URLSearchParams(hash.substring(1));
+          const access_token = params.get('access_token');
+          const refresh_token = params.get('refresh_token');
+
+          // Wipe URL immediately to prevent re-use
+          window.history.replaceState(null, '', window.location.pathname);
+
+          if (access_token && refresh_token) {
+            console.log('⚡ AuthContext: Exchanging tokens...');
+
+            // WORKAROUND FOR SUPABASE BUG #1441
+            // setSession() sometimes hangs indefinitely even after success.
+            // We race it against a short timeout. If it times out, we assume it
+            // worked and verify via getSession().
+            try {
+              const setSessionPromise = supabase.auth.setSession({
+                access_token,
+                refresh_token
+              });
+
+              // Give it 2 seconds to be polite
+              await Promise.race([
+                setSessionPromise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error('HangingPromise')), 2000))
+              ]);
+
+            } catch (err) {
+              if (err.message === 'HangingPromise') {
+                console.log('⚠️ AuthContext: setSession hung (known bug). Checking session anyway...');
+              } else {
+                console.error('💥 AuthContext Error:', err);
+              }
+            }
+
+            // IMMEDIATELY CHECK SESSION
+            // Even if the promise above hung, the session is likely set in memory/storage now.
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.user) {
+              console.log('✅ AuthContext: Login verified via getSession!');
+              if (mounted) {
+                setUser(data.session.user);
+                setIsAuthenticated(true);
+                setLoading(false);
+                return; // SUCCESS
+              }
+            } else {
+               console.warn('❌ AuthContext: Login failed verification.');
+               // Fall through to normal load
+            }
+          }
+        }
+
+        // 2. Normal Load / Fallback
+        console.log('🔍 AuthContext: Checking existing session...');
+        const { data: { session } } = await supabase.auth.getSession();
 
         if (mounted) {
           if (session?.user) {
-            console.log('✅ Auth loaded - user found');
+            console.log('✅ AuthContext: Session found.');
             setUser(session.user);
             setIsAuthenticated(true);
           } else {
-            // Only log this if it's a magic link to keep console clean
-            if (isMagicLink) console.log('⚠️ Auth loaded - no user found yet');
             setUser(null);
             setIsAuthenticated(false);
           }
-
-          // If we found a session or it's NOT a magic link, stop loading immediately
-          if (session?.user || !isMagicLink) {
-            setLoading(false);
-          }
         }
       } catch (error) {
-        console.error('Auth initialization error:', error);
+        console.error('Auth check error:', error);
+      } finally {
         if (mounted) setLoading(false);
       }
     };
 
-    // Safety timeout
-    const timeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn(`⚠️ Auth initialization timeout (${TIMEOUT_DURATION}ms) - forcing UI load`);
-        setLoading(false);
-      }
-    }, TIMEOUT_DURATION);
-
     initAuth();
 
-    // Listen for auth changes
+    // Event Listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log(`Auth event: ${event}`);
-
         if (mounted) {
           if (session?.user) {
             setUser(session.user);
             setIsAuthenticated(true);
-            setLoading(false); // Ensure loading stops on sign in
-          } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
-             // Handle explicit sign out events
+            setLoading(false);
+          } else if (event === 'SIGNED_OUT') {
             setUser(null);
             setIsAuthenticated(false);
             setLoading(false);
@@ -84,34 +124,19 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
       subscription?.unsubscribe();
     };
   }, []);
 
-  // ☢️ NUCLEAR LOGOUT FUNCTION
   const signOut = async () => {
     try {
-      console.log('🚪 Sign out initiated - Clearing EVERYTHING');
-
-      // 1. Clear React state IMMEDIATELY (Updates UI)
       setUser(null);
       setIsAuthenticated(false);
-
-      // 2. Clear Storage (Prevents "Zombie" sessions from auto-reloading)
       localStorage.clear();
       sessionStorage.clear();
-
-      // 3. Tell Supabase to kill the session
       await supabase.auth.signOut();
-
-      console.log('✅ Sign out complete');
-
-      // 4. Force reload to ensure clean state
       window.location.href = '/';
     } catch (error) {
-      console.error('Sign out error:', error);
-      // Force clear even if network fails
       localStorage.clear();
       window.location.href = '/';
     }
@@ -123,9 +148,18 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     signUp: (email, password) => supabase.auth.signUp({ email, password }),
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-    signOut, // Use our custom nuclear logout
+    signOut,
     resetPassword: (email) => supabase.auth.resetPasswordForEmail(email),
   };
+
+  if (loading) {
+     return (
+       <div className="min-h-screen bg-neural-darker flex items-center justify-center flex-col">
+         <div className="text-6xl mb-4 animate-bounce">🧠</div>
+         <p className="text-gray-400 font-medium">{loadingMessage}</p>
+       </div>
+     );
+  }
 
   return (
     <AuthContext.Provider value={value}>
