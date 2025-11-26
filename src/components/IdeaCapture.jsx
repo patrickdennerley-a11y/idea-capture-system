@@ -638,7 +638,7 @@ export default function IdeaCapture({
 
       // Create idea object
       const idea = {
-        id: Date.now() + Math.random(), // Unique ID
+        id: crypto.randomUUID(), // Unique UUID for Supabase compatibility
         content: content,
         tags: tags,
         context: contextValue,
