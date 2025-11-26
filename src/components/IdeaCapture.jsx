@@ -39,6 +39,9 @@ import { formatDateTime } from '../utils/dateUtils';
 import { organizeIdeas } from '../utils/apiService';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import IdeaEditModal from './IdeaEditModal';
+import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
+import { jsToDb, dbToJs } from '../utils/ideaMapper';
 // Temporarily disabled virtual scrolling - using regular rendering instead
 // import { VariableSizeList as List } from 'react-window';
 
@@ -223,6 +226,7 @@ export default function IdeaCapture({
   ideaCaptureRenderCount++;
   console.log(`🔍 IdeaCapture rendered ${ideaCaptureRenderCount} times - Ideas count: ${ideas.length}`);
 
+  const { user } = useAuth();
   const [currentIdea, setCurrentIdea] = useState('');
   const [selectedTags, setSelectedTags] = useState([]);
   const [customTag, setCustomTag] = useState('');
@@ -341,43 +345,61 @@ export default function IdeaCapture({
 
   const saveIdea = async () => {
     if (!currentIdea.trim()) return;
+    if (!user?.id) {
+      alert('You must be logged in to save ideas');
+      return;
+    }
 
-    // Create idea with default classification
-    const newIdea = {
-      id: Date.now(),
-      content: currentIdea.trim(),
-      tags: selectedTags,
-      context: context.trim(),
-      dueDate: dueDate || null,
-      timestamp: new Date().toISOString(),
-      // Classification fields with defaults
-      classificationType: 'general',
-      duration: null,
-      recurrence: 'none',
-      timeOfDay: null,
-      priority: 'medium',
-      autoClassified: false,
-      lastModified: new Date().toISOString()
-    };
+    try {
+      // Create idea with default classification
+      const newIdea = {
+        content: currentIdea.trim(),
+        tags: selectedTags,
+        context: context.trim() || null,
+        dueDate: dueDate || null,
+        classificationType: 'general',
+        duration: null,
+        recurrence: 'none',
+        timeOfDay: null,
+        priority: 'medium',
+        autoClassified: false,
+      };
 
-    setIdeas(prev => [newIdea, ...prev]);
+      // Convert to database format and insert
+      const dbIdea = jsToDb(newIdea, user.id);
+      
+      const { data, error } = await supabase
+        .from('ideas')
+        .insert(dbIdea)
+        .select()
+        .single();
 
-    // Reset form
-    setCurrentIdea('');
-    setSelectedTags([]);
-    setContext('');
-    setDueDate('');
+      if (error) throw error;
 
-    // Show saved feedback
-    setShowSaved(true);
-    setTimeout(() => setShowSaved(false), 2000);
+      // Convert back to JS format and add to local state
+      const savedIdea = dbToJs(data);
+      setIdeas(prev => [savedIdea, ...prev]);
 
-    // Auto-classify in background (non-blocking)
-    classifyIdeaInBackground(newIdea);
+      // Reset form
+      setCurrentIdea('');
+      setSelectedTags([]);
+      setContext('');
+      setDueDate('');
 
-    // Refocus textarea for next idea
-    if (textareaRef.current) {
-      textareaRef.current.focus();
+      // Show saved feedback
+      setShowSaved(true);
+      setTimeout(() => setShowSaved(false), 2000);
+
+      // Auto-classify in background (non-blocking)
+      classifyIdeaInBackground(savedIdea);
+
+      // Refocus textarea for next idea
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    } catch (error) {
+      console.error('Error saving idea:', error);
+      alert('Failed to save idea: ' + error.message);
     }
   };
 
@@ -468,20 +490,62 @@ export default function IdeaCapture({
     }
   }, [currentIdea]);
 
-  const deleteIdea = useCallback((id) => {
-    setIdeas(prev => prev.filter(i => i.id !== id));
-  }, [setIdeas]);
+  const deleteIdea = useCallback(async (id) => {
+    if (!user?.id) {
+      alert('You must be logged in to delete ideas');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ideas')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Remove from local state
+      setIdeas(prev => prev.filter(i => i.id !== id));
+    } catch (error) {
+      console.error('Error deleting idea:', error);
+      alert('Failed to delete idea: ' + error.message);
+    }
+  }, [setIdeas, user?.id]);
 
   // Modal handlers
   const openEditModal = useCallback((idea) => {
     setEditingIdea(idea);
   }, []);
 
-  const handleSaveFromModal = (updatedIdea) => {
-    setIdeas(prev => prev.map(i =>
-      i.id === updatedIdea.id ? updatedIdea : i
-    ));
-    setEditingIdea(null);
+  const handleSaveFromModal = async (updatedIdea) => {
+    if (!user?.id) {
+      alert('You must be logged in to update ideas');
+      return;
+    }
+
+    try {
+      // Convert to database format and update
+      const dbIdea = jsToDb(updatedIdea, user.id);
+      
+      const { data, error } = await supabase
+        .from('ideas')
+        .update(dbIdea)
+        .eq('id', updatedIdea.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Convert back to JS format and update local state
+      const savedIdea = dbToJs(data);
+      setIdeas(prev => prev.map(i =>
+        i.id === savedIdea.id ? savedIdea : i
+      ));
+      setEditingIdea(null);
+    } catch (error) {
+      console.error('Error updating idea:', error);
+      alert('Failed to update idea: ' + error.message);
+    }
   };
 
   const handleDeleteFromModal = (ideaId) => {

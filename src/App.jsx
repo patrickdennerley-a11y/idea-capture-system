@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { supabase } from './supabaseClient';
+import { dbArrayToJs } from './utils/ideaMapper';
 import Auth from './components/Auth';
 import ForgotPassword from './components/ForgotPassword';
 import UpdatePassword from './components/UpdatePassword';
@@ -53,9 +55,11 @@ function Dashboard() {
     }
   };
 
-  // State with localStorage persistence
-  const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
+  // State with localStorage persistence (logs still use localStorage)
+  const [ideas, setIdeas] = useState([]);
   const [logs, setLogs] = useLocalStorage('neural-logs', []);
+  const [ideasLoading, setIdeasLoading] = useState(true);
+  const [ideasError, setIdeasError] = useState(null);
   const [reviews, setReviews] = useLocalStorage('neural-reviews', []);
   const [checklist, setChecklist] = useLocalStorage('neural-checklist', {
     date: getTodayString(),
@@ -98,6 +102,39 @@ function Dashboard() {
   // Noise Generator state (persists across tab switches)
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
+
+  // Fetch ideas from Supabase on mount
+  useEffect(() => {
+    const fetchIdeas = async () => {
+      if (!user?.id) {
+        setIdeasLoading(false);
+        return;
+      }
+
+      try {
+        setIdeasLoading(true);
+        setIdeasError(null);
+
+        const { data, error } = await supabase
+          .from('ideas')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Convert database rows to JavaScript objects
+        const jsIdeas = dbArrayToJs(data);
+        setIdeas(jsIdeas);
+      } catch (error) {
+        console.error('Error fetching ideas:', error);
+        setIdeasError(error.message);
+      } finally {
+        setIdeasLoading(false);
+      }
+    };
+
+    fetchIdeas();
+  }, [user?.id]);
 
   // Initialize audio context once at app level (never destroyed)
   useEffect(() => {
