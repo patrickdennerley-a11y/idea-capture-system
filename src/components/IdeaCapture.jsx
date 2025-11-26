@@ -636,9 +636,8 @@ export default function IdeaCapture({
 
       if (!content) continue; // Skip if no content
 
-      // Create idea object
+      // Create idea object (Supabase will generate the UUID)
       const idea = {
-        id: crypto.randomUUID(), // Unique UUID for Supabase compatibility
         content: content,
         tags: tags,
         context: contextValue,
@@ -652,11 +651,16 @@ export default function IdeaCapture({
     return parsedIdeas;
   };
 
-  const handleImportIdeas = () => {
+  const handleImportIdeas = async () => {
     setImportStatus({ type: '', message: '' });
 
     if (!importText.trim()) {
       setImportStatus({ type: 'error', message: 'Please paste exported ideas text' });
+      return;
+    }
+
+    if (!user?.id) {
+      setImportStatus({ type: 'error', message: 'You must be logged in to import ideas' });
       return;
     }
 
@@ -668,12 +672,23 @@ export default function IdeaCapture({
         return;
       }
 
-      // Add imported ideas to the beginning of the list (newest first)
-      setIdeas(prev => [...parsedIdeas, ...prev]);
+      // Convert to database format and insert into Supabase
+      const dbIdeas = parsedIdeas.map(idea => jsToDb(idea, user.id));
+      
+      const { data, error } = await supabase
+        .from('ideas')
+        .insert(dbIdeas)
+        .select();
+
+      if (error) throw error;
+
+      // Convert back to JS format and add to local state
+      const savedIdeas = data.map(dbToJs);
+      setIdeas(prev => [...savedIdeas, ...prev]);
 
       setImportStatus({
         type: 'success',
-        message: `Successfully imported ${parsedIdeas.length} idea${parsedIdeas.length !== 1 ? 's' : ''}!`
+        message: `Successfully imported ${savedIdeas.length} idea${savedIdeas.length !== 1 ? 's' : ''}!`
       });
 
       // Clear and close after success
@@ -685,7 +700,7 @@ export default function IdeaCapture({
 
     } catch (err) {
       console.error('Import error:', err);
-      setImportStatus({ type: 'error', message: 'Failed to parse ideas. Please check the format.' });
+      setImportStatus({ type: 'error', message: 'Failed to import ideas: ' + err.message });
     }
   };
 
