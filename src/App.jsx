@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import Auth from './components/Auth';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
 import QuickLogger from './components/QuickLogger';
@@ -18,6 +20,7 @@ import {
   X,
   Compass,
   Calendar,
+  LogOut,
 } from 'lucide-react';
 import { getTodayString } from './utils/dateUtils';
 
@@ -31,10 +34,21 @@ const TABS = [
   { id: 'noise', name: 'Noise', icon: Radio, color: 'pink' },
 ];
 
-function App() {
+// Protected Dashboard Component
+function Dashboard() {
+  const { logout, user } = useAuth();
   const [activeTab, setActiveTab] = useState('capture');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      alert('Failed to logout: ' + error.message);
+    }
+  };
 
   // State with localStorage persistence
   const [ideas, setIdeas] = useLocalStorage('neural-ideas', []);
@@ -319,6 +333,14 @@ function App() {
                   </button>
                 );
               })}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all text-gray-400 hover:text-red-400 hover:bg-gray-800"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="hidden lg:inline">Logout</span>
+              </button>
             </nav>
 
             {/* Mobile Menu Button */}
@@ -360,6 +382,16 @@ function App() {
                     </button>
                   );
                 })}
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all text-gray-400 hover:text-red-400 hover:bg-gray-800"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span>Logout</span>
+                </button>
               </nav>
             </div>
           )}
@@ -418,6 +450,37 @@ function App() {
       />
     </div>
   );
+}
+
+// Main App Component with Authentication
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+// App Content that checks authentication
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neural-darker flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-neural-purple border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth />;
+  }
+
+  return <Dashboard />;
 }
 
 export default App;
