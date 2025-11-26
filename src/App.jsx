@@ -1,7 +1,10 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Auth from './components/Auth';
+import ForgotPassword from './components/ForgotPassword';
+import UpdatePassword from './components/UpdatePassword';
 import IdeaCapture from './components/IdeaCapture';
 import DailyChecklist from './components/DailyChecklist';
 import QuickLogger from './components/QuickLogger';
@@ -452,17 +455,8 @@ function Dashboard() {
   );
 }
 
-// Main App Component with Authentication
-function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
-}
-
-// App Content that checks authentication
-function AppContent() {
+// Protected Route Component
+function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -477,10 +471,83 @@ function AppContent() {
   }
 
   if (!user) {
-    return <Auth />;
+    return <Navigate to="/auth" replace />;
   }
 
-  return <Dashboard />;
+  return children;
+}
+
+// Public Route Component (redirects to dashboard if already authenticated)
+function PublicRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neural-darker flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-neural-purple border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
+}
+
+// Main App Component with Authentication and Routing
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Public Routes */}
+          <Route
+            path="/auth"
+            element={
+              <PublicRoute>
+                <Auth />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicRoute>
+                <ForgotPassword />
+              </PublicRoute>
+            }
+          />
+
+          {/* Protected Routes */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/update-password"
+            element={
+              <ProtectedRoute>
+                <UpdatePassword />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Default redirect */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
 }
 
 export default App;

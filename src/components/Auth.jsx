@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { LogIn, UserPlus } from 'lucide-react'
 
@@ -142,6 +143,16 @@ export default function Auth({ onAuthSuccess }) {
                 className="w-full px-4 py-2 bg-neural-darker border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-neural-purple focus:border-transparent"
                 placeholder="••••••••"
               />
+              {mode === 'login' && (
+                <div className="mt-2 text-right">
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-neural-purple hover:underline"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
+              )}
             </div>
 
             {error && (
