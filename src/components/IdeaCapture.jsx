@@ -351,12 +351,13 @@ export default function IdeaCapture({
     }
 
     try {
-      // Create idea with default classification
+      // Create idea WITHOUT id - Supabase will generate UUID for regular users
       const newIdea = {
         content: currentIdea.trim(),
         tags: selectedTags,
         context: context.trim() || null,
         dueDate: dueDate || null,
+        timestamp: new Date().toISOString(),
         classificationType: 'general',
         duration: null,
         recurrence: 'none',
@@ -365,7 +366,29 @@ export default function IdeaCapture({
         autoClassified: false,
       };
 
-      // Convert to database format and insert
+      // Guest mode: add local ID and save to localStorage
+      if (user.isGuest) {
+        const guestIdea = { ...newIdea, id: Date.now() };
+        setIdeas(prev => [guestIdea, ...prev]);
+        
+        // Reset form
+        setCurrentIdea('');
+        setSelectedTags([]);
+        setContext('');
+        setDueDate('');
+
+        // Show saved feedback
+        setShowSaved(true);
+        setTimeout(() => setShowSaved(false), 2000);
+
+        // Refocus textarea for next idea
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+        return;
+      }
+
+      // Regular user: save to Supabase
       const dbIdea = jsToDb(newIdea, user.id);
       
       const { data, error } = await supabase
@@ -497,6 +520,13 @@ export default function IdeaCapture({
     }
 
     try {
+      // Guest mode: remove from state only
+      if (user.isGuest) {
+        setIdeas(prev => prev.filter(i => i.id !== id));
+        return;
+      }
+
+      // Regular user: delete from Supabase
       const { error } = await supabase
         .from('ideas')
         .delete()
@@ -510,7 +540,7 @@ export default function IdeaCapture({
       console.error('Error deleting idea:', error);
       alert('Failed to delete idea: ' + error.message);
     }
-  }, [setIdeas, user?.id]);
+  }, [setIdeas, user?.id, user?.isGuest]);
 
   // Modal handlers
   const openEditModal = useCallback((idea) => {
@@ -524,7 +554,16 @@ export default function IdeaCapture({
     }
 
     try {
-      // Convert to database format and update
+      // Guest mode: update in state only
+      if (user.isGuest) {
+        setIdeas(prev => prev.map(i =>
+          i.id === updatedIdea.id ? updatedIdea : i
+        ));
+        setEditingIdea(null);
+        return;
+      }
+
+      // Regular user: update in Supabase
       const dbIdea = jsToDb(updatedIdea, user.id);
       
       const { data, error } = await supabase
@@ -672,7 +711,30 @@ export default function IdeaCapture({
         return;
       }
 
-      // Convert to database format and insert into Supabase
+      // Guest mode: add IDs and save to state
+      if (user.isGuest) {
+        const ideasWithIds = parsedIdeas.map(idea => ({
+          ...idea,
+          id: Date.now() + Math.random() // Unique ID for each idea
+        }));
+        
+        setIdeas(prev => [...ideasWithIds, ...prev]);
+
+        setImportStatus({
+          type: 'success',
+          message: `Successfully imported ${ideasWithIds.length} idea${ideasWithIds.length !== 1 ? 's' : ''}!`
+        });
+
+        // Clear and close after success
+        setTimeout(() => {
+          setImportText('');
+          setShowImportModal(false);
+          setImportStatus({ type: '', message: '' });
+        }, 2000);
+        return;
+      }
+
+      // Regular user: save to Supabase
       const dbIdeas = parsedIdeas.map(idea => jsToDb(idea, user.id));
       
       const { data, error } = await supabase

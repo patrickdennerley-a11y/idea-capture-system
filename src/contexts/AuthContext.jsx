@@ -16,6 +16,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Check for guest mode first
+    const isGuestMode = localStorage.getItem('neural-guest-mode') === 'true'
+    
+    if (isGuestMode) {
+      // Set mock guest user
+      setUser({ id: 'guest', email: 'guest@local', isGuest: true })
+      setLoading(false)
+      return
+    }
+
     // Manual token parsing for email confirmation flow
     // Since detectSessionInUrl is false, we must parse the hash ourselves
     const handleEmailConfirmation = async () => {
@@ -90,7 +100,29 @@ export const AuthProvider = ({ children }) => {
     return data
   }
 
+  const enterGuestMode = () => {
+    // Set guest mode in localStorage and update state immediately
+    localStorage.setItem('neural-guest-mode', 'true')
+    setUser({ id: 'guest', email: 'guest@local', isGuest: true })
+  }
+
+  const exitGuestMode = () => {
+    // Clear guest mode from localStorage and state before navigating
+    localStorage.removeItem('neural-guest-mode')
+    setUser(null)
+  }
+
   const logout = async () => {
+    // Check if guest mode
+    const isGuestMode = localStorage.getItem('neural-guest-mode') === 'true'
+    
+    if (isGuestMode) {
+      // Use exitGuestMode for consistency
+      exitGuestMode()
+      return
+    }
+    
+    // Regular logout
     const { error } = await supabase.auth.signOut()
     if (error) throw error
   }
@@ -101,6 +133,8 @@ export const AuthProvider = ({ children }) => {
     signup,
     login,
     logout,
+    enterGuestMode,
+    exitGuestMode,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

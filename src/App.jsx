@@ -26,22 +26,136 @@ import {
   Compass,
   Calendar,
   LogOut,
+  ChevronDown,
 } from 'lucide-react';
 import { getTodayString } from './utils/dateUtils';
 
-const TABS = [
-  { id: 'capture', name: 'Capture', icon: Lightbulb, color: 'yellow' },
-  { id: 'checklist', name: 'Routines', icon: CheckCircle2, color: 'purple' },
-  { id: 'logger', name: 'Log', icon: Activity, color: 'blue' },
-  { id: 'plan', name: 'Plan', icon: Compass, color: 'green' },
-  { id: 'routine', name: 'Generate', icon: Calendar, color: 'purple' },
-  { id: 'review', name: 'Review', icon: Moon, color: 'purple' },
-  { id: 'noise', name: 'Noise', icon: Radio, color: 'pink' },
+// Grouped navigation structure
+const NAV_ITEMS = [
+  { id: 'capture', name: 'Capture', icon: Lightbulb, type: 'single' },
+  { 
+    id: 'plan-group', 
+    name: 'Plan', 
+    icon: Compass, 
+    type: 'group',
+    items: [
+      { id: 'checklist', name: 'Routines', icon: CheckCircle2 },
+      { id: 'plan', name: 'Plan', icon: Compass },
+      { id: 'routine', name: 'Generate', icon: Calendar },
+    ]
+  },
+  { 
+    id: 'track-group', 
+    name: 'Track', 
+    icon: Activity, 
+    type: 'group',
+    items: [
+      { id: 'logger', name: 'Log', icon: Activity },
+      { id: 'review', name: 'Review', icon: Moon },
+    ]
+  },
+  { id: 'noise', name: 'Noise', icon: Radio, type: 'single' },
 ];
+
+// Flatten NAV_ITEMS for mobile menu
+const FLAT_NAV_ITEMS = NAV_ITEMS.flatMap(item => 
+  item.type === 'group' ? item.items : [item]
+);
+
+// NavDropdown Component for grouped navigation items
+function NavDropdown({ item, activeTab, setActiveTab, isTabProcessing }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const timeoutRef = useRef(null);
+  
+  // Check if any child tab is active
+  const isChildActive = item.items.some(child => child.id === activeTab);
+  
+  // Check if any child tab is processing
+  const isChildProcessing = item.items.some(child => isTabProcessing(child.id));
+  
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setIsOpen(true);
+  };
+  
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 150); // Small delay to allow moving to dropdown
+  };
+  
+  const handleItemClick = (childId) => {
+    setActiveTab(childId);
+    setIsOpen(false);
+  };
+  
+  const Icon = item.icon;
+  
+  return (
+    <div 
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+          isChildActive
+            ? 'bg-neural-purple text-white'
+            : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+        }`}
+      >
+        <Icon className="w-4 h-4" />
+        <span className="hidden lg:inline">{item.name}</span>
+        <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        {isChildProcessing && (
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-neural-purple rounded-full pulse-glow">
+            <span className="absolute inset-0 w-3 h-3 bg-neural-purple rounded-full animate-ping"></span>
+          </span>
+        )}
+      </button>
+      
+      {/* Dropdown Menu */}
+      <div 
+        className={`absolute top-full left-0 mt-1 min-w-[160px] bg-neural-dark border border-gray-800 rounded-lg shadow-lg overflow-hidden transition-all duration-200 origin-top ${
+          isOpen 
+            ? 'opacity-100 scale-100 translate-y-0' 
+            : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+        }`}
+      >
+        {item.items.map((child) => {
+          const ChildIcon = child.icon;
+          const isProcessing = isTabProcessing(child.id);
+          return (
+            <button
+              key={child.id}
+              onClick={() => handleItemClick(child.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 font-medium transition-all ${
+                activeTab === child.id
+                  ? 'bg-neural-purple text-white'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+              }`}
+            >
+              <ChildIcon className="w-4 h-4" />
+              <span>{child.name}</span>
+              {isProcessing && (
+                <span className="ml-auto w-2 h-2 bg-neural-purple rounded-full pulse-glow">
+                  <span className="absolute w-2 h-2 bg-neural-purple rounded-full animate-ping"></span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Protected Dashboard Component
 function Dashboard() {
-  const { logout, user } = useAuth();
+  const navigate = useNavigate();
+  const { logout, user, exitGuestMode } = useAuth();
   const [activeTab, setActiveTab] = useState('capture');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showIconCustomizer, setShowIconCustomizer] = useState(false);
@@ -53,6 +167,13 @@ function Dashboard() {
       console.error('Logout failed:', error);
       alert('Failed to logout: ' + error.message);
     }
+  };
+
+  const handleSignUpFromGuest = () => {
+    // Clear guest mode state before navigating
+    exitGuestMode();
+    // Navigate will trigger route guard re-evaluation
+    navigate('/auth');
   };
 
   // State with localStorage persistence (logs still use localStorage)
@@ -103,7 +224,7 @@ function Dashboard() {
   const audioContextRef = useRef(null);
   const [activeSession, setActiveSession] = useState(null);
 
-  // Fetch ideas from Supabase on mount
+  // Fetch ideas from Supabase or localStorage on mount
   useEffect(() => {
     const fetchIdeas = async () => {
       if (!user?.id) {
@@ -111,6 +232,21 @@ function Dashboard() {
         return;
       }
 
+      // Guest mode: use localStorage
+      if (user.isGuest) {
+        try {
+          const storedIdeas = localStorage.getItem('neural-guest-ideas');
+          if (storedIdeas) {
+            setIdeas(JSON.parse(storedIdeas));
+          }
+        } catch (error) {
+          console.error('Error loading guest ideas:', error);
+        }
+        setIdeasLoading(false);
+        return;
+      }
+
+      // Regular user: fetch from Supabase
       try {
         setIdeasLoading(true);
         setIdeasError(null);
@@ -134,7 +270,18 @@ function Dashboard() {
     };
 
     fetchIdeas();
-  }, [user?.id]);
+  }, [user?.id, user?.isGuest]);
+
+  // Sync guest ideas to localStorage whenever they change
+  useEffect(() => {
+    if (user?.isGuest && ideas.length > 0) {
+      try {
+        localStorage.setItem('neural-guest-ideas', JSON.stringify(ideas));
+      } catch (error) {
+        console.error('Error saving guest ideas to localStorage:', error);
+      }
+    }
+  }, [ideas, user?.isGuest]);
 
   // Initialize audio context once at app level (never destroyed)
   useEffect(() => {
@@ -350,21 +497,34 @@ function Dashboard() {
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-2">
-              {TABS.map((tab) => {
-                const Icon = tab.icon;
-                const isProcessing = isTabProcessing(tab.id);
+              {NAV_ITEMS.map((item) => {
+                if (item.type === 'group') {
+                  return (
+                    <NavDropdown
+                      key={item.id}
+                      item={item}
+                      activeTab={activeTab}
+                      setActiveTab={setActiveTab}
+                      isTabProcessing={isTabProcessing}
+                    />
+                  );
+                }
+                
+                // Single item rendering
+                const Icon = item.icon;
+                const isProcessing = isTabProcessing(item.id);
                 return (
                   <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
                     className={`relative flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                      activeTab === tab.id
+                      activeTab === item.id
                         ? 'bg-neural-purple text-white'
                         : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    <span className="hidden lg:inline">{tab.name}</span>
+                    <span className="hidden lg:inline">{item.name}</span>
                     {isProcessing && (
                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-neural-purple rounded-full pulse-glow">
                         <span className="absolute inset-0 w-3 h-3 bg-neural-purple rounded-full animate-ping"></span>
@@ -395,28 +555,67 @@ function Dashboard() {
           {/* Mobile Navigation */}
           {mobileMenuOpen && (
             <div className="md:hidden py-4 border-t border-gray-800 animate-slide-in">
-              <nav className="flex flex-col gap-2">
-                {TABS.map((tab) => {
-                  const Icon = tab.icon;
-                  const isProcessing = isTabProcessing(tab.id);
+              <nav className="flex flex-col gap-1">
+                {NAV_ITEMS.map((item) => {
+                  if (item.type === 'group') {
+                    return (
+                      <div key={item.id} className="mb-1">
+                        {/* Group Header */}
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                          {item.name}
+                        </div>
+                        {/* Group Items */}
+                        {item.items.map((child) => {
+                          const ChildIcon = child.icon;
+                          const isProcessing = isTabProcessing(child.id);
+                          return (
+                            <button
+                              key={child.id}
+                              onClick={() => {
+                                setActiveTab(child.id);
+                                setMobileMenuOpen(false);
+                              }}
+                              className={`relative w-full flex items-center gap-3 px-4 py-3 pl-8 rounded-lg font-medium transition-all ${
+                                activeTab === child.id
+                                  ? 'bg-neural-purple text-white'
+                                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                              }`}
+                            >
+                              <ChildIcon className="w-5 h-5" />
+                              <span>{child.name}</span>
+                              {isProcessing && (
+                                <span className="ml-auto w-2 h-2 bg-neural-purple rounded-full pulse-glow">
+                                  <span className="absolute w-2 h-2 bg-neural-purple rounded-full animate-ping"></span>
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  
+                  // Single item rendering
+                  const Icon = item.icon;
+                  const isProcessing = isTabProcessing(item.id);
                   return (
                     <button
-                      key={tab.id}
+                      key={item.id}
                       onClick={() => {
-                        setActiveTab(tab.id);
+                        setActiveTab(item.id);
                         setMobileMenuOpen(false);
                       }}
                       className={`relative flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all ${
-                        activeTab === tab.id
+                        activeTab === item.id
                           ? 'bg-neural-purple text-white'
                           : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
                       }`}
                     >
                       <Icon className="w-5 h-5" />
-                      <span>{tab.name}</span>
+                      <span>{item.name}</span>
                       {isProcessing && (
                         <span className="ml-auto w-2 h-2 bg-neural-purple rounded-full pulse-glow">
-                          <span className="absolute inset-0 w-2 h-2 bg-neural-purple rounded-full animate-ping"></span>
+                          <span className="absolute w-2 h-2 bg-neural-purple rounded-full animate-ping"></span>
                         </span>
                       )}
                     </button>
@@ -437,6 +636,25 @@ function Dashboard() {
           )}
         </div>
       </header>
+
+      {/* Guest Mode Banner */}
+      {user?.isGuest && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-amber-200">
+                You're in guest mode. Sign up to sync across devices.
+              </p>
+              <button
+                onClick={handleSignUpFromGuest}
+                className="text-sm font-medium text-amber-300 hover:text-amber-100 underline whitespace-nowrap"
+              >
+                Sign up
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

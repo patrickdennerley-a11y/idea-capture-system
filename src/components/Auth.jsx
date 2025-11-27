@@ -1,16 +1,24 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { LogIn, UserPlus } from 'lucide-react'
 
 export default function Auth({ onAuthSuccess }) {
+  const navigate = useNavigate()
   const [mode, setMode] = useState('login') // 'login' or 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
-  const { login, signup } = useAuth()
+  const { login, signup, enterGuestMode } = useAuth()
+
+  const handleGuestMode = () => {
+    // Use context function to update state immediately
+    enterGuestMode()
+    // Navigation will happen automatically via route guards
+    navigate('/dashboard')
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -45,7 +53,15 @@ export default function Auth({ onAuthSuccess }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-neural-darker p-4">
       <div className="w-full max-w-md">
-        <div className="bg-neural-dark rounded-2xl shadow-xl border border-gray-800 p-8">
+        <div className="bg-neural-dark rounded-2xl shadow-xl border border-gray-800 p-8 relative">
+          {/* Guest Mode Button - Top Right */}
+          <button
+            onClick={handleGuestMode}
+            className="absolute top-4 right-4 text-xs text-gray-400 hover:text-gray-200 transition-colors underline"
+          >
+            Continue without account
+          </button>
+
           {/* Header */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-2">Neural Capture</h1>
