@@ -1020,17 +1020,26 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       
       // Remove markdown code fences
       rawText = rawText.replace(/^```json\s*/gi, '');
-      rawText = rawText.replace(/^```\s*/gi, '');
+      rawText = rawText.replace(/^```\s*/gi, '');  
       rawText = rawText.replace(/\s*```$/gi, '');
       
-      // Try to find the questions array specifically
-      const questionsMatch = rawText.match(/"questions"\s*:\s*\[[\s\S]*\]/);
-      if (questionsMatch) {
-        rawText = '{ ' + questionsMatch[0] + ' }';
-      }
+      // CRITICAL: Replace ALL backslashes with double backslashes first,
+      // then restore the valid JSON escape sequences
+      rawText = rawText
+        .replace(/\\/g, '\\\\')           // Double ALL backslashes
+        .replace(/\\\\"/g, '\\"')          // Restore escaped quotes
+        .replace(/\\\\\//g, '\\/')         // Restore escaped forward slash
+        .replace(/\\\\n/g, '\\n')          // Restore newlines
+        .replace(/\\\\r/g, '\\r')          // Restore carriage returns
+        .replace(/\\\\t/g, '\\t')          // Restore tabs
+        .replace(/\\\\b/g, '\\b')          // Restore backspace
+        .replace(/\\\\f/g, '\\f');         // Restore form feed
       
-      // Fix LaTeX backslashes
-      rawText = rawText.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+      // Try to extract just the questions array if there's malformed JSON
+      const questionsMatch = rawText.match(/"questions"\s*:\s*\[[\s\S]*?\](?=\s*\}|$)/);
+      if (questionsMatch) {
+        rawText = '{"questions":' + questionsMatch[0].replace(/^"questions"\s*:\s*/, '') + '}';
+      }
       
       questionsData = JSON.parse(rawText);
       
@@ -1043,8 +1052,8 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       console.error('Failed to parse questions response:', parseError.message);
       console.error('Raw response (first 1000 chars):', responseText.substring(0, 1000));
       return res.status(500).json({
-        error: 'Failed to parse generated questions. The AI returned malformed data. Please try again.',
-        details: parseError.message
+        error: 'Failed to parse generated questions. Please try again.',
+        parseError: parseError.message
       });
     }
 
