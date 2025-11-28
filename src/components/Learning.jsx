@@ -905,7 +905,7 @@ function Learning() {
                 );
               })}
             </div>
-          ) : question.type === 'calculation' || (question.type === 'formula' && !question.options) ? (
+          ) : question.type === 'calculation' ? (
             <div>
               <input
                 type="number"
@@ -916,6 +916,17 @@ function Learning() {
                 className="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-neural-purple focus:outline-none"
               />
               {question.unit && <p className="text-sm text-gray-500 mt-2">Unit: {question.unit}</p>}
+            </div>
+          ) : question.type === 'formula' && !question.options ? (
+            <div>
+              <input
+                type="text"
+                value={userAnswer || ''}
+                onChange={(e) => handleTextAnswer(question.id, e.target.value)}
+                placeholder="Enter your answer (use LaTeX notation if needed)..."
+                className="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-neural-purple focus:outline-none font-mono"
+              />
+              <p className="text-sm text-gray-500 mt-2">Tip: Use notation like lim, P(...), epsilon, etc.</p>
             </div>
           ) : (
             <textarea
