@@ -843,6 +843,14 @@ Examples of appropriate difficulty:
 - "Prove the Neyman-Pearson lemma from first principles, then extend it to the case of composite hypotheses"
 
 DO NOT generate easy questions. If you're unsure whether a question is hard enough, make it harder.
+
+CRITICAL JSON FORMATTING RULES:
+- Return ONLY a valid JSON object with a single "questions" array
+- Do NOT include any fields outside the "questions" array
+- Do NOT duplicate any keys
+- Ensure all LaTeX backslashes are double-escaped (\\\\frac not \\frac)
+- Keep each question's correctAnswer concise (under 500 characters) - put detailed solutions in the explanation field
+- Verify your JSON is complete and properly closed before responding
 `;
     }
 
@@ -928,7 +936,7 @@ QUESTION DISTRIBUTION (Balanced Mix):
 
     const message = await anthropic.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: style === 'proof' ? 8192 : 4096,
       temperature: 1.0,
       messages: [{
         role: 'user',
@@ -1008,24 +1016,35 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
 
     let questionsData;
     try {
-      // Get raw text from Claude response
       let rawText = responseText.trim();
-
-      // Remove markdown code fences if present
-      rawText = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-
-      // CRITICAL: Escape ALL backslashes that aren't valid JSON escape sequences
-      // Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
-      // This handles LaTeX commands like \frac, \sigma, \sum, \bar, \sqrt, etc.
+      
+      // Remove markdown code fences
+      rawText = rawText.replace(/^```json\s*/gi, '');
+      rawText = rawText.replace(/^```\s*/gi, '');
+      rawText = rawText.replace(/\s*```$/gi, '');
+      
+      // Try to find the questions array specifically
+      const questionsMatch = rawText.match(/"questions"\s*:\s*\[[\s\S]*\]/);
+      if (questionsMatch) {
+        rawText = '{ ' + questionsMatch[0] + ' }';
+      }
+      
+      // Fix LaTeX backslashes
       rawText = rawText.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
-
-      // Now parse the sanitized JSON
+      
       questionsData = JSON.parse(rawText);
+      
+      // Validate structure
+      if (!questionsData.questions || !Array.isArray(questionsData.questions)) {
+        throw new Error('Invalid response structure: missing questions array');
+      }
+      
     } catch (parseError) {
-      console.error('Failed to parse questions response:', parseError);
-      console.error('Raw response:', responseText);
+      console.error('Failed to parse questions response:', parseError.message);
+      console.error('Raw response (first 1000 chars):', responseText.substring(0, 1000));
       return res.status(500).json({
-        error: 'Failed to parse generated questions'
+        error: 'Failed to parse generated questions. The AI returned malformed data. Please try again.',
+        details: parseError.message
       });
     }
 
