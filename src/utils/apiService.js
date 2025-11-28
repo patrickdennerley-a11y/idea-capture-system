@@ -227,18 +227,62 @@ export const getReminders = async (ideas, logs, checklist, reviews, reminderHist
 };
 
 /**
+ * Evaluate a student's answer using AI semantic analysis
+ * @param {string} question - The question that was asked
+ * @param {string} userAnswer - The student's answer
+ * @param {string} correctAnswer - The expected correct answer
+ * @param {string} questionType - Type of question (short_answer, calculation, etc.)
+ * @returns {Promise} - Evaluation result with score and feedback
+ */
+export const evaluateAnswer = async (question, userAnswer, correctAnswer, questionType) => {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/evaluate-answer`, {
+      method: 'POST',
+      body: JSON.stringify({ question, userAnswer, correctAnswer, questionType }),
+    });
+
+    return {
+      success: true,
+      data: response,
+    };
+  } catch (error) {
+    console.error('Error evaluating answer:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
  * Generate practice questions for learning
  * @param {string} subject - The subject area (e.g., "Statistics")
  * @param {string} topic - The specific topic (e.g., "Hypothesis Testing")
- * @param {string} difficulty - Difficulty level (easy, medium, hard)
+ * @param {string} difficulty - Difficulty level (easy, medium, hard, extreme)
  * @param {number} questionCount - Number of questions to generate
+ * @param {string} questionStyle - Question style (balanced, conceptual, calculation, formula, application)
+ * @param {string} focusMode - Focus mode (understanding, memorization, holistic)
  * @returns {Promise} - Generated questions with answers and explanations
  */
-export const generatePracticeQuestions = async (subject, topic, difficulty = 'medium', questionCount = 5) => {
+export const generatePracticeQuestions = async (
+  subject,
+  topic,
+  difficulty = 'medium',
+  questionCount = 5,
+  questionStyle = 'balanced',
+  focusMode = 'understanding'
+) => {
   try {
     const response = await fetchWithRetry(`${API_BASE_URL}/api/generate-practice-questions`, {
       method: 'POST',
-      body: JSON.stringify({ subject, topic, difficulty, questionCount }),
+      body: JSON.stringify({
+        subject,
+        topic,
+        difficulty,
+        questionCount,
+        questionStyle,
+        focusMode
+      }),
     });
 
     return {

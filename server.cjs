@@ -658,10 +658,108 @@ IMPORTANT GUIDELINES:
 // Subject classification cache (in-memory for MVP)
 const subjectCache = new Map();
 
+// Random contexts for question diversity
+const RANDOM_CONTEXTS = [
+  "sports statistics",
+  "medical research",
+  "business analytics",
+  "environmental data",
+  "social media metrics",
+  "gaming statistics",
+  "financial markets",
+  "educational testing",
+  "weather patterns",
+  "population demographics"
+];
+
+// Helper to get random context
+const getRandomContext = () => RANDOM_CONTEXTS[Math.floor(Math.random() * RANDOM_CONTEXTS.length)];
+
+// POST /api/evaluate-answer - AI evaluation of student answers (Haiku 3.5 for cost efficiency)
+app.post('/api/evaluate-answer', async (req, res) => {
+  try {
+    const { question, userAnswer, correctAnswer, questionType } = req.body;
+
+    if (!question || !userAnswer || !correctAnswer) {
+      return res.status(400).json({
+        error: 'Invalid request: question, userAnswer, and correctAnswer are required'
+      });
+    }
+
+    console.log(`Evaluating answer for question type: ${questionType || 'unknown'}...`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 256,
+      messages: [{
+        role: 'user',
+        content: `Evaluate if the student's answer is essentially correct.
+
+Question: "${question}"
+Expected answer: "${correctAnswer}"
+Student's answer: "${userAnswer}"
+
+Scoring:
+- CORRECT (1 point): Same meaning, covers key concepts, even if different wording
+- PARTIAL (0.5 points): Partially correct, missing some key concepts
+- INCORRECT (0 points): Wrong or fundamentally misunderstands
+
+Return JSON only: {"result": "correct|partial|incorrect", "score": 1|0.5|0, "feedback": "brief explanation"}`
+      }]
+    });
+
+    const responseText = message.content[0].text;
+
+    let evaluation;
+    try {
+      let cleanedText = responseText.trim();
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      evaluation = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('Failed to parse evaluation response:', parseError);
+      // Fallback to simple string comparison
+      const normalizedUser = userAnswer.toLowerCase().trim();
+      const normalizedCorrect = correctAnswer.toLowerCase().trim();
+      const isExact = normalizedUser === normalizedCorrect;
+      
+      evaluation = {
+        result: isExact ? 'correct' : 'incorrect',
+        score: isExact ? 1 : 0,
+        feedback: isExact ? 'Exact match.' : 'Answer does not match expected answer.'
+      };
+    }
+
+    console.log(`Evaluation result: ${evaluation.result} (${evaluation.score} points)`);
+    res.json(evaluation);
+
+  } catch (error) {
+    console.error('Error evaluating answer:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Failed to evaluate answer'
+    });
+  }
+});
+
 // POST /api/generate-practice-questions - Generate practice questions for learning
 app.post('/api/generate-practice-questions', async (req, res) => {
   try {
-    const { subject, topic, difficulty, questionCount } = req.body;
+    const { subject, topic, difficulty, questionCount, questionStyle, focusMode } = req.body;
 
     if (!subject || !topic) {
       return res.status(400).json({
@@ -671,27 +769,140 @@ app.post('/api/generate-practice-questions', async (req, res) => {
 
     const count = questionCount || 5;
     const difficultyLevel = difficulty || 'medium';
+    const style = questionStyle || 'balanced';
+    const focus = focusMode || 'understanding';
 
-    console.log(`Generating ${count} ${difficultyLevel} practice questions for ${subject} - ${topic}...`);
+    // Get random context for this session
+    const randomContext = getRandomContext();
+
+    // Difficulty descriptions for the prompt
+    const difficultyDescriptions = {
+      easy: 'Single concept, straightforward application. Clear and direct questions with minimal complexity.',
+      medium: 'Standard textbook level. May combine 2 concepts or require multi-step thinking.',
+      hard: 'Multi-step problems combining multiple concepts. Requires deeper understanding and synthesis.',
+      extreme: 'Competition-level difficulty. Working memory intensive, minimal hints, requires expert-level reasoning and creative problem-solving.'
+    };
+
+    // Question style descriptions
+    const styleDescriptions = {
+      balanced: 'Mix of all question types - some definitional, some computational, some conceptual, some application-based.',
+      conceptual: 'Focus on "why" and "how" questions. Minimal calculations. Test deep understanding of concepts and their relationships.',
+      calculation: 'Heavy on numerical problems. Require step-by-step calculations and mathematical reasoning.',
+      formula: 'Emphasize equations, derivations, and formula applications. Test ability to apply and manipulate formulas.',
+      application: 'Real-world scenarios and data interpretation. Apply concepts to practical situations.'
+    };
+
+    // Focus mode descriptions
+    const focusDescriptions = {
+      understanding: 'Ask questions that test deep comprehension. Prefer "why does X happen" over "what is X". Test reasoning and connections between concepts.',
+      memorization: 'Ask questions that test recall of definitions, formulas, and key facts. Focus on terminology and standard procedures.',
+      holistic: `Create questions that require combining concepts from multiple areas within ${topic}. Test how different concepts connect and build on each other.`
+    };
+
+    const difficultyDescription = difficultyDescriptions[difficultyLevel] || difficultyDescriptions.medium;
+    const styleDescription = styleDescriptions[style] || styleDescriptions.balanced;
+    const focusDescription = focusDescriptions[focus] || focusDescriptions.understanding;
+
+    console.log(`Generating ${count} ${difficultyLevel} practice questions for ${subject} - ${topic} (style: ${style}, focus: ${focus}, context: ${randomContext})...`);
+
+    // Build the holistic prompt addition for holistic mode
+    let holisticPrompt = '';
+    if (focus === 'holistic') {
+      holisticPrompt = `
+HOLISTIC MODE - CROSS-CONCEPT QUESTIONS:
+Generate questions that TEST CONNECTIONS between concepts.
+
+For a ${topic} quiz in ${subject}, create questions that:
+1. Require knowledge from multiple sub-areas of ${topic}
+2. Ask students to compare/contrast related concepts
+3. Present scenarios where multiple concepts apply
+4. Test understanding of how concepts build on each other
+
+Example approaches:
+- "A dataset has mean 50, median 55, and mode 60. What does this suggest about the shape of the distribution?" (combines central tendency with distribution shape)
+- "If you remove the largest outlier from a dataset, which will change more: the mean or the median? Explain why." (combines outliers, mean, median concepts)
+- Questions that require applying multiple formulas or concepts together
+
+${difficultyLevel === 'extreme' ? `For EXTREME difficulty + Holistic mode:
+- Pull concepts from OTHER related topics in ${subject} as well
+- E.g., a Descriptive Statistics question that requires understanding of probability distributions
+- Cross-topic synthesis is encouraged` : ''}
+`;
+    }
+
+    // Build question distribution based on style
+    let questionDistribution = '';
+    if (style === 'calculation') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Calculation Heavy):
+- 1x multiple_choice: Conceptual multiple choice
+- 3x calculation: Numerical problems requiring step-by-step calculations
+- 1x formula: Apply a formula to solve a problem (numerical answer)`;
+    } else if (style === 'conceptual') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Conceptual Focus):
+- 2x multiple_choice: Conceptual understanding questions
+- 1x short_answer: Explain "why" or "how" something works
+- 1x short_answer: Compare/contrast concepts
+- 1x calculation: One computational problem to ground the theory`;
+    } else if (style === 'formula') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Formula & Equations):
+- 1x multiple_choice: Select the correct formula for a scenario
+- 2x formula: Apply formulas to calculate numerical answers
+- 1x calculation: Derive or manipulate an equation
+- 1x short_answer: Explain when/why to use a particular formula`;
+    } else if (style === 'application') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Real-World Applications):
+- 2x multiple_choice: Interpret real-world data scenarios
+- 1x calculation: Solve a practical problem with real data
+- 1x short_answer: Explain implications of results in context
+- 1x formula: Apply formula to a real-world dataset`;
+    } else {
+      // balanced
+      questionDistribution = `
+QUESTION DISTRIBUTION (Balanced Mix):
+- 2x multiple_choice: Multiple choice questions with 4 options (A, B, C, D)
+- 1x calculation: Numerical answer required (include the expected numerical value)
+- 1x formula: Question involves mathematical equations/formulas
+- 1x short_answer: Brief text response expected (1-3 sentences)`;
+    }
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
-      max_tokens: 2048,
+      max_tokens: 4096,
+      temperature: 1.0,
       messages: [{
         role: 'user',
         content: `You are an expert educator creating practice questions for a student studying ${subject}, specifically the topic: ${topic}.
 
-Generate exactly ${count} practice questions at ${difficultyLevel} difficulty level.
+Generate exactly ${count} practice questions at ${difficultyLevel.toUpperCase()} difficulty level.
 
-Mix of question types:
-- Multiple choice (3-4 options, one correct answer)
-- Short answer (brief text response expected)
+DIFFICULTY: ${difficultyDescription}
+QUESTION STYLE: ${styleDescription}
+FOCUS MODE: ${focusDescription}
+REAL-WORLD CONTEXT FOR THIS SESSION: ${randomContext}
 
-For each question, provide:
-1. A clear, well-formed question
-2. For multiple choice: options labeled A, B, C, D
-3. The correct answer
-4. A brief explanation of why the answer is correct
+CRITICAL RANDOMIZATION RULES:
+- Each question must test a DIFFERENT concept or skill within this topic
+- Do NOT generate variations of the same question with different numbers
+- Vary question formats: some definitional, some computational, some conceptual, some application-based
+- If topic is "Descriptive Statistics", spread across: mean, median, mode, variance, standard deviation, range, percentiles, outliers, data interpretation, etc.
+- Never repeat the same question structure twice in one session
+- Incorporate the random context (${randomContext}) into at least 2 questions to add variety
+${holisticPrompt}
+${questionDistribution}
+
+For calculation questions:
+- Provide a clear numerical expected answer
+- Include units if applicable
+- The answer should be a specific number that can be checked with ±1% tolerance
+
+For formula questions:
+- Use proper LaTeX notation wrapped in $...$ for inline math or $$...$$ for display math
+- Make formulas clear and readable
+- Can be multiple_choice (select correct formula) or calculation (apply formula to get numerical answer)
 
 IMPORTANT: Return ONLY valid JSON with no markdown formatting.
 
@@ -708,16 +919,30 @@ Return pure JSON (no code fences):
     },
     {
       "id": 2,
+      "type": "calculation",
+      "question": "Calculate the value of X given...",
+      "correctAnswer": "42.5",
+      "unit": "units or null",
+      "explanation": "Step-by-step explanation"
+    },
+    {
+      "id": 3,
+      "type": "formula",
+      "question": "Given the formula $\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n}x_i$, calculate the mean of [1, 2, 3, 4, 5]",
+      "correctAnswer": "3",
+      "explanation": "Explanation with formula derivation"
+    },
+    {
+      "id": 4,
       "type": "short_answer",
-      "question": "The question text here",
+      "question": "Explain the concept of...",
       "correctAnswer": "The expected answer",
       "explanation": "Brief explanation"
     }
   ]
 }
 
-Make questions educational, clear, and appropriate for the ${difficultyLevel} level.
-For ${topic} in ${subject}, focus on core concepts and practical understanding.`
+Make questions educational, challenging for the ${difficultyLevel} level, and focused on ${topic} in ${subject}. Remember to test DIFFERENT concepts/skills in each question!`
       }]
     });
 
@@ -725,12 +950,20 @@ For ${topic} in ${subject}, focus on core concepts and practical understanding.`
 
     let questionsData;
     try {
-      let cleanedText = responseText.trim();
-      cleanedText = cleanedText.replace(/^```json\s*/i, '');
-      cleanedText = cleanedText.replace(/^```\s*/i, '');
-      cleanedText = cleanedText.replace(/\s*```$/i, '');
+      // Get raw text from Claude response
+      let rawText = responseText.trim();
 
-      questionsData = JSON.parse(cleanedText);
+      // Remove markdown code fences if present
+      rawText = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+      // CRITICAL: Escape LaTeX backslashes before JSON.parse
+      // Escape backslashes followed by letters (LaTeX commands like \frac, \sigma, \sum, \bar, \sqrt)
+      rawText = rawText.replace(/\\([a-zA-Z])/g, '\\\\$1');
+      // Escape \{ and \} used in LaTeX
+      rawText = rawText.replace(/\\([{}^_])/g, '\\\\$1');
+
+      // Now parse the sanitized JSON
+      questionsData = JSON.parse(rawText);
     } catch (parseError) {
       console.error('Failed to parse questions response:', parseError);
       console.error('Raw response:', responseText);
@@ -1065,6 +1298,9 @@ Return pure JSON (no code fences):
       cleanedText = cleanedText.replace(/^```json\s*/i, '');
       cleanedText = cleanedText.replace(/^```\s*/i, '');
       cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      cleanedText = cleanedText.split('\\').join('\\\\');
+
       result = JSON.parse(cleanedText);
     } catch (parseError) {
       result = {
