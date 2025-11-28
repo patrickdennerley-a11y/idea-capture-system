@@ -1014,11 +1014,10 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       // Remove markdown code fences if present
       rawText = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
-      // CRITICAL: Escape LaTeX backslashes before JSON.parse
-      // Escape backslashes followed by letters (LaTeX commands like \frac, \sigma, \sum, \bar, \sqrt)
-      rawText = rawText.replace(/\\([a-zA-Z])/g, '\\\\$1');
-      // Escape \{ and \} used in LaTeX
-      rawText = rawText.replace(/\\([{}^_])/g, '\\\\$1');
+      // CRITICAL: Escape ALL backslashes that aren't valid JSON escape sequences
+      // Valid JSON escapes: \" \\ \/ \b \f \n \r \t \uXXXX
+      // This handles LaTeX commands like \frac, \sigma, \sum, \bar, \sqrt, etc.
+      rawText = rawText.replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
 
       // Now parse the sanitized JSON
       questionsData = JSON.parse(rawText);
@@ -1034,7 +1033,13 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
     res.json(questionsData);
 
   } catch (error) {
-    console.error('Error generating practice questions:', error);
+    console.error('❌ Error generating practice questions:');
+    console.error('   Style:', style);
+    console.error('   Difficulty:', difficultyLevel);
+    console.error('   Subject:', subject);
+    console.error('   Topic:', topic);
+    console.error('   Error:', error.message);
+    console.error('   Stack:', error.stack);
 
     if (error.status === 401) {
       return res.status(401).json({
@@ -1049,7 +1054,8 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
     }
 
     res.status(500).json({
-      error: error.message || 'Failed to generate practice questions'
+      error: error.message || 'Failed to generate practice questions',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
