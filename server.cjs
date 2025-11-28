@@ -869,8 +869,15 @@ QUESTION DISTRIBUTION (Balanced Mix):
 - 1x short_answer: Brief text response expected (1-3 sentences)`;
     }
 
+    const needsAccurateMath = style === 'calculation' || style === 'formula';
+    const model = needsAccurateMath 
+      ? 'claude-sonnet-4-5-20250929'   // Accurate at math
+      : 'claude-3-5-haiku-20241022';    // Fast for conceptual
+
+    console.log(`Using model: ${model} (style: ${style})`);
+
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model,
       max_tokens: 4096,
       temperature: 1.0,
       messages: [{

@@ -61,6 +61,42 @@ const SUBJECTS = {
       { id: 'sorting', name: 'Sorting Algorithms', description: 'Bubble, merge, quick, heap sort and comparisons' },
     ],
   },
+  ArtificialIntelligence: {
+    name: 'Artificial Intelligence',
+    icon: '🤖',
+    topics: [
+      { id: 'search', name: 'Search Algorithms', description: 'Uninformed search (BFS, DFS), informed search (A*, greedy), heuristics' },
+      { id: 'adversarial', name: 'Adversarial Search', description: 'Game trees, minimax, alpha-beta pruning, Monte Carlo tree search' },
+      { id: 'csp', name: 'Constraint Satisfaction', description: 'CSP formulation, backtracking, arc consistency, constraint propagation' },
+      { id: 'logic', name: 'Logic & Reasoning', description: 'Propositional logic, first-order logic, inference, knowledge representation' },
+      { id: 'uncertainty', name: 'Uncertainty & Bayes Nets', description: 'Probability review, Bayesian networks, inference, decision making under uncertainty' },
+      { id: 'ml-intro', name: 'Machine Learning Basics', description: 'Supervised learning, decision trees, neural network fundamentals, evaluation' },
+    ],
+  },
+  LinearStatisticalModels: {
+    name: 'Linear Statistical Models',
+    icon: '📈',
+    topics: [
+      { id: 'slr', name: 'Simple Linear Regression', description: 'Least squares estimation, model assumptions, inference on coefficients, prediction' },
+      { id: 'mlr', name: 'Multiple Linear Regression', description: 'Matrix formulation, parameter estimation, interpretation, adjusted R²' },
+      { id: 'model-diagnostics', name: 'Model Diagnostics', description: 'Residual analysis, leverage, influential points, multicollinearity, VIF' },
+      { id: 'model-selection', name: 'Model Selection', description: 'Variable selection, AIC/BIC, stepwise methods, cross-validation' },
+      { id: 'anova', name: 'ANOVA & Experimental Design', description: 'One-way/two-way ANOVA, F-tests, contrasts, factorial designs' },
+      { id: 'glm-intro', name: 'Generalized Linear Models Intro', description: 'Link functions, logistic regression, Poisson regression, deviance' },
+    ],
+  },
+  ProbabilityForInference: {
+    name: 'Probability for Inference',
+    icon: '🎲',
+    topics: [
+      { id: 'convergence', name: 'Convergence Concepts', description: 'Convergence in probability, almost sure, in distribution, in mean; LLN, CLT' },
+      { id: 'estimation', name: 'Point Estimation', description: 'Method of moments, maximum likelihood estimation, properties of estimators (bias, consistency, efficiency)' },
+      { id: 'sufficiency', name: 'Sufficiency & Completeness', description: 'Sufficient statistics, factorization theorem, minimal sufficiency, completeness, Rao-Blackwell' },
+      { id: 'hypothesis', name: 'Hypothesis Testing Theory', description: 'Neyman-Pearson lemma, likelihood ratio tests, UMP tests, p-values' },
+      { id: 'interval', name: 'Interval Estimation', description: 'Confidence intervals, pivotal quantities, coverage probability, relationship to hypothesis tests' },
+      { id: 'bayesian', name: 'Bayesian Inference', description: 'Prior and posterior distributions, conjugate priors, credible intervals, Bayesian vs frequentist' },
+    ],
+  },
 };
 
 // Difficulty options with descriptions
