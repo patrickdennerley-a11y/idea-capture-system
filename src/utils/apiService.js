@@ -227,6 +227,34 @@ export const getReminders = async (ideas, logs, checklist, reviews, reminderHist
 };
 
 /**
+ * Generate practice questions for learning
+ * @param {string} subject - The subject area (e.g., "Statistics")
+ * @param {string} topic - The specific topic (e.g., "Hypothesis Testing")
+ * @param {string} difficulty - Difficulty level (easy, medium, hard)
+ * @param {number} questionCount - Number of questions to generate
+ * @returns {Promise} - Generated questions with answers and explanations
+ */
+export const generatePracticeQuestions = async (subject, topic, difficulty = 'medium', questionCount = 5) => {
+  try {
+    const response = await fetchWithRetry(`${API_BASE_URL}/api/generate-practice-questions`, {
+      method: 'POST',
+      body: JSON.stringify({ subject, topic, difficulty, questionCount }),
+    });
+
+    return {
+      success: true,
+      data: response,
+    };
+  } catch (error) {
+    console.error('Error generating practice questions:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
  * Health check to verify backend is running
  * @returns {Promise<boolean>} - True if backend is healthy
  */

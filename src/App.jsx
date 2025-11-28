@@ -14,6 +14,7 @@ import EndOfDayReview from './components/EndOfDayReview';
 import NoiseHub from './components/NoiseHub';
 import PlanningAssistant from './components/PlanningAssistant';
 import RoutineGenerator from './components/RoutineGenerator';
+import Learning from './components/Learning';
 import IconCustomizer, { ICONS, DEFAULT_THEME } from './components/IconCustomizer';
 import {
   Lightbulb,
@@ -27,12 +28,14 @@ import {
   Calendar,
   LogOut,
   ChevronDown,
+  BookOpen,
 } from 'lucide-react';
 import { getTodayString } from './utils/dateUtils';
 
 // Grouped navigation structure
 const NAV_ITEMS = [
   { id: 'capture', name: 'Capture', icon: Lightbulb, type: 'single' },
+  { id: 'learn', name: 'Learn', icon: BookOpen, type: 'single' },
   { 
     id: 'plan-group', 
     name: 'Plan', 
@@ -407,6 +410,8 @@ function Dashboard() {
             setActiveSession={setActiveSession}
           />
         );
+      case 'learn':
+        return <Learning />;
       default:
         return <IdeaCapture ideas={ideas} setIdeas={setIdeas} />;
     }

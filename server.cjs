@@ -658,6 +658,111 @@ IMPORTANT GUIDELINES:
 // Subject classification cache (in-memory for MVP)
 const subjectCache = new Map();
 
+// POST /api/generate-practice-questions - Generate practice questions for learning
+app.post('/api/generate-practice-questions', async (req, res) => {
+  try {
+    const { subject, topic, difficulty, questionCount } = req.body;
+
+    if (!subject || !topic) {
+      return res.status(400).json({
+        error: 'Invalid request: subject and topic are required'
+      });
+    }
+
+    const count = questionCount || 5;
+    const difficultyLevel = difficulty || 'medium';
+
+    console.log(`Generating ${count} ${difficultyLevel} practice questions for ${subject} - ${topic}...`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: `You are an expert educator creating practice questions for a student studying ${subject}, specifically the topic: ${topic}.
+
+Generate exactly ${count} practice questions at ${difficultyLevel} difficulty level.
+
+Mix of question types:
+- Multiple choice (3-4 options, one correct answer)
+- Short answer (brief text response expected)
+
+For each question, provide:
+1. A clear, well-formed question
+2. For multiple choice: options labeled A, B, C, D
+3. The correct answer
+4. A brief explanation of why the answer is correct
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+
+Return pure JSON (no code fences):
+{
+  "questions": [
+    {
+      "id": 1,
+      "type": "multiple_choice",
+      "question": "The question text here",
+      "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"],
+      "correctAnswer": "A",
+      "explanation": "Brief explanation of why A is correct"
+    },
+    {
+      "id": 2,
+      "type": "short_answer",
+      "question": "The question text here",
+      "correctAnswer": "The expected answer",
+      "explanation": "Brief explanation"
+    }
+  ]
+}
+
+Make questions educational, clear, and appropriate for the ${difficultyLevel} level.
+For ${topic} in ${subject}, focus on core concepts and practical understanding.`
+      }]
+    });
+
+    const responseText = message.content[0].text;
+
+    let questionsData;
+    try {
+      let cleanedText = responseText.trim();
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      questionsData = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('Failed to parse questions response:', parseError);
+      console.error('Raw response:', responseText);
+      return res.status(500).json({
+        error: 'Failed to parse generated questions'
+      });
+    }
+
+    console.log(`Successfully generated ${questionsData.questions?.length || 0} questions`);
+    res.json(questionsData);
+
+  } catch (error) {
+    console.error('Error generating practice questions:', error);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      error: error.message || 'Failed to generate practice questions'
+    });
+  }
+});
+
 // Helper function to normalize subject for matching (alphanumeric only, lowercase)
 const normalizeSubject = (subject) => {
   return subject.toLowerCase().replace(/[^a-z0-9]/g, '');
