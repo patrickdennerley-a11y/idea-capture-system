@@ -294,16 +294,44 @@ function Learning() {
   };
 
   const checkCalculationAnswer = (userAnswer, correctAnswer) => {
-    const userNum = parseFloat(userAnswer);
-    const correctNum = parseFloat(correctAnswer);
+    if (!userAnswer || !correctAnswer) return { result: 'incorrect', score: 0 };
+    
+    // Helper to evaluate a string as a number (handles fractions like "3/5")
+    const evaluateAnswer = (answer) => {
+      const str = String(answer).trim();
+      
+      // Handle fractions (e.g., "3/5", "1/4")
+      if (str.includes('/')) {
+        const parts = str.split('/');
+        if (parts.length === 2) {
+          const numerator = parseFloat(parts[0]);
+          const denominator = parseFloat(parts[1]);
+          if (!isNaN(numerator) && !isNaN(denominator) && denominator !== 0) {
+            return numerator / denominator;
+          }
+        }
+      }
+      
+      // Handle percentages (e.g., "60%")
+      if (str.endsWith('%')) {
+        const num = parseFloat(str.slice(0, -1));
+        if (!isNaN(num)) return num / 100;
+      }
+      
+      // Standard number
+      return parseFloat(str);
+    };
+    
+    const userNum = evaluateAnswer(userAnswer);
+    const correctNum = evaluateAnswer(correctAnswer);
     
     if (isNaN(userNum) || isNaN(correctNum)) return { result: 'incorrect', score: 0 };
     
-    const tolerance = Math.abs(correctNum * 0.01);
+    const tolerance = Math.abs(correctNum * 0.01); // 1% tolerance
     const diff = Math.abs(userNum - correctNum);
     
     if (diff <= tolerance) return { result: 'correct', score: 1 };
-    if (diff <= tolerance * 5) return { result: 'partial', score: 0.5 };
+    if (diff <= tolerance * 5) return { result: 'partial', score: 0.5 }; // 5% tolerance for partial
     return { result: 'incorrect', score: 0 };
   };
 
