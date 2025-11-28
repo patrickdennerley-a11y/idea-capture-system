@@ -780,7 +780,15 @@ app.post('/api/generate-practice-questions', async (req, res) => {
       easy: 'Single concept, straightforward application. Clear and direct questions with minimal complexity.',
       medium: 'Standard textbook level. May combine 2 concepts or require multi-step thinking.',
       hard: 'Multi-step problems combining multiple concepts. Requires deeper understanding and synthesis.',
-      extreme: 'Competition-level difficulty. Working memory intensive, minimal hints, requires expert-level reasoning and creative problem-solving.'
+      extreme: `ELITE DIFFICULTY - Graduate/Olympiad level. Questions should be:
+- Genuinely difficult problems that would challenge PhD students
+- Multi-step with non-obvious approaches
+- Require creative insight or clever tricks
+- Similar to Putnam, IMO, or graduate qualifying exams
+- NO softball questions - every question must make the student struggle
+- Assume mastery of all prerequisite material
+- Include edge cases, counterexamples, and subtle traps
+- Problems where the "obvious" approach fails`
     };
 
     // Question style descriptions
@@ -789,7 +797,13 @@ app.post('/api/generate-practice-questions', async (req, res) => {
       conceptual: 'Focus on "why" and "how" questions. Minimal calculations. Test deep understanding of concepts and their relationships.',
       calculation: 'Heavy on numerical problems. Require step-by-step calculations and mathematical reasoning.',
       formula: 'Emphasize equations, derivations, and formula applications. Test ability to apply and manipulate formulas.',
-      application: 'Real-world scenarios and data interpretation. Apply concepts to practical situations.'
+      application: 'Real-world scenarios and data interpretation. Apply concepts to practical situations.',
+      proof: `Rigorous mathematical proofs and theoretical arguments. Questions should:
+- Require formal proof techniques (induction, contradiction, construction, epsilon-delta)
+- Derive results from first principles
+- Prove or disprove statements with full rigor
+- Construct counterexamples when claims are false
+- Use proper mathematical notation and logical structure`
     };
 
     // Focus mode descriptions
@@ -802,6 +816,35 @@ app.post('/api/generate-practice-questions', async (req, res) => {
     const difficultyDescription = difficultyDescriptions[difficultyLevel] || difficultyDescriptions.medium;
     const styleDescription = styleDescriptions[style] || styleDescriptions.balanced;
     const focusDescription = focusDescriptions[focus] || focusDescriptions.understanding;
+
+    // Special case: Extreme + Proof-Based = Maximum difficulty
+    let extremeProofPrompt = '';
+    if (difficultyLevel === 'extreme' && style === 'proof') {
+      extremeProofPrompt = `
+⚠️ EXTREME + PROOF-BASED MODE ⚠️
+This is the MAXIMUM difficulty setting. Generate questions at the level of:
+- Putnam Competition / IMO (for pure math)
+- PhD Qualifying Exams (for statistics/probability)
+- Research-level problems that might appear in academic papers
+
+Requirements:
+1. Every question must require genuine mathematical maturity
+2. Proofs should require clever insights - not just mechanical application
+3. Include problems where standard approaches fail and creativity is needed
+4. Some questions should have elegant solutions that are hard to find
+5. Acceptable to include open-ended questions like "Prove or disprove"
+6. Can reference advanced theorems (Radon-Nikodym, martingale convergence, etc.)
+7. Multi-part proofs where each part builds on the previous
+8. Questions that would take a strong undergraduate 30+ minutes to solve
+
+Examples of appropriate difficulty:
+- "Prove that convergence in probability does not imply almost sure convergence by constructing an explicit counterexample sequence"
+- "Using the Cramér-Rao lower bound, prove that the sample variance is not efficient for estimating σ² when sampling from a normal distribution, then find the efficient estimator"
+- "Prove the Neyman-Pearson lemma from first principles, then extend it to the case of composite hypotheses"
+
+DO NOT generate easy questions. If you're unsure whether a question is hard enough, make it harder.
+`;
+    }
 
     console.log(`Generating ${count} ${difficultyLevel} practice questions for ${subject} - ${topic} (style: ${style}, focus: ${focus}, context: ${randomContext})...`);
 
@@ -859,6 +902,13 @@ QUESTION DISTRIBUTION (Real-World Applications):
 - 1x calculation: Solve a practical problem with real data
 - 1x short_answer: Explain implications of results in context
 - 1x formula: Apply formula to a real-world dataset`;
+    } else if (style === 'proof') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Proof-Based):
+- 2x short_answer: "Prove that..." or "Show that..." requiring multi-step proofs
+- 1x short_answer: "Prove or disprove..." (may be false - student must determine)
+- 1x multiple_choice: Select the correct proof strategy or identify the flaw in a proof
+- 1x short_answer: Construct a counterexample or prove a converse`;
     } else {
       // balanced
       questionDistribution = `
@@ -869,7 +919,7 @@ QUESTION DISTRIBUTION (Balanced Mix):
 - 1x short_answer: Brief text response expected (1-3 sentences)`;
     }
 
-    const needsAccurateMath = style === 'calculation' || style === 'formula';
+    const needsAccurateMath = style === 'calculation' || style === 'formula' || style === 'proof';
     const model = needsAccurateMath 
       ? 'claude-sonnet-4-5-20250929'   // Accurate at math
       : 'claude-3-5-haiku-20241022';    // Fast for conceptual
@@ -890,7 +940,8 @@ DIFFICULTY: ${difficultyDescription}
 QUESTION STYLE: ${styleDescription}
 FOCUS MODE: ${focusDescription}
 REAL-WORLD CONTEXT FOR THIS SESSION: ${randomContext}
-
+${holisticPrompt}
+${extremeProofPrompt}
 CRITICAL RANDOMIZATION RULES:
 - Each question must test a DIFFERENT concept or skill within this topic
 - Do NOT generate variations of the same question with different numbers
@@ -898,7 +949,7 @@ CRITICAL RANDOMIZATION RULES:
 - If topic is "Descriptive Statistics", spread across: mean, median, mode, variance, standard deviation, range, percentiles, outliers, data interpretation, etc.
 - Never repeat the same question structure twice in one session
 - Incorporate the random context (${randomContext}) into at least 2 questions to add variety
-${holisticPrompt}
+
 ${questionDistribution}
 
 For calculation questions:

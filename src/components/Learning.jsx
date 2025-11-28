@@ -117,6 +117,7 @@ const QUESTION_STYLES = [
   { id: 'calculation', name: 'Calculation Heavy', description: 'Numerical problems & step-by-step math' },
   { id: 'formula', name: 'Formula & Equations', description: 'Equations, derivations, formula applications' },
   { id: 'application', name: 'Real-World Applications', description: 'Practical scenarios & data interpretation' },
+  { id: 'proof', name: 'Proof-Based', description: 'Rigorous proofs, derivations, and theoretical arguments' },
 ];
 
 // Focus mode options
