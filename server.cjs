@@ -1028,14 +1028,8 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       rawText = rawText.replace(/^```\s*/gi, '');
       rawText = rawText.replace(/\s*```$/gi, '');
       
-      // FIX: Only escape backslashes that are followed by a letter (LaTeX commands)
-      // This preserves valid JSON escapes like \", \\, \n, \t, etc.
-      // Pattern: backslash followed by a letter that's NOT a valid JSON escape
-      rawText = rawText.replace(/\\([a-zA-Z])/g, '\\\\$1');
-      
-      // Also escape \{ and \} used in LaTeX
-      rawText = rawText.replace(/\\([{}^_])/g, '\\\\$1');
-      
+      // DO NOT escape anything - Claude already sends valid JSON
+      // Just parse it directly
       questionsData = JSON.parse(rawText);
       
       // Validate structure
