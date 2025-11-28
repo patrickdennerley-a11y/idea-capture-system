@@ -767,10 +767,15 @@ app.post('/api/generate-practice-questions', async (req, res) => {
       });
     }
 
-    const count = questionCount || 5;
     const difficultyLevel = difficulty || 'medium';
     const style = questionStyle || 'balanced';
     const focus = focusMode || 'understanding';
+    
+    let count = questionCount || 5;
+    // Reduce count for proof+extreme to avoid timeout/truncation
+    if (style === 'proof' && difficultyLevel === 'extreme') {
+      count = Math.min(count, 3);
+    }
 
     // Get random context for this session
     const randomContext = getRandomContext();
@@ -1020,26 +1025,16 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       
       // Remove markdown code fences
       rawText = rawText.replace(/^```json\s*/gi, '');
-      rawText = rawText.replace(/^```\s*/gi, '');  
+      rawText = rawText.replace(/^```\s*/gi, '');
       rawText = rawText.replace(/\s*```$/gi, '');
       
-      // CRITICAL: Replace ALL backslashes with double backslashes first,
-      // then restore the valid JSON escape sequences
-      rawText = rawText
-        .replace(/\\/g, '\\\\')           // Double ALL backslashes
-        .replace(/\\\\"/g, '\\"')          // Restore escaped quotes
-        .replace(/\\\\\//g, '\\/')         // Restore escaped forward slash
-        .replace(/\\\\n/g, '\\n')          // Restore newlines
-        .replace(/\\\\r/g, '\\r')          // Restore carriage returns
-        .replace(/\\\\t/g, '\\t')          // Restore tabs
-        .replace(/\\\\b/g, '\\b')          // Restore backspace
-        .replace(/\\\\f/g, '\\f');         // Restore form feed
+      // FIX: Only escape backslashes that are followed by a letter (LaTeX commands)
+      // This preserves valid JSON escapes like \", \\, \n, \t, etc.
+      // Pattern: backslash followed by a letter that's NOT a valid JSON escape
+      rawText = rawText.replace(/\\([a-zA-Z])/g, '\\\\$1');
       
-      // Try to extract just the questions array if there's malformed JSON
-      const questionsMatch = rawText.match(/"questions"\s*:\s*\[[\s\S]*?\](?=\s*\}|$)/);
-      if (questionsMatch) {
-        rawText = '{"questions":' + questionsMatch[0].replace(/^"questions"\s*:\s*/, '') + '}';
-      }
+      // Also escape \{ and \} used in LaTeX
+      rawText = rawText.replace(/\\([{}^_])/g, '\\\\$1');
       
       questionsData = JSON.parse(rawText);
       
@@ -1053,7 +1048,6 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
       console.error('Raw response (first 1000 chars):', responseText.substring(0, 1000));
       return res.status(500).json({
         error: 'Failed to parse generated questions. Please try again.',
-        parseError: parseError.message
       });
     }
 
