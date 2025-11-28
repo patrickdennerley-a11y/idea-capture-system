@@ -775,12 +775,12 @@ function Learning() {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Correct Answer:</p>
-                        <p className="text-sm text-green-400">{item.correctAnswer}</p>
+                        <div className="text-sm text-green-400">{renderMathText(item.correctAnswer)}</div>
                       </div>
                       {item.explanation && (
                         <div>
                           <p className="text-xs text-gray-500 mb-1">Explanation:</p>
-                          <p className="text-sm text-gray-400">{item.explanation}</p>
+                          <div className="text-sm text-gray-400">{renderMathText(item.explanation)}</div>
                         </div>
                       )}
                       <div className="flex items-center gap-4 text-xs text-gray-500">
@@ -1039,9 +1039,9 @@ function Learning() {
                     <div className="flex-1">
                       <p className="text-sm text-gray-300 mb-2"><span className="text-gray-500">Q{idx + 1}:</span> {renderMathText(q.question)}</p>
                       <p className="text-sm"><span className="text-gray-500">Your answer:</span> <span className={isCorrect ? 'text-green-400' : isPartial ? 'text-yellow-400' : 'text-red-400'}>{userAnswer || '(no answer)'}</span></p>
-                      {!isCorrect && <p className="text-sm"><span className="text-gray-500">Correct:</span> <span className="text-green-400">{q.correctAnswer}</span></p>}
+                      {!isCorrect && <p className="text-sm"><span className="text-gray-500">Correct:</span> <span className="text-green-400">{renderMathText(q.correctAnswer)}</span></p>}
                       {feedback && <p className="text-sm text-neural-purple mt-2 bg-neural-purple/10 p-2 rounded">AI Feedback: {feedback}</p>}
-                      <p className="text-sm text-gray-500 mt-2 italic">{q.explanation}</p>
+                      <div className="text-sm text-gray-500 mt-2 italic">{renderMathText(q.explanation)}</div>
                     </div>
                   </div>
                 </div>
