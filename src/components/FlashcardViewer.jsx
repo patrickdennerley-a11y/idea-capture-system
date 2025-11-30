@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Loader2, RotateCcw, Lightbulb, ChevronRight, AlertCircle, Check, Trophy, Sparkles, RefreshCw } from 'lucide-react';
+import { X, Loader2, RotateCcw, Lightbulb, ChevronRight, AlertCircle, Check, Trophy, Sparkles, RefreshCw, BookMarked } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import {
@@ -10,6 +10,7 @@ import {
   updateCardProgress,
   getDeckStats,
 } from '../utils/flashcardService';
+import { saveResource, getResource } from '../utils/resourceService';
 
 // Helper to render LaTeX in text
 const renderMathText = (text) => {
@@ -135,7 +136,7 @@ function FlashcardViewer({ subject, topic, topicDescription, onClose }) {
       if (result.success && result.data?.cards) {
         const cards = result.data.cards;
         
-        // Save the deck
+        // Save the deck to flashcard service (for SM-2 progress tracking)
         const { data: savedDeck } = await saveDeck(subject, topic, cards);
         
         if (savedDeck) {
@@ -153,6 +154,13 @@ function FlashcardViewer({ subject, topic, topicDescription, onClose }) {
             learning: 0,
             new: cards.length,
             due: cards.length,
+          });
+          
+          // Also save to resource library for quick access
+          await saveResource('flashcard_deck', subject, topic, `${topic} Flashcards`, {
+            cards: cards,
+            cardCount: cards.length,
+            generatedAt: new Date().toISOString(),
           });
         }
       } else {
@@ -447,149 +455,152 @@ function FlashcardViewer({ subject, topic, topicDescription, onClose }) {
 
   // Render main flashcard interface
   return (
-    <div className="fixed inset-0 bg-black/90 z-50 overflow-y-auto">
-      <div className="min-h-full flex items-center justify-center p-4 pb-8">
-        <div className="bg-neural-darker rounded-xl border border-gray-800 w-full max-w-2xl flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-white">{topic}</h2>
-            <p className="text-xs text-gray-500">{subject}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={regenerateDeck}
-              className="text-sm text-gray-400 hover:text-neural-purple transition-colors flex items-center gap-1"
-              title="Generate fresh cards"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Regenerate
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="px-4 pt-3">
-          <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
-            <span>Card {currentIndex + 1} of {studySession.length}</span>
-            <span className="flex items-center gap-3">
-              <span className="text-green-400">{sessionStats.correct} ✓</span>
-              <span className="text-red-400">{sessionStats.incorrect} ✗</span>
-            </span>
-          </div>
-          <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-neural-purple to-neural-pink transition-all duration-300"
-              style={{ width: `${((currentIndex + 1) / studySession.length) * 100}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Card container */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          {/* Card type badge */}
-          <div className="flex items-center gap-2 mb-3">
-            <span className={`text-xs px-2 py-1 rounded-full ${typeConfig.bg} ${typeConfig.text}`}>
-              {typeConfig.label}
-            </span>
-          </div>
-
-          {/* Flashcard with flip animation */}
-          <div 
-            className="flashcard-container cursor-pointer"
-            onClick={() => setIsFlipped(prev => !prev)}
-          >
-            <div className={`flashcard ${isFlipped ? 'flipped' : ''}`}>
-              {/* Front */}
-              <div className="flashcard-face flashcard-front">
-                <div className="text-center">
-                  <div className="text-lg text-white leading-relaxed">
-                    {renderMathText(currentCard.front)}
-                  </div>
-                  {!isFlipped && (
-                    <p className="text-sm text-gray-500 mt-6">
-                      Click or press Space to reveal answer
-                    </p>
-                  )}
-                </div>
+    <div className="fixed inset-0 bg-black/90 z-50 flex flex-col">
+      <div className="flex-1 flex flex-col max-h-screen">
+        <div className="bg-neural-darker w-full max-w-2xl mx-auto flex flex-col flex-1 my-4 rounded-xl border border-gray-800 overflow-hidden">
+          {/* Fixed Header */}
+          <div className="flex-shrink-0 p-4 border-b border-gray-800 bg-neural-darker">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-white">{topic}</h2>
+                <p className="text-xs text-gray-500">{subject}</p>
               </div>
-
-              {/* Back */}
-              <div className="flashcard-face flashcard-back">
-                <div className="text-center">
-                  <div className="text-lg text-white leading-relaxed">
-                    {renderMathText(currentCard.back)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Hint section (only before flipping) */}
-          {!isFlipped && currentCard.hint && (
-            <div className="mt-4">
-              {showHint ? (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-                  <div className="flex items-start gap-2">
-                    <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-yellow-200">{currentCard.hint}</p>
-                  </div>
-                </div>
-              ) : (
+              <div className="flex items-center gap-3">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowHint(true);
-                  }}
-                  className="flex items-center gap-2 text-sm text-yellow-400 hover:text-yellow-300 transition-colors mx-auto"
+                  onClick={regenerateDeck}
+                  className="text-sm text-gray-400 hover:text-neural-purple transition-colors flex items-center gap-1"
+                  title="Generate fresh cards"
                 >
-                  <Lightbulb className="w-4 h-4" />
-                  Show Hint (H)
+                  <RefreshCw className="w-4 h-4" />
+                  Regenerate
                 </button>
-              )}
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-400" />
+                </button>
+              </div>
             </div>
-          )}
 
-          {/* Rating buttons (only after flipping) */}
-          {isFlipped && (
-            <div className="mt-6 space-y-3">
-              <p className="text-center text-sm text-gray-400">How well did you know this?</p>
-              <div className="grid grid-cols-4 gap-2">
-                {RATING_BUTTONS.map((btn, idx) => (
+            {/* Progress bar */}
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
+                <span>Card {currentIndex + 1} of {studySession.length}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-green-400">{sessionStats.correct} ✓</span>
+                  <span className="text-red-400">{sessionStats.incorrect} ✗</span>
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-neural-purple to-neural-pink transition-all duration-300"
+                  style={{ width: `${((currentIndex + 1) / studySession.length) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable Middle Section */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {/* Card type badge */}
+            <div className="flex items-center gap-2 mb-3">
+              <span className={`text-xs px-2 py-1 rounded-full ${typeConfig.bg} ${typeConfig.text}`}>
+                {typeConfig.label}
+              </span>
+            </div>
+
+            {/* Flashcard with flip animation */}
+            <div 
+              className="flashcard-container cursor-pointer"
+              onClick={() => setIsFlipped(prev => !prev)}
+            >
+              <div className={`flashcard ${isFlipped ? 'flipped' : ''}`}>
+                {/* Front */}
+                <div className="flashcard-face flashcard-front">
+                  <div className="flashcard-content">
+                    <div className="flashcard-scroll-wrapper">
+                      <div className="text-lg text-white leading-relaxed">
+                        {renderMathText(currentCard.front)}
+                      </div>
+                    </div>
+                    {!isFlipped && (
+                      <p className="text-sm text-gray-500 mt-4">
+                        Click or press Space to reveal answer
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Back */}
+                <div className="flashcard-face flashcard-back">
+                  <div className="flashcard-content">
+                    <div className="flashcard-scroll-wrapper">
+                      <div className="text-lg text-white leading-relaxed">
+                        {renderMathText(currentCard.back)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hint section (only before flipping) */}
+            {!isFlipped && currentCard.hint && (
+              <div className="mt-4">
+                {showHint ? (
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <Lightbulb className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-yellow-200">{currentCard.hint}</p>
+                    </div>
+                  </div>
+                ) : (
                   <button
-                    key={btn.quality}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleRating(btn.quality);
+                      setShowHint(true);
                     }}
-                    className={`py-3 px-2 rounded-lg border font-medium transition-all text-sm ${btn.color}`}
-                    title={`${btn.description} (Press ${idx + 1})`}
+                    className="flex items-center gap-2 text-sm text-yellow-400 hover:text-yellow-300 transition-colors mx-auto"
                   >
-                    {btn.label}
+                    <Lightbulb className="w-4 h-4" />
+                    Show Hint (H)
                   </button>
-                ))}
+                )}
               </div>
-              <p className="text-center text-xs text-gray-500">
-                Keyboard: 1=Again, 2=Hard, 3=Good, 4=Easy
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Footer with keyboard hints */}
-        <div className="p-3 border-t border-gray-800 bg-gray-900/50">
-          <div className="flex items-center justify-center gap-6 text-xs text-gray-500">
-            <span>Space: Flip</span>
-            <span>H: Hint</span>
-            <span>1-4: Rate</span>
+            )}
           </div>
-        </div>
+
+          {/* Fixed Footer - Rating buttons (only after flipping) and keyboard hints */}
+          <div className="flex-shrink-0 border-t border-gray-800 bg-neural-darker">
+            {isFlipped && (
+              <div className="p-4 space-y-3">
+                <p className="text-center text-sm text-gray-400">How well did you know this?</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {RATING_BUTTONS.map((btn, idx) => (
+                    <button
+                      key={btn.quality}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRating(btn.quality);
+                      }}
+                      className={`py-3 px-2 rounded-lg border font-medium transition-all text-sm ${btn.color}`}
+                      title={`${btn.description} (Press ${idx + 1})`}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="p-3 bg-gray-900/50">
+              <div className="flex items-center justify-center gap-6 text-xs text-gray-500">
+                <span>Space: Flip</span>
+                <span>H: Hint</span>
+                <span>1-4: Rate</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb, ArrowLeft } from 'lucide-react';
+import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb, ArrowLeft, FolderOpen } from 'lucide-react';
 import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
 import CheatSheetViewer from './CheatSheetViewer';
 import FlashcardViewer from './FlashcardViewer';
+import ResourceLibrary from './ResourceLibrary';
 import ImageAnswerUpload from './ImageAnswerUpload';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
@@ -1863,6 +1864,13 @@ function Learning() {
           Practice
         </button>
         <button
+          onClick={() => setActiveTab('library')}
+          className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'library' ? 'bg-neural-purple text-white' : 'bg-neural-dark text-gray-400 hover:text-white border border-gray-800'}`}
+        >
+          <FolderOpen className="w-4 h-4" />
+          Library
+        </button>
+        <button
           onClick={() => setActiveTab('history')}
           className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${activeTab === 'history' ? 'bg-neural-purple text-white' : 'bg-neural-dark text-gray-400 hover:text-white border border-gray-800'}`}
         >
@@ -1880,6 +1888,42 @@ function Learning() {
 
       {activeTab === 'progress' && renderProgressDashboard()}
       {activeTab === 'history' && renderHistoryViewer()}
+      {activeTab === 'library' && (
+        <ResourceLibrary 
+          onOpenCheatSheet={(subject, topic) => {
+            // Find the topic in catalogue and set it up
+            const category = getCategoryForSubject(subject);
+            if (category) {
+              setSelectedCategory(category);
+              setSelectedSubject(subject);
+              // Find the topic object
+              const subjectData = SUBJECT_CATALOGUE[category]?.subjects[subject];
+              const topicObj = subjectData?.topics.find(t => t.name === topic);
+              if (topicObj) {
+                setSelectedTopic(topicObj);
+                setNavigationLevel('topic');
+              }
+            }
+            setShowCheatSheet(true);
+          }}
+          onOpenFlashcards={(subject, topic) => {
+            // Find the topic in catalogue and set it up
+            const category = getCategoryForSubject(subject);
+            if (category) {
+              setSelectedCategory(category);
+              setSelectedSubject(subject);
+              // Find the topic object
+              const subjectData = SUBJECT_CATALOGUE[category]?.subjects[subject];
+              const topicObj = subjectData?.topics.find(t => t.name === topic);
+              if (topicObj) {
+                setSelectedTopic(topicObj);
+                setNavigationLevel('topic');
+              }
+            }
+            setShowFlashcards(true);
+          }}
+        />
+      )}
       
       {/* Practice Tab with Catalogue Navigation */}
       {activeTab === 'practice' && (

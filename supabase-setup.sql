@@ -167,3 +167,61 @@ CREATE TRIGGER update_flashcard_decks_last_modified
   BEFORE UPDATE ON flashcard_decks
   FOR EACH ROW
   EXECUTE FUNCTION update_last_modified();
+
+-- ====================================
+-- LEARNING RESOURCES LIBRARY TABLE
+-- ====================================
+-- Stores generated learning resources (cheat sheets, flashcard decks, mind maps, etc.)
+-- for quick access in the Resource Library
+
+CREATE TABLE IF NOT EXISTS learning_resources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  resource_type TEXT NOT NULL, -- 'cheatsheet' | 'flashcard_deck' | 'mindmap'
+  subject TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content JSONB NOT NULL, -- Stores the actual resource data
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  last_accessed TIMESTAMPTZ DEFAULT NOW(),
+  access_count INTEGER DEFAULT 1,
+  is_favorite BOOLEAN DEFAULT FALSE,
+  UNIQUE(user_id, resource_type, subject, topic)
+);
+
+-- Enable RLS
+ALTER TABLE learning_resources ENABLE ROW LEVEL SECURITY;
+
+-- RLS policies
+CREATE POLICY "Users can view own resources"
+  ON learning_resources FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own resources"
+  ON learning_resources FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own resources"
+  ON learning_resources FOR UPDATE
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own resources"
+  ON learning_resources FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Index for faster queries
+CREATE INDEX IF NOT EXISTS idx_learning_resources_user_type 
+  ON learning_resources(user_id, resource_type);
+
+CREATE INDEX IF NOT EXISTS idx_learning_resources_user_subject 
+  ON learning_resources(user_id, subject);
+
+CREATE INDEX IF NOT EXISTS idx_learning_resources_last_accessed 
+  ON learning_resources(user_id, last_accessed DESC);
+
+-- Add trigger to update learning_resources updated_at timestamp
+CREATE TRIGGER update_learning_resources_last_modified
+  BEFORE UPDATE ON learning_resources
+  FOR EACH ROW
+  EXECUTE FUNCTION update_last_modified();

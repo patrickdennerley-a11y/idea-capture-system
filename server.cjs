@@ -1195,14 +1195,14 @@ app.post('/api/generate-flashcards', async (req, res) => {
     // Use Sonnet for high-quality flashcard generation
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{
         role: 'user',
         content: `You are creating flashcards for a university student studying ${topic} in ${subject}.
 
 ${topicDescription ? `Topic description: ${topicDescription}` : ''}
 
-Generate 15-20 high-quality flashcards covering:
+Generate 12-15 high-quality flashcards covering:
 1. Essential FORMULAS (use LaTeX: $inline$ or $$block$$)
 2. Key DEFINITIONS
 3. Core CONCEPTS that must be understood
@@ -1254,23 +1254,28 @@ Generate the flashcards for ${topic} now. Include 15-20 cards covering all the i
       }]
     });
 
-    const responseText = message.content[0].text;
+    let content = message.content[0].text;
+
+    // Remove markdown code fences if present (robust stripping)
+    content = content.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/g, '').trim();
 
     // Parse JSON response
     let flashcardsData;
     try {
-      let cleanedText = responseText.trim();
-      cleanedText = cleanedText.replace(/^```json\s*/i, '');
-      cleanedText = cleanedText.replace(/^```\s*/i, '');
-      cleanedText = cleanedText.replace(/\s*```$/i, '');
-
-      flashcardsData = JSON.parse(cleanedText);
+      // Try to extract JSON object if there's extra content before/after
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        content = jsonMatch[0];
+      }
+      
+      flashcardsData = JSON.parse(content);
     } catch (parseError) {
       console.error('Failed to parse flashcards response:', parseError);
-      console.error('Raw response:', responseText.substring(0, 500));
+      console.error('Raw response (first 1000 chars):', content.substring(0, 1000));
+      console.error('Raw response (last 500 chars):', content.substring(content.length - 500));
       return res.status(500).json({
         success: false,
-        error: 'Failed to parse generated flashcards. Please try again.'
+        error: 'Failed to parse generated flashcards. The response may have been truncated. Please try again.'
       });
     }
 

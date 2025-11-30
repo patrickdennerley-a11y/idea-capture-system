@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Download, RotateCcw, Loader2, AlertCircle, FileText } from 'lucide-react';
+import { X, Download, RotateCcw, Loader2, AlertCircle, FileText, BookMarked } from 'lucide-react';
 import { generateCheatsheet } from '../utils/apiService';
+import { saveResource, getResource } from '../utils/resourceService';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -187,34 +188,63 @@ function CheatSheetViewer({ subject, topic, topicDescription, onClose }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [generatedAt, setGeneratedAt] = useState(null);
+  const [isFromLibrary, setIsFromLibrary] = useState(false);
 
-  const fetchCheatsheet = async () => {
+  // Generate a new cheat sheet and save to library
+  const generateNewCheatsheet = async () => {
     setIsLoading(true);
     setError(null);
     setContent('');
+    setIsFromLibrary(false);
     
     const result = await generateCheatsheet(subject, topic, topicDescription);
-    
-    setIsLoading(false);
     
     if (result.success && result.data) {
       setContent(result.data.content);
       setGeneratedAt(result.data.generatedAt);
+      
+      // Save to library
+      await saveResource('cheatsheet', subject, topic, `${topic} Cheat Sheet`, {
+        markdown: result.data.content,
+        generatedAt: result.data.generatedAt,
+      });
     } else {
       setError(result.error || 'Failed to generate cheat sheet');
+    }
+    
+    setIsLoading(false);
+  };
+
+  // Load existing cheat sheet from library or generate new one
+  const loadOrGenerateCheatsheet = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    // Check if cheat sheet already exists in library
+    const existingResource = await getResource('cheatsheet', subject, topic);
+    
+    if (existingResource.success && existingResource.data) {
+      // Load from library
+      setContent(existingResource.data.content.markdown);
+      setGeneratedAt(existingResource.data.content.generatedAt);
+      setIsFromLibrary(true);
+      setIsLoading(false);
+    } else {
+      // Generate new cheat sheet
+      await generateNewCheatsheet();
     }
   };
 
   useEffect(() => {
-    fetchCheatsheet();
-  }, []);
+    loadOrGenerateCheatsheet();
+  }, [subject, topic]);
 
   const handleDownloadPDF = () => {
     window.print();
   };
 
   const handleRegenerate = () => {
-    fetchCheatsheet();
+    generateNewCheatsheet();
   };
 
   const sections = parseMarkdownContent(content);
@@ -296,12 +326,21 @@ function CheatSheetViewer({ subject, topic, topicDescription, onClose }) {
                 ))}
               </div>
 
-              {/* Generated timestamp */}
-              {generatedAt && (
-                <p className="text-xs text-gray-500 mt-6 text-center print:hidden">
-                  Generated: {new Date(generatedAt).toLocaleString()}
-                </p>
-              )}
+              {/* Generated timestamp and library indicator */}
+              <div className="text-xs text-gray-500 mt-6 text-center print:hidden">
+                {isFromLibrary && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-neural-purple/20 text-neural-purple rounded-full mb-2">
+                    <BookMarked className="w-3 h-3" />
+                    Loaded from Library
+                  </span>
+                )}
+                {generatedAt && (
+                  <p>Generated: {new Date(generatedAt).toLocaleString()}</p>
+                )}
+                {!isFromLibrary && (
+                  <p className="text-green-400 mt-1">✓ Saved to your Library</p>
+                )}
+              </div>
 
               {/* Action Buttons - hidden when printing */}
               <div className="no-print flex gap-3 mt-8 justify-center">

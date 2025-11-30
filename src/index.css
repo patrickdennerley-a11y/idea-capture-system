@@ -220,13 +220,14 @@ input[type="range"].slider::-moz-range-track {
 /* Flashcard flip animation */
 .flashcard-container {
   perspective: 1000px;
+  margin-bottom: 1rem;
 }
 
 .flashcard {
   position: relative;
   width: 100%;
-  min-height: 200px;
-  max-height: 35vh;
+  min-height: 180px;
+  height: auto;
   transition: transform 0.6s;
   transform-style: preserve-3d;
 }
@@ -238,16 +239,15 @@ input[type="range"].slider::-moz-range-track {
 .flashcard-face {
   position: absolute;
   width: 100%;
-  min-height: 200px;
-  max-height: 35vh;
+  min-height: 180px;
+  height: auto;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1.5rem;
   border-radius: 1rem;
-  overflow-y: auto;
 }
 
 .flashcard-front {
@@ -261,6 +261,13 @@ input[type="range"].slider::-moz-range-track {
   transform: rotateY(180deg);
 }
 
+/* Scrollable card content wrapper */
+.flashcard-scroll-wrapper {
+  max-height: 45vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
 /* Ensure KaTeX formulas don't overflow */
 .flashcard-face .katex-display {
   overflow-x: auto;
@@ -270,6 +277,12 @@ input[type="range"].slider::-moz-range-track {
 
 .flashcard-face .katex {
   font-size: 1.1em;
+}
+
+/* Flashcard content styling */
+.flashcard-content {
+  width: 100%;
+  text-align: center;
 }
 
 /* Print styles for Cheat Sheet PDF download */
