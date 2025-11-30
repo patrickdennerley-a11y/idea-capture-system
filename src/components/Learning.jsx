@@ -178,6 +178,8 @@ function Learning() {
   const [questionStartTime, setQuestionStartTime] = useState(null);
   const [questionTimes, setQuestionTimes] = useState({});
   const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
+  const [skippedQuestions, setSkippedQuestions] = useState(new Set());
+  const [showSkippedPrompt, setShowSkippedPrompt] = useState(false);
 
   // Quiz settings state
   const [showSettings, setShowSettings] = useState(true);
@@ -268,6 +270,8 @@ function Learning() {
     setAnswerEvaluations({});
     setShowResults(false);
     setQuestionTimes({});
+    setSkippedQuestions(new Set());
+    setShowSkippedPrompt(false);
 
     const result = await generatePracticeQuestions(
       selectedSubject,
@@ -292,6 +296,54 @@ function Learning() {
 
   const handleTextAnswer = (questionId, answer) => {
     setUserAnswers(prev => ({ ...prev, [questionId]: answer }));
+  };
+
+  const previousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(prev => prev - 1);
+    }
+  };
+
+  const skipQuestion = () => {
+    const question = questions[currentQuestionIndex];
+    
+    // Add to skipped set
+    setSkippedQuestions(prev => new Set([...prev, question.id]));
+    
+    // Move to next question
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    } else {
+      // At last question - check if there are skipped questions
+      if (skippedQuestions.size > 0 || true) { // Include current skip
+        setShowSkippedPrompt(true);
+      } else {
+        finishQuiz();
+      }
+    }
+  };
+
+  const reviewSkippedQuestions = () => {
+    setShowSkippedPrompt(false);
+    // Find first skipped question index
+    const firstSkippedIndex = questions.findIndex(q => skippedQuestions.has(q.id));
+    if (firstSkippedIndex !== -1) {
+      setCurrentQuestionIndex(firstSkippedIndex);
+    }
+  };
+
+  const finishQuiz = () => {
+    // Save any unanswered skipped questions to history
+    questions.forEach(q => {
+      if (skippedQuestions.has(q.id) && !userAnswers[q.id]) {
+        saveQuestionToHistory(q, '', 'skipped', 0, 0);
+      }
+    });
+    
+    const totalScore = calculateTotalScore();
+    saveScore(selectedTopic.id, totalScore, questions.length);
+    setShowResults(true);
+    setShowSkippedPrompt(false);
   };
 
   const checkCalculationAnswer = (userAnswer, correctAnswer) => {
@@ -968,13 +1020,77 @@ function Learning() {
           )}
         </div>
 
-        <button
-          onClick={nextQuestion}
-          disabled={!isAnswered || isEvaluating}
-          className={`w-full py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${isAnswered && !isEvaluating ? 'bg-neural-purple text-white hover:bg-neural-purple/80' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
-        >
-          {isEvaluating ? (<><Loader2 className="w-4 h-4 animate-spin" />Evaluating...</>) : currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'See Results'}
-        </button>
+        {/* Skipped Questions Indicator */}
+        {skippedQuestions.size > 0 && (
+          <div className="text-sm text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2 flex items-center gap-2">
+            <span>⏭️</span>
+            <span>{skippedQuestions.size} skipped question{skippedQuestions.size > 1 ? 's' : ''}</span>
+            {skippedQuestions.has(question.id) && <span className="text-yellow-500 font-medium">(this one)</span>}
+          </div>
+        )}
+
+        {/* Navigation Buttons */}
+        <div className="flex gap-3">
+          {/* Previous Button */}
+          <button
+            onClick={previousQuestion}
+            disabled={currentQuestionIndex === 0}
+            className={`px-4 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${currentQuestionIndex > 0 ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-800 text-gray-600 cursor-not-allowed'}`}
+          >
+            ← Prev
+          </button>
+
+          {/* Skip Button */}
+          <button
+            onClick={skipQuestion}
+            disabled={isEvaluating}
+            className="px-4 py-3 rounded-lg font-medium transition-all bg-gray-700 text-yellow-400 hover:bg-gray-600 flex items-center justify-center gap-2"
+          >
+            Skip ⏭️
+          </button>
+
+          {/* Next/Submit Button */}
+          <button
+            onClick={nextQuestion}
+            disabled={!isAnswered || isEvaluating}
+            className={`flex-1 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 ${isAnswered && !isEvaluating ? 'bg-neural-purple text-white hover:bg-neural-purple/80' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
+          >
+            {isEvaluating ? (<><Loader2 className="w-4 h-4 animate-spin" />Evaluating...</>) : currentQuestionIndex < questions.length - 1 ? 'Next →' : 'Submit'}
+          </button>
+        </div>
+
+        {/* Skipped Questions Prompt Modal */}
+        {showSkippedPrompt && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+            <div className="bg-neural-dark rounded-xl border border-gray-700 p-6 max-w-md w-full space-y-4">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">⏭️</span>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Skipped Questions</h3>
+                <p className="text-gray-400">
+                  You have <span className="text-yellow-400 font-bold">{skippedQuestions.size}</span> skipped question{skippedQuestions.size > 1 ? 's' : ''}. 
+                  Would you like to review them or finish the quiz?
+                </p>
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={reviewSkippedQuestions}
+                  className="flex-1 py-3 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-lg font-medium hover:bg-yellow-500/30 transition-all"
+                >
+                  Review Skipped
+                </button>
+                <button
+                  onClick={finishQuiz}
+                  className="flex-1 py-3 bg-neural-purple text-white rounded-lg font-medium hover:bg-neural-purple/80 transition-all"
+                >
+                  Finish Quiz
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };

@@ -932,16 +932,13 @@ QUESTION DISTRIBUTION (Balanced Mix):
 - 1x short_answer: Brief text response expected (1-3 sentences)`;
     }
 
-    const needsAccurateMath = style === 'calculation' || style === 'formula' || style === 'proof';
-    const model = needsAccurateMath 
-      ? 'claude-sonnet-4-5-20250929'   // Accurate at math
-      : 'claude-3-5-haiku-20241022';    // Fast for conceptual
+    const model = 'claude-sonnet-4-5-20250929';
 
-    console.log(`Using model: ${model} (style: ${style})`);
+    console.log(`Using model: ${model}`);
 
     const message = await anthropic.messages.create({
       model,
-      max_tokens: style === 'proof' ? 8192 : 4096,
+      max_tokens: 8192, // Increased for complex questions
       temperature: 1.0,
       messages: [{
         role: 'user',
@@ -1021,16 +1018,22 @@ Make questions educational, challenging for the ${difficultyLevel} level, and fo
 
     let questionsData;
     try {
-      let rawText = responseText.trim();
+      // Before parsing, clean the response
+      let cleanedText = responseText.trim();
       
-      // Remove markdown code fences
-      rawText = rawText.replace(/^```json\s*/gi, '');
-      rawText = rawText.replace(/^```\s*/gi, '');
-      rawText = rawText.replace(/\s*```$/gi, '');
+      // Remove markdown fences
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
       
-      // DO NOT escape anything - Claude already sends valid JSON
-      // Just parse it directly
-      questionsData = JSON.parse(rawText);
+      // Try to extract just the JSON object if there's extra content
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedText = jsonMatch[0];
+      }
+      
+      // Parse the cleaned JSON
+      questionsData = JSON.parse(cleanedText);
       
       // Validate structure
       if (!questionsData.questions || !Array.isArray(questionsData.questions)) {
