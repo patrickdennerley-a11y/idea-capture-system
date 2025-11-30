@@ -678,7 +678,7 @@ const getRandomContext = () => RANDOM_CONTEXTS[Math.floor(Math.random() * RANDOM
 // POST /api/evaluate-answer - AI evaluation of student answers (Haiku 3.5 for cost efficiency)
 app.post('/api/evaluate-answer', async (req, res) => {
   try {
-    const { question, userAnswer, correctAnswer, questionType } = req.body;
+    const { question, userAnswer, correctAnswer, questionType, testCases, language } = req.body;
 
     if (!question || !userAnswer || !correctAnswer) {
       return res.status(400).json({
@@ -688,12 +688,79 @@ app.post('/api/evaluate-answer', async (req, res) => {
 
     console.log(`Evaluating answer for question type: ${questionType || 'unknown'}...`);
 
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 256,
-      messages: [{
-        role: 'user',
-        content: `Evaluate if the student's answer is essentially correct.
+    // Use different prompts for code vs regular answers
+    let promptContent;
+    let maxTokens = 256;
+
+    if (questionType === 'code') {
+      maxTokens = 1024; // More tokens for code evaluation
+      const testCasesStr = testCases && testCases.length > 0
+        ? testCases.map((tc, i) => `Test ${i + 1}: Input: ${tc.input} → Expected: ${tc.expectedOutput}`).join('\n')
+        : 'No test cases provided';
+
+      promptContent = `You are evaluating a student's code submission for a programming problem.
+
+Problem: "${question}"
+Language: ${language || 'python'}
+Expected Solution: 
+\`\`\`
+${correctAnswer}
+\`\`\`
+
+Student's Code:
+\`\`\`
+${userAnswer}
+\`\`\`
+
+Test Cases:
+${testCasesStr}
+
+Evaluate the student's code for:
+1. CORRECTNESS: Would the code produce the correct output for the test cases?
+2. LOGIC: Is the algorithmic approach correct?
+3. QUALITY: Code style, efficiency, and best practices
+
+Scoring:
+- CORRECT (1 point): Code would produce correct output for all test cases, logic is sound
+- PARTIAL (0.5 points): Code has the right idea but has bugs, or works for some but not all test cases
+- INCORRECT (0 points): Code is fundamentally wrong or would not work
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+Return pure JSON:
+{
+  "result": "correct|partial|incorrect",
+  "score": 1,
+  "feedback": "Explanation of what's right/wrong with their code",
+  "issues": ["Issue 1 if any", "Issue 2 if any"],
+  "suggestions": ["Suggestion for improvement"]
+}`;
+    } else if (questionType === 'project') {
+      maxTokens = 1024;
+      promptContent = `You are evaluating a student's project submission.
+
+Project: "${question}"
+Expected Approach/Key Insights: "${correctAnswer}"
+Student's Submission: "${userAnswer}"
+
+Evaluate the student's work for:
+1. COMPLETENESS: Did they address all requirements?
+2. UNDERSTANDING: Do they demonstrate understanding of the concepts?
+3. QUALITY: Is the solution well-reasoned and clearly presented?
+
+Scoring:
+- CORRECT (1 point): Comprehensive solution that demonstrates strong understanding
+- PARTIAL (0.5 points): Addresses some requirements but incomplete or shows partial understanding
+- INCORRECT (0 points): Does not address the requirements or shows fundamental misunderstanding
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+Return pure JSON:
+{
+  "result": "correct|partial|incorrect",
+  "score": 1,
+  "feedback": "Detailed feedback on their project submission"
+}`;
+    } else {
+      promptContent = `Evaluate if the student's answer is essentially correct.
 
 Question: "${question}"
 Expected answer: "${correctAnswer}"
@@ -704,7 +771,15 @@ Scoring:
 - PARTIAL (0.5 points): Partially correct, missing some key concepts
 - INCORRECT (0 points): Wrong or fundamentally misunderstands
 
-Return JSON only: {"result": "correct|partial|incorrect", "score": 1|0.5|0, "feedback": "brief explanation"}`
+Return JSON only: {"result": "correct|partial|incorrect", "score": 1|0.5|0, "feedback": "brief explanation"}`;
+    }
+
+    const message = await anthropic.messages.create({
+      model: questionType === 'code' ? 'claude-sonnet-4-5-20250929' : 'claude-3-5-haiku-20241022',
+      max_tokens: maxTokens,
+      messages: [{
+        role: 'user',
+        content: promptContent
       }]
     });
 
@@ -922,6 +997,38 @@ QUESTION DISTRIBUTION (Proof-Based):
 - 1x short_answer: "Prove or disprove..." (may be false - student must determine)
 - 1x multiple_choice: Select the correct proof strategy or identify the flaw in a proof
 - 1x short_answer: Construct a counterexample or prove a converse`;
+    } else if (style === 'code') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Code-Based):
+Generate programming challenges that require writing code to solve problems.
+ALL questions should be of type "code".
+
+For each code question, you MUST include:
+- A clear problem statement explaining what to implement
+- The programming language (based on subject: Python for CS/AI, Python or R for Statistics)
+- Input/output examples as test cases
+- A working solution in the correctAnswer field
+- Explanation of the approach
+
+LANGUAGE SELECTION:
+- Computer Science / Artificial Intelligence: Python
+- Statistics / Linear Statistical Models: Python (for data analysis) or R (for statistical modeling)
+- Probability / Probability For Inference: Python (for simulations)
+- Mathematics subjects: Python (for numerical work)`;
+    } else if (style === 'project') {
+      questionDistribution = `
+QUESTION DISTRIBUTION (Project-Based):
+Generate ONE comprehensive project that tests deep understanding through practical application.
+
+The project should:
+- Have a clear title and high-level overview
+- List specific learning objectives being tested
+- Break requirements into multiple parts/milestones
+- For Hard/Extreme difficulty: Include advanced challenges requiring research beyond course material
+- Provide hints that students can optionally use
+- Include clear evaluation criteria
+
+This is a comprehensive project, so generate exactly 1 project-type question.`;
     } else {
       // balanced
       questionDistribution = `
@@ -974,6 +1081,64 @@ For formula questions:
 
 IMPORTANT: Return ONLY valid JSON with no markdown formatting.
 
+${style === 'code' ? `
+For CODE questions, use this structure:
+{
+  "questions": [
+    {
+      "id": 1,
+      "type": "code",
+      "question": "Problem description with requirements. Be specific about what the function should do.",
+      "language": "python",
+      "starterCode": "def solution(input):\\n    # Your code here\\n    pass",
+      "testCases": [
+        { "input": "example input 1", "expectedOutput": "expected result 1" },
+        { "input": "example input 2", "expectedOutput": "expected result 2" }
+      ],
+      "correctAnswer": "def solution(input):\\n    # Complete working solution\\n    return result",
+      "explanation": "Explanation of the approach, time complexity, and key concepts"
+    }
+  ]
+}
+` : style === 'project' ? `
+For PROJECT questions, use this structure (generate exactly 1 project):
+{
+  "questions": [
+    {
+      "id": 1,
+      "type": "project",
+      "question": "Project Title - A Clear Descriptive Name",
+      "overview": "High-level description of the project (2-3 sentences). What will the student build/analyze/create?",
+      "objectives": [
+        "Learning objective 1 - What concept is being tested",
+        "Learning objective 2 - What skill is being developed",
+        "Learning objective 3 - What understanding is demonstrated"
+      ],
+      "requirements": [
+        { "part": 1, "title": "Part 1 Title", "description": "Detailed description of what to implement/analyze in part 1" },
+        { "part": 2, "title": "Part 2 Title", "description": "Detailed description of what to implement/analyze in part 2" },
+        { "part": 3, "title": "Part 3 Title", "description": "Detailed description of what to implement/analyze in part 3" }
+      ],
+      "advancedChallenges": ${difficultyLevel === 'hard' || difficultyLevel === 'extreme' ? `[
+        "Advanced challenge 1 - requires research beyond course material",
+        "Advanced challenge 2 - extension problem for deeper understanding"
+      ]` : '[]'},
+      "hints": [
+        "Hint 1 - A helpful suggestion without giving away the answer",
+        "Hint 2 - A pointer to relevant concepts or approaches"
+      ],
+      "evaluationCriteria": [
+        "Criterion 1 - What makes a good solution",
+        "Criterion 2 - Key elements to include",
+        "Criterion 3 - Quality indicators"
+      ],
+      "language": "python",
+      "correctAnswer": "Description of a good solution approach and key insights",
+      "explanation": "How the concepts connect and what a complete solution demonstrates"
+    }
+  ]
+}
+` : `
 Return pure JSON (no code fences):
 {
   "questions": [
@@ -1009,6 +1174,7 @@ Return pure JSON (no code fences):
     }
   ]
 }
+`}
 
 Make questions educational, challenging for the ${difficultyLevel} level, and focused on ${topic} in ${subject}. Remember to test DIFFERENT concepts/skills in each question!`
       }]

@@ -5,6 +5,8 @@ import CheatSheetViewer from './CheatSheetViewer';
 import FlashcardViewer from './FlashcardViewer';
 import ResourceLibrary from './ResourceLibrary';
 import ImageAnswerUpload from './ImageAnswerUpload';
+import CodeEditor from './CodeEditor';
+import ProjectViewer from './ProjectViewer';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,7 +46,44 @@ const QUESTION_STYLES = [
   { id: 'formula', name: 'Formula & Equations', description: 'Equations, derivations, formula applications' },
   { id: 'application', name: 'Real-World Applications', description: 'Practical scenarios & data interpretation' },
   { id: 'proof', name: 'Proof-Based', description: 'Rigorous proofs, derivations, and theoretical arguments' },
+  { id: 'code', name: 'Code-Based', description: 'Programming challenges - write code to solve problems' },
+  { id: 'project', name: 'Project-Based', description: 'Extensive projects testing multiple concepts with real-world application' },
 ];
+
+// Subjects that support code-based questions
+const CODE_SUPPORTED_SUBJECTS = [
+  'ComputerScience',
+  'ArtificialIntelligence',
+  'Statistics',
+  'LinearStatisticalModels',
+  'Probability',
+  'ProbabilityForInference',
+];
+
+// Subjects that support project-based questions
+const PROJECT_SUPPORTED_SUBJECTS = [
+  'ComputerScience',
+  'ArtificialIntelligence',
+  'Statistics',
+  'LinearStatisticalModels',
+  'Probability',
+  'ProbabilityForInference',
+  'Calculus',
+  'LinearAlgebra',
+];
+
+// Helper function to get available question styles for a subject
+const getAvailableQuestionStyles = (subject) => {
+  return QUESTION_STYLES.filter(style => {
+    if (style.id === 'code') {
+      return CODE_SUPPORTED_SUBJECTS.includes(subject);
+    }
+    if (style.id === 'project') {
+      return PROJECT_SUPPORTED_SUBJECTS.includes(subject);
+    }
+    return true;
+  });
+};
 
 // Focus mode options
 const FOCUS_MODES = [
@@ -676,7 +715,7 @@ function Learning() {
           <div>
             <label className="text-sm font-medium text-gray-300 mb-2 block">Question Style</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {QUESTION_STYLES.map(style => (
+              {getAvailableQuestionStyles(selectedSubject).map(style => (
                 <button
                   key={style.id}
                   onClick={() => setQuestionStyle(style.id)}
@@ -687,7 +726,12 @@ function Learning() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-1">{QUESTION_STYLES.find(s => s.id === questionStyle)?.description}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {QUESTION_STYLES.find(s => s.id === questionStyle)?.description}
+              {questionStyle === 'project' && (
+                <span className="text-yellow-400 ml-1">(1 comprehensive project)</span>
+              )}
+            </p>
           </div>
 
           {/* Focus Mode */}
@@ -1604,7 +1648,46 @@ function Learning() {
 
           <h3 className="text-lg font-medium text-white mb-6">{renderMathText(question.question)}</h3>
 
-          {(question.type === 'multiple_choice' || (question.type === 'formula' && question.options)) ? (
+          {/* Code Question Type */}
+          {question.type === 'code' ? (
+            <div className="space-y-4">
+              {/* Test Cases Display */}
+              {question.testCases && question.testCases.length > 0 && (
+                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-300 mb-2">Test Cases:</h4>
+                  <div className="space-y-2">
+                    {question.testCases.map((tc, idx) => (
+                      <div key={idx} className="flex gap-4 text-sm">
+                        <span className="text-gray-500">Input:</span>
+                        <code className="text-blue-400">{tc.input}</code>
+                        <span className="text-gray-500">→</span>
+                        <span className="text-gray-500">Output:</span>
+                        <code className="text-green-400">{tc.expectedOutput}</code>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <CodeEditor
+                value={userAnswer || ''}
+                onChange={(code) => handleTextAnswer(question.id, code)}
+                language={question.language || 'python'}
+                starterCode={question.starterCode || ''}
+                testCases={question.testCases || []}
+                showTestCases={false}
+                placeholder="Write your code solution here..."
+                minHeight={250}
+              />
+            </div>
+          ) : question.type === 'project' ? (
+            <ProjectViewer
+              project={question}
+              userAnswer={userAnswer || ''}
+              onAnswerChange={(answer) => handleTextAnswer(question.id, answer)}
+              isComplete={false}
+            />
+          ) : (question.type === 'multiple_choice' || (question.type === 'formula' && question.options)) ? (
             <div className="space-y-3">
               {question.options?.map((option, idx) => {
                 const letter = option.charAt(0);
