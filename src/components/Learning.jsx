@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp } from 'lucide-react';
-import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
+import { generatePracticeQuestions, evaluateAnswer, getRecommendedDifficulty, updateMastery, resetSessionCounters } from '../utils/apiService';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
@@ -181,6 +181,13 @@ function Learning() {
   const [skippedQuestions, setSkippedQuestions] = useState(new Set());
   const [showSkippedPrompt, setShowSkippedPrompt] = useState(false);
 
+  // Adaptive difficulty state
+  const [currentMastery, setCurrentMastery] = useState(null);
+  const [recommendation, setRecommendation] = useState(null);
+  const [showRecommendationModal, setShowRecommendationModal] = useState(false);
+  const [difficultyLocked, setDifficultyLocked] = useState(false);
+  const [questionsUntilUnlock, setQuestionsUntilUnlock] = useState(0);
+
   // Quiz settings state
   const [showSettings, setShowSettings] = useState(true);
   const [questionCount, setQuestionCount] = useState(5);
@@ -213,6 +220,14 @@ function Learning() {
       setQuestionStartTime(Date.now());
     }
   }, [currentQuestionIndex, questions.length, showResults]);
+
+  // Show level-up recommendation after quiz completion
+  useEffect(() => {
+    if (showResults && recommendation?.type === 'suggest_up' && !showRecommendationModal) {
+      const timer = setTimeout(() => setShowRecommendationModal(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [showResults, recommendation?.type, showRecommendationModal]);
 
   const saveScore = (topicId, score, total) => {
     const key = `${selectedSubject}-${topicId}`;
@@ -272,6 +287,31 @@ function Learning() {
     setQuestionTimes({});
     setSkippedQuestions(new Set());
     setShowSkippedPrompt(false);
+    
+    // Reset adaptive difficulty state
+    setCurrentMastery(null);
+    setRecommendation(null);
+    setShowRecommendationModal(false);
+    setDifficultyLocked(false);
+    setQuestionsUntilUnlock(0);
+
+    // Reset session counters and load mastery for this topic
+    await resetSessionCounters(selectedSubject, topic.name);
+    
+    // Get recommended difficulty based on past performance
+    const difficultyRec = await getRecommendedDifficulty(selectedSubject, topic.name);
+    setCurrentMastery(difficultyRec.mastery);
+    
+    // If there's a recommendation different from current selection, show it
+    if (difficultyRec.isRecommendation && difficultyRec.difficulty !== selectedDifficulty) {
+      setRecommendation({
+        type: 'session_start',
+        message: difficultyRec.reason,
+        suggestedDifficulty: difficultyRec.difficulty,
+        currentDifficulty: selectedDifficulty,
+      });
+      setShowRecommendationModal(true);
+    }
 
     const result = await generatePracticeQuestions(
       selectedSubject,
@@ -394,6 +434,8 @@ function Learning() {
     const timeTaken = questionStartTime ? Math.round((Date.now() - questionStartTime) / 1000) : 0;
     setQuestionTimes(prev => ({ ...prev, [question.id]: timeTaken }));
 
+    let scoreForMastery = 0;
+
     if (question.type === 'short_answer' && userAnswer) {
       setIsEvaluating(true);
       const evalResult = await evaluateAnswer(question.question, userAnswer, question.correctAnswer, question.type);
@@ -401,7 +443,8 @@ function Learning() {
 
       if (evalResult.success && evalResult.data) {
         setAnswerEvaluations(prev => ({ ...prev, [question.id]: evalResult.data }));
-        saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+        await saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+        scoreForMastery = evalResult.data.score;
       }
     } else if (question.type === 'calculation') {
       const calcResult = checkCalculationAnswer(userAnswer, question.correctAnswer);
@@ -413,12 +456,45 @@ function Learning() {
           feedback: calcResult.result === 'correct' ? 'Correct calculation!' : calcResult.result === 'partial' ? 'Close, but not quite accurate enough.' : 'Incorrect calculation.',
         },
       }));
-      saveQuestionToHistory(question, userAnswer, calcResult.result, calcResult.score, timeTaken);
+      await saveQuestionToHistory(question, userAnswer, calcResult.result, calcResult.score, timeTaken);
+      scoreForMastery = calcResult.score;
     } else {
       const userLetter = userAnswer?.charAt(0)?.toUpperCase();
       const correctLetter = question.correctAnswer?.charAt(0)?.toUpperCase();
       const isCorrect = userLetter === correctLetter;
-      saveQuestionToHistory(question, userAnswer, isCorrect ? 'correct' : 'incorrect', isCorrect ? 1 : 0, timeTaken);
+      await saveQuestionToHistory(question, userAnswer, isCorrect ? 'correct' : 'incorrect', isCorrect ? 1 : 0, timeTaken);
+      scoreForMastery = isCorrect ? 1 : 0;
+    }
+
+    // Update mastery tracking (unless difficulty is locked)
+    if (!difficultyLocked && selectedTopic) {
+      const masteryResult = await updateMastery(
+        selectedSubject,
+        selectedTopic.name,
+        selectedDifficulty,
+        scoreForMastery
+      );
+      
+      if (masteryResult.success) {
+        setCurrentMastery(masteryResult.data);
+        
+        if (masteryResult.recommendation) {
+          setRecommendation(masteryResult.recommendation);
+          // Show modal immediately for auto_down, warnings, but not suggest_up (wait for end)
+          if (masteryResult.recommendation.type !== 'suggest_up') {
+            setShowRecommendationModal(true);
+          }
+        }
+      }
+    }
+
+    // Decrement difficulty lock counter
+    if (difficultyLocked && questionsUntilUnlock > 0) {
+      const newCount = questionsUntilUnlock - 1;
+      setQuestionsUntilUnlock(newCount);
+      if (newCount === 0) {
+        setDifficultyLocked(false);
+      }
     }
 
     if (currentQuestionIndex < questions.length - 1) {
@@ -458,6 +534,13 @@ function Learning() {
     setAnswerEvaluations({});
     setShowResults(false);
     setError(null);
+    
+    // Reset adaptive difficulty state
+    setCurrentMastery(null);
+    setRecommendation(null);
+    setShowRecommendationModal(false);
+    setDifficultyLocked(false);
+    setQuestionsUntilUnlock(0);
   };
 
   const retryTopic = () => {
@@ -850,6 +933,157 @@ function Learning() {
     </div>
   );
 
+  const renderRecommendationModal = () => {
+    if (!showRecommendationModal || !recommendation) return null;
+
+    const getModalConfig = () => {
+      switch (recommendation.type) {
+        case 'suggest_up':
+          return {
+            icon: '🚀',
+            title: 'Ready for a Challenge?',
+            bgColor: 'bg-green-500/20',
+            borderColor: 'border-green-500/30',
+            accentColor: 'text-green-400',
+            primaryAction: 'Level Up!',
+            primaryColor: 'bg-green-500 hover:bg-green-600',
+          };
+        case 'auto_down':
+          return {
+            icon: '🛡️',
+            title: 'Building Foundations',
+            bgColor: 'bg-blue-500/20',
+            borderColor: 'border-blue-500/30',
+            accentColor: 'text-blue-400',
+            primaryAction: 'Sounds Good',
+            primaryColor: 'bg-blue-500 hover:bg-blue-600',
+          };
+        case 'streak_warning':
+          return {
+            icon: '⚠️',
+            title: 'Comfort Zone Alert',
+            bgColor: 'bg-yellow-500/20',
+            borderColor: 'border-yellow-500/30',
+            accentColor: 'text-yellow-400',
+            primaryAction: 'Try Harder Mode',
+            primaryColor: 'bg-yellow-500 hover:bg-yellow-600',
+          };
+        case 'oscillation_warning':
+          return {
+            icon: '🎯',
+            title: 'Finding Your Level',
+            bgColor: 'bg-purple-500/20',
+            borderColor: 'border-purple-500/30',
+            accentColor: 'text-purple-400',
+            primaryAction: 'Lock Difficulty',
+            primaryColor: 'bg-purple-500 hover:bg-purple-600',
+          };
+        case 'session_start':
+          return {
+            icon: '💡',
+            title: 'Difficulty Suggestion',
+            bgColor: 'bg-neural-purple/20',
+            borderColor: 'border-neural-purple/30',
+            accentColor: 'text-neural-purple',
+            primaryAction: `Use ${recommendation.suggestedDifficulty?.charAt(0).toUpperCase() + recommendation.suggestedDifficulty?.slice(1)}`,
+            primaryColor: 'bg-neural-purple hover:bg-neural-purple/80',
+          };
+        default:
+          return {
+            icon: '💡',
+            title: 'Suggestion',
+            bgColor: 'bg-gray-500/20',
+            borderColor: 'border-gray-500/30',
+            accentColor: 'text-gray-400',
+            primaryAction: 'Got It',
+            primaryColor: 'bg-gray-500 hover:bg-gray-600',
+          };
+      }
+    };
+
+    const config = getModalConfig();
+
+    const handlePrimaryAction = () => {
+      switch (recommendation.type) {
+        case 'suggest_up':
+          if (recommendation.newDifficulty) {
+            setSelectedDifficulty(recommendation.newDifficulty);
+          }
+          break;
+        case 'session_start':
+          if (recommendation.suggestedDifficulty) {
+            setSelectedDifficulty(recommendation.suggestedDifficulty);
+          }
+          break;
+        case 'auto_down':
+          if (recommendation.newDifficulty) {
+            setSelectedDifficulty(recommendation.newDifficulty);
+          }
+          break;
+        case 'oscillation_warning':
+          setDifficultyLocked(true);
+          setQuestionsUntilUnlock(10);
+          break;
+        case 'streak_warning':
+          setSelectedDifficulty('medium');
+          break;
+        default:
+          break;
+      }
+      setShowRecommendationModal(false);
+      setRecommendation(null);
+    };
+
+    const handleDismiss = () => {
+      setShowRecommendationModal(false);
+      if (recommendation.type !== 'suggest_up') {
+        setRecommendation(null);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+        <div className={`${config.bgColor} border ${config.borderColor} rounded-xl p-6 max-w-md w-full space-y-4`}>
+          <div className="text-center">
+            <div className="text-5xl mb-3">{config.icon}</div>
+            <h3 className={`text-xl font-bold ${config.accentColor} mb-2`}>{config.title}</h3>
+            <p className="text-gray-300">{recommendation.message}</p>
+            
+            {recommendation.accuracy !== undefined && (
+              <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-black/30 rounded-full">
+                <span className="text-sm text-gray-400">Recent accuracy:</span>
+                <span className={`font-bold ${recommendation.accuracy >= 80 ? 'text-green-400' : recommendation.accuracy >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {recommendation.accuracy}%
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleDismiss}
+              className="flex-1 py-3 bg-gray-700 text-gray-300 rounded-lg font-medium hover:bg-gray-600 transition-all"
+            >
+              {recommendation.type === 'session_start' ? `Keep ${recommendation.currentDifficulty}` : 'Dismiss'}
+            </button>
+            <button
+              onClick={handlePrimaryAction}
+              className={`flex-1 py-3 ${config.primaryColor} text-white rounded-lg font-medium transition-all`}
+            >
+              {config.primaryAction}
+            </button>
+          </div>
+          
+          {recommendation.type === 'oscillation_warning' && (
+            <p className="text-xs text-gray-500 text-center">
+              Locking difficulty helps the system accurately assess your level.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderTopicSelection = () => {
     const subject = SUBJECTS[selectedSubject];
     
@@ -958,6 +1192,38 @@ function Learning() {
 
         <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
           <div className="h-full bg-gradient-to-r from-neural-purple to-neural-pink transition-all duration-300" style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }} />
+        </div>
+
+        {/* Mastery & Difficulty Info Bar */}
+        <div className="flex items-center justify-between text-sm my-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+              selectedDifficulty === 'easy' ? 'bg-green-500/20 text-green-400' :
+              selectedDifficulty === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+              selectedDifficulty === 'hard' ? 'bg-orange-500/20 text-orange-400' :
+              'bg-red-500/20 text-red-400'
+            }`}>
+              {selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1)}
+            </span>
+            
+            {difficultyLocked && (
+              <span className="px-2 py-1 rounded-full text-xs bg-purple-500/20 text-purple-400 flex items-center gap-1">
+                🔒 Locked ({questionsUntilUnlock} left)
+              </span>
+            )}
+            
+            {currentMastery && !currentMastery.isNew && (
+              <span className="text-gray-500">
+                • {Math.round((currentMastery.rolling_accuracy || 0.5) * 100)}% recent
+              </span>
+            )}
+          </div>
+          
+          {currentMastery && currentMastery.streak_eligible === false && (
+            <span className="text-xs text-yellow-500">
+              ⚠️ Streak paused
+            </span>
+          )}
         </div>
 
         <div className="bg-neural-dark rounded-xl p-6 border border-gray-800">
@@ -1211,6 +1477,8 @@ function Learning() {
       {activeTab === 'practice' && selectedTopic && error && renderError()}
       {activeTab === 'practice' && selectedTopic && !isLoading && !error && questions.length > 0 && !showResults && renderQuestion()}
       {activeTab === 'practice' && selectedTopic && showResults && renderResults()}
+      
+      {renderRecommendationModal()}
     </div>
   );
 }
