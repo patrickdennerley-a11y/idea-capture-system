@@ -206,12 +206,7 @@ export default function NoiseHub({ audioContextRef, activeSession, setActiveSess
         </ul>
       </div>
 
-      <div className="mt-4 p-3 bg-yellow-900/10 border border-yellow-800/30 rounded-lg">
-        <p className="text-sm text-yellow-400">
-          <strong>Important:</strong> These are critical mental health resources for you.
-          Consider saving local copies and/or getting YouTube Premium to ensure uninterrupted access.
-        </p>
-      </div>
+      
         </>
       )}
     </div>
