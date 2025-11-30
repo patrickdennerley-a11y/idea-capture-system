@@ -3,6 +3,19 @@ import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCirc
 import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  saveQuestionToHistory as saveToService,
+  getQuestionHistory,
+  getAllScores,
+  saveBestScore,
+  getProgressStats as getProgressStatsFromService,
+  getMastery,
+  updateMastery,
+  getRecommendedDifficulty,
+  resetSessionCounters,
+  migrateGuestDataToSupabase,
+} from '../utils/learningService';
 
 // Expanded curriculum with all subjects
 const SUBJECTS = {
@@ -161,6 +174,8 @@ const renderMathText = (text) => {
 const generateQuestionId = () => `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 function Learning() {
+  const { user } = useAuth();
+  
   const [activeTab, setActiveTab] = useState('practice');
   const [selectedSubject, setSelectedSubject] = useState('Statistics');
   const [selectedTopic, setSelectedTopic] = useState(null);
@@ -196,17 +211,43 @@ function Learning() {
   });
   const [expandedHistoryItem, setExpandedHistoryItem] = useState(null);
 
-  useEffect(() => {
+  // Load initial data from service (handles guest vs authenticated)
+  const loadInitialData = async () => {
     try {
-      const savedScores = localStorage.getItem('learning-scores');
-      if (savedScores) setScores(JSON.parse(savedScores));
+      const [scoresResult, historyResult] = await Promise.all([
+        getAllScores(),
+        getQuestionHistory({ limit: 1000 }),
+      ]);
       
-      const savedHistory = localStorage.getItem('learning-question-history');
-      if (savedHistory) setQuestionHistory(JSON.parse(savedHistory));
+      if (scoresResult.success) {
+        setScores(scoresResult.data);
+      }
+      if (historyResult.success) {
+        setQuestionHistory(historyResult.data);
+      }
     } catch (err) {
-      console.error('Error loading data:', err);
+      console.error('Error loading learning data:', err);
     }
+  };
+
+  useEffect(() => {
+    loadInitialData();
   }, []);
+
+  // Trigger migration when user transitions from guest to authenticated
+  useEffect(() => {
+    const triggerMigration = async () => {
+      if (user && !user.isGuest) {
+        const result = await migrateGuestDataToSupabase();
+        if (result.success && !result.alreadyMigrated && result.migrated) {
+          console.log('Learning data migrated:', result.migrated);
+          // Reload data after migration
+          loadInitialData();
+        }
+      }
+    };
+    triggerMigration();
+  }, [user?.id, user?.isGuest]);
 
   useEffect(() => {
     if (questions.length > 0 && currentQuestionIndex < questions.length && !showResults) {
@@ -214,26 +255,26 @@ function Learning() {
     }
   }, [currentQuestionIndex, questions.length, showResults]);
 
-  const saveScore = (topicId, score, total) => {
-    const key = `${selectedSubject}-${topicId}`;
-    const newScores = { ...scores };
+  const saveScore = async (topicId, score, total) => {
+    const result = await saveBestScore(selectedSubject, topicId, score, total);
     
-    if (!newScores[key] || score > newScores[key].best) {
-      newScores[key] = {
-        best: score,
-        total,
-        percentage: Math.round((score / total) * 100),
-        lastAttempt: new Date().toISOString(),
-      };
+    if (result.success && result.updated) {
+      // Update local state to reflect the new best score
+      const key = `${selectedSubject}-${topicId}`;
+      setScores(prev => ({
+        ...prev,
+        [key]: {
+          best: Math.round(score),
+          total,
+          percentage: Math.round((score / total) * 100),
+          lastAttempt: new Date().toISOString(),
+        },
+      }));
     }
-    
-    setScores(newScores);
-    localStorage.setItem('learning-scores', JSON.stringify(newScores));
   };
 
-  const saveQuestionToHistory = (question, userAnswer, result, score, timeTaken) => {
-    const historyEntry = {
-      visibleID: generateQuestionId(),
+  const saveQuestionToHistory = async (question, userAnswer, result, score, timeTaken) => {
+    const entry = {
       question: question.question,
       questionType: question.type,
       userAnswer: userAnswer || '',
@@ -247,12 +288,14 @@ function Learning() {
       difficulty: selectedDifficulty,
       questionStyle,
       focusMode,
-      timestamp: new Date().toISOString(),
     };
     
-    const newHistory = [historyEntry, ...questionHistory].slice(0, 1000);
-    setQuestionHistory(newHistory);
-    localStorage.setItem('learning-question-history', JSON.stringify(newHistory));
+    const saveResult = await saveToService(entry);
+    
+    if (saveResult.success) {
+      // Update local state with the new entry
+      setQuestionHistory(prev => [saveResult.data, ...prev].slice(0, 1000));
+    }
   };
 
   const getBestScore = (topicId) => {
@@ -308,18 +351,15 @@ function Learning() {
     const question = questions[currentQuestionIndex];
     
     // Add to skipped set
-    setSkippedQuestions(prev => new Set([...prev, question.id]));
+    const newSkipped = new Set([...skippedQuestions, question.id]);
+    setSkippedQuestions(newSkipped);
     
     // Move to next question
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     } else {
-      // At last question - check if there are skipped questions
-      if (skippedQuestions.size > 0 || true) { // Include current skip
-        setShowSkippedPrompt(true);
-      } else {
-        finishQuiz();
-      }
+      // At last question - show prompt since we have at least the current skipped question
+      setShowSkippedPrompt(true);
     }
   };
 
@@ -332,16 +372,16 @@ function Learning() {
     }
   };
 
-  const finishQuiz = () => {
+  const finishQuiz = async () => {
     // Save any unanswered skipped questions to history
-    questions.forEach(q => {
+    for (const q of questions) {
       if (skippedQuestions.has(q.id) && !userAnswers[q.id]) {
-        saveQuestionToHistory(q, '', 'skipped', 0, 0);
+        await saveQuestionToHistory(q, '', 'skipped', 0, 0);
       }
-    });
+    }
     
     const totalScore = calculateTotalScore();
-    saveScore(selectedTopic.id, totalScore, questions.length);
+    await saveScore(selectedTopic.id, totalScore, questions.length);
     setShowResults(true);
     setShowSkippedPrompt(false);
   };
@@ -401,7 +441,7 @@ function Learning() {
 
       if (evalResult.success && evalResult.data) {
         setAnswerEvaluations(prev => ({ ...prev, [question.id]: evalResult.data }));
-        saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+        await saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
       }
     } else if (question.type === 'calculation') {
       const calcResult = checkCalculationAnswer(userAnswer, question.correctAnswer);
@@ -413,19 +453,19 @@ function Learning() {
           feedback: calcResult.result === 'correct' ? 'Correct calculation!' : calcResult.result === 'partial' ? 'Close, but not quite accurate enough.' : 'Incorrect calculation.',
         },
       }));
-      saveQuestionToHistory(question, userAnswer, calcResult.result, calcResult.score, timeTaken);
+      await saveQuestionToHistory(question, userAnswer, calcResult.result, calcResult.score, timeTaken);
     } else {
       const userLetter = userAnswer?.charAt(0)?.toUpperCase();
       const correctLetter = question.correctAnswer?.charAt(0)?.toUpperCase();
       const isCorrect = userLetter === correctLetter;
-      saveQuestionToHistory(question, userAnswer, isCorrect ? 'correct' : 'incorrect', isCorrect ? 1 : 0, timeTaken);
+      await saveQuestionToHistory(question, userAnswer, isCorrect ? 'correct' : 'incorrect', isCorrect ? 1 : 0, timeTaken);
     }
 
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     } else {
       const totalScore = calculateTotalScore();
-      saveScore(selectedTopic.id, totalScore, questions.length);
+      await saveScore(selectedTopic.id, totalScore, questions.length);
       setShowResults(true);
     }
   };
@@ -464,41 +504,37 @@ function Learning() {
     if (selectedTopic) startPractice(selectedTopic);
   };
 
-  const getProgressStats = () => {
-    const totalQuestions = questionHistory.length;
-    const correctAnswers = questionHistory.filter(q => q.result === 'correct').length;
-    const partialAnswers = questionHistory.filter(q => q.result === 'partial').length;
-    const accuracyRate = totalQuestions > 0 ? ((correctAnswers + partialAnswers * 0.5) / totalQuestions * 100).toFixed(1) : 0;
-    const avgTime = totalQuestions > 0 ? Math.round(questionHistory.reduce((sum, q) => sum + (q.timeTaken || 0), 0) / totalQuestions) : 0;
-    
-    const topicStats = {};
-    questionHistory.forEach(q => {
-      const key = `${q.subject}-${q.topic}`;
-      if (!topicStats[key]) topicStats[key] = { subject: q.subject, topic: q.topic, correct: 0, total: 0, bestScore: 0 };
-      topicStats[key].total++;
-      if (q.result === 'correct') topicStats[key].correct++;
-      else if (q.result === 'partial') topicStats[key].correct += 0.5;
-      const scorePercent = (topicStats[key].correct / topicStats[key].total) * 100;
-      topicStats[key].bestScore = Math.max(topicStats[key].bestScore, scorePercent);
-    });
-    
-    const uniqueDates = [...new Set(questionHistory.map(q => new Date(q.timestamp).toDateString()))].sort((a, b) => new Date(b) - new Date(a));
-    let streak = 0;
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
-    
-    if (uniqueDates[0] === today || uniqueDates[0] === yesterday) {
-      streak = 1;
-      for (let i = 1; i < uniqueDates.length; i++) {
-        const prevDate = new Date(uniqueDates[i - 1]);
-        const currDate = new Date(uniqueDates[i]);
-        if (Math.round((prevDate - currDate) / 86400000) === 1) streak++;
-        else break;
-      }
+  const getProgressStats = async () => {
+    const result = await getProgressStatsFromService();
+    if (result.success) {
+      return result.data;
     }
-    
-    return { totalQuestions, accuracyRate, avgTime, topicStats: Object.values(topicStats), streak };
+    // Fallback to empty stats
+    return {
+      totalQuestions: 0,
+      accuracyRate: 0,
+      avgTime: 0,
+      topicStats: [],
+      streak: 0,
+    };
   };
+
+  // Progress stats state for async loading
+  const [progressStats, setProgressStats] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  // Load progress stats when tab becomes active
+  useEffect(() => {
+    if (activeTab === 'progress') {
+      const loadStats = async () => {
+        setLoadingStats(true);
+        const stats = await getProgressStats();
+        setProgressStats(stats);
+        setLoadingStats(false);
+      };
+      loadStats();
+    }
+  }, [activeTab]);
 
   const filteredHistory = useMemo(() => {
     return questionHistory.filter(item => {
@@ -632,7 +668,16 @@ function Learning() {
   );
 
   const renderProgressDashboard = () => {
-    const stats = getProgressStats();
+    if (loadingStats || !progressStats) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="w-12 h-12 text-neural-purple animate-spin mb-4" />
+          <p className="text-gray-400">Loading progress...</p>
+        </div>
+      );
+    }
+    
+    const stats = progressStats;
     
     return (
       <div className="space-y-6">
