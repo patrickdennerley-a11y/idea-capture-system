@@ -344,6 +344,68 @@ export const generateCheatsheet = async (subject, topic, topicDescription = '') 
 };
 
 /**
+ * Extract and evaluate answer from an uploaded image using AI vision
+ * @param {string} imageBase64 - Base64-encoded image (with or without data URI prefix)
+ * @param {string} question - The question being answered
+ * @param {string} correctAnswer - The expected correct answer
+ * @returns {Promise} - Evaluation result with extractedWork, finalAnswer, result, score, feedback
+ */
+export const extractAnswerFromImage = async (imageBase64, question, correctAnswer) => {
+  try {
+    // Strip the data:image/...;base64, prefix if present
+    let image = imageBase64;
+    let mediaType = 'image/png'; // default
+    
+    if (imageBase64.startsWith('data:')) {
+      const matches = imageBase64.match(/^data:(image\/[a-z]+);base64,(.+)$/i);
+      if (matches) {
+        mediaType = matches[1];
+        image = matches[2];
+      } else {
+        // Fallback: just remove the prefix
+        image = imageBase64.split(',')[1] || imageBase64;
+      }
+    }
+
+    // Use AbortController for 30 second timeout (vision processing takes longer)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch(`${API_BASE_URL}/api/extract-answer-from-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ image, mediaType, question, correctAnswer }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Request timed out. Image processing is taking too long. Please try again or type your answer manually.',
+      };
+    }
+    console.error('Error extracting answer from image:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to process image. Please try again or type your answer manually.',
+    };
+  }
+};
+
+/**
  * Health check to verify backend is running
  * @returns {Promise<boolean>} - True if backend is healthy
  */

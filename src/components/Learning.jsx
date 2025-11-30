@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb, ArrowLeft } from 'lucide-react';
 import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
 import CheatSheetViewer from './CheatSheetViewer';
+import ImageAnswerUpload from './ImageAnswerUpload';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import { useAuth } from '../contexts/AuthContext';
@@ -105,6 +106,9 @@ function Learning() {
   const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
   const [skippedQuestions, setSkippedQuestions] = useState(new Set());
   const [showSkippedPrompt, setShowSkippedPrompt] = useState(false);
+
+  // Image-based answer state
+  const [imageAnswer, setImageAnswer] = useState(null); // { extractedWork, finalAnswer, result, score, feedback }
 
   // Adaptive difficulty state
   const [currentMastery, setCurrentMastery] = useState(null);
@@ -401,14 +405,24 @@ function Learning() {
     let scoreEarned = 0;
 
     if (question.type === 'short_answer' && userAnswer) {
-      setIsEvaluating(true);
-      const evalResult = await evaluateAnswer(question.question, userAnswer, question.correctAnswer, question.type);
-      setIsEvaluating(false);
+      // Check if we already have an image-based evaluation
+      if (imageAnswer) {
+        setAnswerEvaluations(prev => ({ ...prev, [question.id]: imageAnswer }));
+        scoreEarned = imageAnswer.score;
+        await saveQuestionToHistory(question, imageAnswer.finalAnswer, imageAnswer.result, imageAnswer.score, timeTaken);
+        // Reset imageAnswer for next question
+        setImageAnswer(null);
+      } else {
+        // Existing text-based evaluation
+        setIsEvaluating(true);
+        const evalResult = await evaluateAnswer(question.question, userAnswer, question.correctAnswer, question.type);
+        setIsEvaluating(false);
 
-      if (evalResult.success && evalResult.data) {
-        setAnswerEvaluations(prev => ({ ...prev, [question.id]: evalResult.data }));
-        scoreEarned = evalResult.data.score;
-        await saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+        if (evalResult.success && evalResult.data) {
+          setAnswerEvaluations(prev => ({ ...prev, [question.id]: evalResult.data }));
+          scoreEarned = evalResult.data.score;
+          await saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+        }
       }
     } else if (question.type === 'calculation') {
       const calcResult = checkCalculationAnswer(userAnswer, question.correctAnswer);
@@ -495,6 +509,7 @@ function Learning() {
     setAnswerEvaluations({});
     setShowResults(false);
     setError(null);
+    setImageAnswer(null);
     
     // Reset adaptive difficulty states
     setCurrentMastery(null);
@@ -1623,13 +1638,54 @@ function Learning() {
               <p className="text-sm text-gray-500 mt-2">Tip: Use notation like lim, P(...), epsilon, etc.</p>
             </div>
           ) : (
-            <textarea
-              value={userAnswer || ''}
-              onChange={(e) => handleTextAnswer(question.id, e.target.value)}
-              placeholder="Type your answer here..."
-              className="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-neural-purple focus:outline-none resize-none"
-              rows={3}
-            />
+            <div className="space-y-4">
+              {/* Text input option */}
+              <textarea
+                value={userAnswer || ''}
+                onChange={(e) => {
+                  handleTextAnswer(question.id, e.target.value);
+                  // Clear image answer if user types
+                  if (e.target.value && imageAnswer) {
+                    setImageAnswer(null);
+                  }
+                }}
+                placeholder="Type your answer here..."
+                className="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-neural-purple focus:outline-none resize-none"
+                rows={3}
+                disabled={imageAnswer !== null}
+              />
+              
+              {/* OR divider */}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-gray-700"></div>
+                <span className="text-gray-500 text-sm">OR</span>
+                <div className="flex-1 h-px bg-gray-700"></div>
+              </div>
+              
+              {/* Image upload option */}
+              <ImageAnswerUpload
+                question={question.question}
+                correctAnswer={question.correctAnswer}
+                disabled={userAnswer && userAnswer.length > 0 && !imageAnswer}
+                onImageProcessed={(result) => {
+                  setImageAnswer(result);
+                  // Also set a text answer so the question counts as "answered"
+                  handleTextAnswer(question.id, `[Image Answer] ${result.finalAnswer}`);
+                }}
+              />
+              
+              {/* Show extracted work if image was processed */}
+              {imageAnswer && (
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                  <div className="text-xs text-gray-500 mb-2">Extracted from your image:</div>
+                  <div className="text-sm text-gray-300">{renderMathText(imageAnswer.extractedWork)}</div>
+                  <div className="mt-2 text-sm">
+                    <span className="text-gray-500">Your answer: </span>
+                    <span className="text-neural-purple">{renderMathText(imageAnswer.finalAnswer)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

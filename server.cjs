@@ -1953,6 +1953,141 @@ function calculateReminderFrequency(reminder, userProfile, totalReminders, remin
   return frequencyScore;
 }
 
+// POST /api/extract-answer-from-image - Extract and evaluate answer from uploaded image using vision
+app.post('/api/extract-answer-from-image', async (req, res) => {
+  try {
+    const { image, mediaType, question, correctAnswer } = req.body;
+
+    if (!image || !question || !correctAnswer) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid request: image, question, and correctAnswer are required'
+      });
+    }
+
+    // Validate media type
+    const validMediaTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+    const finalMediaType = validMediaTypes.includes(mediaType) ? mediaType : 'image/png';
+
+    console.log(`Extracting answer from image for question: "${question.substring(0, 50)}..."`);
+
+    // Call Claude API with vision capabilities using Sonnet 4.5
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: finalMediaType,
+              data: image // raw base64 without data:image prefix
+            }
+          },
+          {
+            type: 'text',
+            text: `You are evaluating a student's handwritten/typed mathematical work for this question:
+
+Question: ${question}
+Correct Answer: ${correctAnswer}
+
+Instructions:
+1. Extract all mathematical content from the image
+2. Convert the work to LaTeX notation (use $...$ for inline math)
+3. Identify the student's FINAL ANSWER (look for boxed answers, underlined results, or the last line of work)
+4. Compare to the correct answer and evaluate
+
+Scoring:
+- CORRECT (1 point): The final answer matches or is mathematically equivalent to the correct answer
+- PARTIAL (0.5 points): The approach is correct but there's a calculation error, or partial understanding shown
+- INCORRECT (0 points): Wrong answer or fundamentally misunderstands the problem
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+
+Return pure JSON (no code fences):
+{
+  "extractedWork": "The full work converted to LaTeX notation",
+  "finalAnswer": "The student's final answer in LaTeX",
+  "result": "correct|partial|incorrect",
+  "score": 1,
+  "feedback": "Explanation of what was right/wrong and any errors in their work"
+}
+
+Note: For the score field, use 1 for correct, 0.5 for partial, and 0 for incorrect.
+If you cannot extract any meaningful content from the image, set extractedWork to "Unable to extract content" and result to "incorrect".`
+          }
+        ]
+      }]
+    });
+
+    const responseText = message.content[0].text;
+
+    // Parse JSON response
+    let evaluation;
+    try {
+      let cleanedText = responseText.trim();
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      evaluation = JSON.parse(cleanedText);
+
+      // Validate and sanitize the response
+      if (!evaluation.extractedWork) evaluation.extractedWork = 'Unable to extract content';
+      if (!evaluation.finalAnswer) evaluation.finalAnswer = 'No answer detected';
+      if (!['correct', 'partial', 'incorrect'].includes(evaluation.result)) evaluation.result = 'incorrect';
+      if (typeof evaluation.score !== 'number') {
+        evaluation.score = evaluation.result === 'correct' ? 1 : evaluation.result === 'partial' ? 0.5 : 0;
+      }
+      if (!evaluation.feedback) evaluation.feedback = 'Unable to provide feedback';
+
+    } catch (parseError) {
+      console.error('Failed to parse image evaluation response:', parseError);
+      console.error('Raw response:', responseText);
+      // Fallback response
+      evaluation = {
+        extractedWork: 'Unable to parse response from image analysis',
+        finalAnswer: 'Unable to detect answer',
+        result: 'incorrect',
+        score: 0,
+        feedback: 'There was an error processing your image. Please try again or type your answer manually.'
+      };
+    }
+
+    console.log(`Image evaluation result: ${evaluation.result} (${evaluation.score} points)`);
+    res.json({
+      success: true,
+      data: evaluation
+    });
+
+  } catch (error) {
+    console.error('❌ Error extracting answer from image:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to process image. Please try again or type your answer manually.'
+    });
+  }
+});
+
 // AI-Powered Idea Classification - Auto-classify captured ideas (Haiku 3.5 for cost efficiency)
 app.post('/api/classify-idea', async (req, res) => {
   try {
