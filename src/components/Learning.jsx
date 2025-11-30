@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb, ArrowLeft } from 'lucide-react';
 import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
 import CheatSheetViewer from './CheatSheetViewer';
+import FlashcardViewer from './FlashcardViewer';
 import ImageAnswerUpload from './ImageAnswerUpload';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
@@ -129,6 +130,9 @@ function Learning() {
 
   // Cheat sheet viewer state
   const [showCheatSheet, setShowCheatSheet] = useState(false);
+
+  // Flashcard viewer state
+  const [showFlashcards, setShowFlashcards] = useState(false);
 
   // History filter state
   const [historyFilters, setHistoryFilters] = useState({
@@ -1192,7 +1196,8 @@ function Learning() {
         icon: '🃏',
         name: 'Flashcards',
         description: 'Spaced repetition for memorizing formulas and definitions',
-        available: false,
+        available: true,
+        onClick: () => setShowFlashcards(true),
       },
       {
         id: 'mindmap',
@@ -1915,6 +1920,16 @@ function Learning() {
           topic={selectedTopic.name}
           topicDescription={selectedTopic.description}
           onClose={() => setShowCheatSheet(false)}
+        />
+      )}
+
+      {/* Flashcard Viewer Modal */}
+      {showFlashcards && selectedTopic && (
+        <FlashcardViewer
+          subject={selectedSubject}
+          topic={selectedTopic.name}
+          topicDescription={selectedTopic.description}
+          onClose={() => setShowFlashcards(false)}
         />
       )}
     </div>

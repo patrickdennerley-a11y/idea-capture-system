@@ -406,6 +406,51 @@ export const extractAnswerFromImage = async (imageBase64, question, correctAnswe
 };
 
 /**
+ * Generate AI-powered flashcards for a topic
+ * @param {string} subject - The subject area (e.g., "Statistics")
+ * @param {string} topic - The specific topic (e.g., "Descriptive Statistics")
+ * @param {string} topicDescription - Optional description of the topic
+ * @returns {Promise} - Generated flashcards with formulas, definitions, concepts
+ */
+export const generateFlashcards = async (subject, topic, topicDescription = '') => {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for longer generation
+
+    const response = await fetch(`${API_BASE_URL}/api/generate-flashcards`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ subject, topic, topicDescription }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Request timed out. Flashcard generation is taking longer than expected. Please try again.',
+      };
+    }
+    console.error('Error generating flashcards:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to generate flashcards. Please try again.',
+    };
+  }
+};
+
+/**
  * Health check to verify backend is running
  * @returns {Promise<boolean>} - True if backend is healthy
  */

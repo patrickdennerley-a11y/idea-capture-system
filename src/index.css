@@ -217,6 +217,61 @@ input[type="range"].slider::-moz-range-track {
   display: none;
 }
 
+/* Flashcard flip animation */
+.flashcard-container {
+  perspective: 1000px;
+}
+
+.flashcard {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  max-height: 35vh;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+
+.flashcard.flipped {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  position: absolute;
+  width: 100%;
+  min-height: 200px;
+  max-height: 35vh;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  overflow-y: auto;
+}
+
+.flashcard-front {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #374151;
+}
+
+.flashcard-back {
+  background: linear-gradient(135deg, #1e1e3f 0%, #2d1b4e 100%);
+  border: 1px solid #7c3aed;
+  transform: rotateY(180deg);
+}
+
+/* Ensure KaTeX formulas don't overflow */
+.flashcard-face .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+}
+
+.flashcard-face .katex {
+  font-size: 1.1em;
+}
+
 /* Print styles for Cheat Sheet PDF download */
 @media print {
   /* Hide everything by default */

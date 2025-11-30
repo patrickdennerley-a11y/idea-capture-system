@@ -1178,6 +1178,145 @@ Generate the cheat sheet now:`
   }
 });
 
+// POST /api/generate-flashcards - Generate AI-powered flashcards for a topic
+app.post('/api/generate-flashcards', async (req, res) => {
+  try {
+    const { subject, topic, topicDescription } = req.body;
+
+    if (!subject || !topic) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid request: subject and topic are required'
+      });
+    }
+
+    console.log(`Generating flashcards for ${subject} - ${topic}...`);
+
+    // Use Sonnet for high-quality flashcard generation
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `You are creating flashcards for a university student studying ${topic} in ${subject}.
+
+${topicDescription ? `Topic description: ${topicDescription}` : ''}
+
+Generate 15-20 high-quality flashcards covering:
+1. Essential FORMULAS (use LaTeX: $inline$ or $$block$$)
+2. Key DEFINITIONS
+3. Core CONCEPTS that must be understood
+4. Important THEOREMS or rules
+5. Relationships between ideas
+
+Each flashcard should test ONE specific piece of knowledge.
+For formulas, include what each variable represents.
+Make the "front" a clear question or prompt.
+Make the "back" a complete but concise answer.
+
+IMPORTANT: Return ONLY valid JSON with no markdown formatting.
+
+Respond in pure JSON (no code fences):
+{
+  "cards": [
+    {
+      "id": "card-1",
+      "type": "formula",
+      "front": "What is the formula for sample variance?",
+      "back": "$$s^2 = \\\\frac{1}{n-1} \\\\sum_{i=1}^{n} (x_i - \\\\bar{x})^2$$\\n\\nWhere:\\n- $s^2$ = sample variance\\n- $n$ = sample size\\n- $x_i$ = each data point\\n- $\\\\bar{x}$ = sample mean",
+      "hint": "Remember: we divide by n-1, not n (Bessel's correction)"
+    },
+    {
+      "id": "card-2",
+      "type": "definition",
+      "front": "Define: Standard Deviation",
+      "back": "The square root of variance; measures the average distance of data points from the mean. It's expressed in the same units as the original data.",
+      "hint": null
+    },
+    {
+      "id": "card-3",
+      "type": "concept",
+      "front": "Why do we use n-1 instead of n when calculating sample variance?",
+      "back": "Bessel's correction: Using n-1 provides an unbiased estimate of the population variance. Dividing by n would underestimate the true variance because the sample mean is closer to the sample data than the population mean would be.",
+      "hint": "Think about degrees of freedom"
+    },
+    {
+      "id": "card-4",
+      "type": "theorem",
+      "front": "State the Central Limit Theorem",
+      "back": "For a sufficiently large sample size, the sampling distribution of the sample mean approaches a normal distribution, regardless of the population's distribution. The mean equals the population mean, and the standard error equals $\\\\sigma/\\\\sqrt{n}$.",
+      "hint": "What happens to the distribution of sample means as n increases?"
+    }
+  ]
+}
+
+Generate the flashcards for ${topic} now. Include 15-20 cards covering all the important formulas, definitions, concepts, and theorems for this topic.`
+      }]
+    });
+
+    const responseText = message.content[0].text;
+
+    // Parse JSON response
+    let flashcardsData;
+    try {
+      let cleanedText = responseText.trim();
+      cleanedText = cleanedText.replace(/^```json\s*/i, '');
+      cleanedText = cleanedText.replace(/^```\s*/i, '');
+      cleanedText = cleanedText.replace(/\s*```$/i, '');
+
+      flashcardsData = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('Failed to parse flashcards response:', parseError);
+      console.error('Raw response:', responseText.substring(0, 500));
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to parse generated flashcards. Please try again.'
+      });
+    }
+
+    // Validate structure
+    if (!flashcardsData.cards || !Array.isArray(flashcardsData.cards)) {
+      return res.status(500).json({
+        success: false,
+        error: 'Invalid flashcard structure returned. Please try again.'
+      });
+    }
+
+    console.log(`Successfully generated ${flashcardsData.cards.length} flashcards`);
+    res.json({
+      success: true,
+      data: {
+        cards: flashcardsData.cards,
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error generating flashcards:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to generate flashcards. Please try again.'
+    });
+  }
+});
+
 // POST /api/classify-subject - Classify a study subject into hierarchical categories
 app.post('/api/classify-subject', async (req, res) => {
   try {
