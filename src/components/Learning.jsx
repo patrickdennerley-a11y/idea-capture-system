@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb } from 'lucide-react';
+import { BookOpen, ChevronRight, Check, X, Trophy, RotateCcw, Loader2, AlertCircle, BarChart3, Clock, Target, Flame, ChevronDown, Settings, History, Filter, ChevronUp, Lock, Rocket, Shield, AlertTriangle, Crosshair, Lightbulb, ArrowLeft } from 'lucide-react';
 import { generatePracticeQuestions, evaluateAnswer } from '../utils/apiService';
+import CheatSheetViewer from './CheatSheetViewer';
 import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,101 +17,10 @@ import {
   resetSessionCounters,
   migrateGuestDataToSupabase,
 } from '../utils/learningService';
+import { SUBJECT_CATALOGUE, getAllSubjects, getCategoryForSubject } from '../data/subjectCatalogue';
 
-// Expanded curriculum with all subjects
-const SUBJECTS = {
-  Statistics: {
-    name: 'Statistics',
-    icon: '📊',
-    topics: [
-      { id: 'descriptive', name: 'Descriptive Statistics', description: 'Mean, median, mode, variance, standard deviation' },
-      { id: 'probability', name: 'Probability Basics', description: 'Basic probability rules, conditional probability, Bayes theorem' },
-      { id: 'distributions', name: 'Distributions', description: 'Normal, binomial, Poisson distributions' },
-      { id: 'hypothesis', name: 'Hypothesis Testing', description: 'Null hypothesis, p-values, significance levels' },
-      { id: 'regression', name: 'Regression', description: 'Linear regression, correlation, R-squared' },
-    ],
-  },
-  Calculus: {
-    name: 'Calculus',
-    icon: '∫',
-    topics: [
-      { id: 'limits', name: 'Limits', description: 'Limit definition, L\'Hôpital\'s rule, continuity' },
-      { id: 'derivatives', name: 'Derivatives', description: 'Differentiation rules, chain rule, implicit differentiation' },
-      { id: 'integrals', name: 'Integrals', description: 'Integration techniques, definite and indefinite integrals' },
-      { id: 'applications', name: 'Applications of Derivatives', description: 'Optimization, related rates, curve sketching' },
-      { id: 'series', name: 'Infinite Series', description: 'Convergence tests, Taylor series, power series' },
-    ],
-  },
-  LinearAlgebra: {
-    name: 'Linear Algebra',
-    icon: '🔢',
-    topics: [
-      { id: 'vectors', name: 'Vectors & Spaces', description: 'Vector operations, vector spaces, subspaces' },
-      { id: 'matrices', name: 'Matrix Operations', description: 'Matrix multiplication, inverse, transpose' },
-      { id: 'determinants', name: 'Determinants', description: 'Determinant calculation, properties, applications' },
-      { id: 'eigenvalues', name: 'Eigenvalues & Eigenvectors', description: 'Eigenvalue problems, diagonalization' },
-      { id: 'transformations', name: 'Linear Transformations', description: 'Kernel, image, rank-nullity theorem' },
-    ],
-  },
-  Probability: {
-    name: 'Probability',
-    icon: '🎲',
-    topics: [
-      { id: 'prob-basics', name: 'Probability Basics', description: 'Sample spaces, events, probability axioms' },
-      { id: 'random-vars', name: 'Random Variables', description: 'Discrete and continuous random variables, PMF, PDF' },
-      { id: 'distributions-prob', name: 'Distributions', description: 'Common distributions: uniform, exponential, normal' },
-      { id: 'expected-value', name: 'Expected Value & Variance', description: 'Expectation, variance, covariance, moments' },
-      { id: 'bayes', name: 'Bayes\' Theorem', description: 'Conditional probability, Bayesian inference' },
-    ],
-  },
-  ComputerScience: {
-    name: 'Computer Science',
-    icon: '💻',
-    topics: [
-      { id: 'algorithms', name: 'Algorithm Basics', description: 'Algorithm design, correctness, efficiency' },
-      { id: 'data-structures', name: 'Data Structures', description: 'Arrays, linked lists, trees, graphs, hash tables' },
-      { id: 'complexity', name: 'Time Complexity', description: 'Big O notation, time and space analysis' },
-      { id: 'recursion', name: 'Recursion', description: 'Recursive thinking, base cases, recursive algorithms' },
-      { id: 'sorting', name: 'Sorting Algorithms', description: 'Bubble, merge, quick, heap sort and comparisons' },
-    ],
-  },
-  ArtificialIntelligence: {
-    name: 'Artificial Intelligence',
-    icon: '🤖',
-    topics: [
-      { id: 'search', name: 'Search Algorithms', description: 'Uninformed search (BFS, DFS), informed search (A*, greedy), heuristics' },
-      { id: 'adversarial', name: 'Adversarial Search', description: 'Game trees, minimax, alpha-beta pruning, Monte Carlo tree search' },
-      { id: 'csp', name: 'Constraint Satisfaction', description: 'CSP formulation, backtracking, arc consistency, constraint propagation' },
-      { id: 'logic', name: 'Logic & Reasoning', description: 'Propositional logic, first-order logic, inference, knowledge representation' },
-      { id: 'uncertainty', name: 'Uncertainty & Bayes Nets', description: 'Probability review, Bayesian networks, inference, decision making under uncertainty' },
-      { id: 'ml-intro', name: 'Machine Learning Basics', description: 'Supervised learning, decision trees, neural network fundamentals, evaluation' },
-    ],
-  },
-  LinearStatisticalModels: {
-    name: 'Linear Statistical Models',
-    icon: '📈',
-    topics: [
-      { id: 'slr', name: 'Simple Linear Regression', description: 'Least squares estimation, model assumptions, inference on coefficients, prediction' },
-      { id: 'mlr', name: 'Multiple Linear Regression', description: 'Matrix formulation, parameter estimation, interpretation, adjusted R²' },
-      { id: 'model-diagnostics', name: 'Model Diagnostics', description: 'Residual analysis, leverage, influential points, multicollinearity, VIF' },
-      { id: 'model-selection', name: 'Model Selection', description: 'Variable selection, AIC/BIC, stepwise methods, cross-validation' },
-      { id: 'anova', name: 'ANOVA & Experimental Design', description: 'One-way/two-way ANOVA, F-tests, contrasts, factorial designs' },
-      { id: 'glm-intro', name: 'Generalized Linear Models Intro', description: 'Link functions, logistic regression, Poisson regression, deviance' },
-    ],
-  },
-  ProbabilityForInference: {
-    name: 'Probability for Inference',
-    icon: '🎲',
-    topics: [
-      { id: 'convergence', name: 'Convergence Concepts', description: 'Convergence in probability, almost sure, in distribution, in mean; LLN, CLT' },
-      { id: 'estimation', name: 'Point Estimation', description: 'Method of moments, maximum likelihood estimation, properties of estimators (bias, consistency, efficiency)' },
-      { id: 'sufficiency', name: 'Sufficiency & Completeness', description: 'Sufficient statistics, factorization theorem, minimal sufficiency, completeness, Rao-Blackwell' },
-      { id: 'hypothesis', name: 'Hypothesis Testing Theory', description: 'Neyman-Pearson lemma, likelihood ratio tests, UMP tests, p-values' },
-      { id: 'interval', name: 'Interval Estimation', description: 'Confidence intervals, pivotal quantities, coverage probability, relationship to hypothesis tests' },
-      { id: 'bayesian', name: 'Bayesian Inference', description: 'Prior and posterior distributions, conjugate priors, credible intervals, Bayesian vs frequentist' },
-    ],
-  },
-};
+// Get flat subjects object for backward compatibility
+const SUBJECTS = getAllSubjects();
 
 // Difficulty options with descriptions
 const DIFFICULTIES = [
@@ -208,6 +118,13 @@ function Learning() {
   const [questionCount, setQuestionCount] = useState(5);
   const [questionStyle, setQuestionStyle] = useState('balanced');
   const [focusMode, setFocusMode] = useState('understanding');
+
+  // Catalogue navigation state
+  const [navigationLevel, setNavigationLevel] = useState('catalogue'); // 'catalogue' | 'category' | 'subject' | 'topic'
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // Cheat sheet viewer state
+  const [showCheatSheet, setShowCheatSheet] = useState(false);
 
   // History filter state
   const [historyFilters, setHistoryFilters] = useState({
@@ -570,7 +487,8 @@ function Learning() {
   };
 
   const backToTopics = () => {
-    setSelectedTopic(null);
+    // Reset quiz state but keep navigation context
+    // User returns to topic detail view (not resetting selectedTopic or navigationLevel)
     setQuestions([]);
     setCurrentQuestionIndex(0);
     setUserAnswers({});
@@ -659,6 +577,45 @@ function Learning() {
     const styleName = QUESTION_STYLES.find(s => s.id === questionStyle)?.name || 'Balanced';
     const focusName = FOCUS_MODES.find(f => f.id === focusMode)?.name || 'Understanding';
     return `${questionCount} questions • ${diffName} • ${styleName} • ${focusName}`;
+  };
+
+  // Navigation functions for catalogue system
+  const selectCategory = (categoryKey) => {
+    setSelectedCategory(categoryKey);
+    setNavigationLevel('category');
+  };
+
+  const selectSubjectFromCatalogue = (subjectKey) => {
+    setSelectedSubject(subjectKey);
+    setNavigationLevel('subject');
+  };
+
+  const selectTopicDetail = (topic) => {
+    setSelectedTopic(topic);
+    setNavigationLevel('topic');
+  };
+
+  const navigateBack = () => {
+    if (navigationLevel === 'category') {
+      setSelectedCategory(null);
+      setNavigationLevel('catalogue');
+    } else if (navigationLevel === 'subject') {
+      setSelectedSubject('Statistics');
+      setNavigationLevel('category');
+    } else if (navigationLevel === 'topic') {
+      setSelectedTopic(null);
+      setNavigationLevel('subject');
+    }
+  };
+
+  const backToCatalogue = () => {
+    setSelectedCategory(null);
+    setSelectedSubject('Statistics');
+    setSelectedTopic(null);
+    setNavigationLevel('catalogue');
+    setQuestions([]);
+    setShowResults(false);
+    setCurrentQuestionIndex(0);
   };
 
   const renderSettingsPanel = () => (
@@ -980,6 +937,360 @@ function Learning() {
       </div>
     </div>
   );
+
+  // Render catalogue view - grid of categories
+  const renderCatalogue = () => {
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 bg-neural-purple/20 rounded-xl flex items-center justify-center">
+            <BookOpen className="w-6 h-6 text-neural-purple" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">Subject Catalogue</h2>
+            <p className="text-sm text-gray-400">Choose a field of study</p>
+          </div>
+        </div>
+
+        {/* Category Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Object.entries(SUBJECT_CATALOGUE).map(([categoryKey, category]) => {
+            const subjectCount = Object.keys(category.subjects).length;
+            const isEmpty = subjectCount === 0;
+            
+            return (
+              <button
+                key={categoryKey}
+                onClick={() => !isEmpty && selectCategory(categoryKey)}
+                disabled={isEmpty}
+                className={`bg-neural-dark rounded-xl p-6 border border-gray-800 text-left transition-all group ${
+                  isEmpty 
+                    ? 'opacity-50 cursor-not-allowed' 
+                    : 'hover:border-neural-purple/50 cursor-pointer'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <span className="text-4xl mb-3 block">{category.icon}</span>
+                    <h3 className={`text-lg font-semibold mb-1 ${!isEmpty ? 'group-hover:text-neural-purple' : ''} transition-colors`}>
+                      {category.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-3">{category.description}</p>
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      isEmpty 
+                        ? 'bg-gray-700 text-gray-400' 
+                        : 'bg-neural-purple/20 text-neural-purple'
+                    }`}>
+                      {isEmpty ? 'Coming soon' : `${subjectCount} subject${subjectCount !== 1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                  {!isEmpty && (
+                    <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-neural-purple transition-colors mt-1" />
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Render category view - list of subjects in a category
+  const renderCategoryView = () => {
+    const category = SUBJECT_CATALOGUE[selectedCategory];
+    if (!category) return renderCatalogue();
+
+    return (
+      <div className="space-y-6">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm">
+          <button 
+            onClick={backToCatalogue}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            Catalogue
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <span className="text-white">{category.name}</span>
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={navigateBack}
+            className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-400" />
+          </button>
+          <div className="w-14 h-14 bg-neural-purple/20 rounded-xl flex items-center justify-center text-3xl">
+            {category.icon}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">{category.name}</h1>
+            <p className="text-sm text-gray-400">{category.description}</p>
+          </div>
+        </div>
+
+        {/* Subject List */}
+        <div className="space-y-3">
+          {Object.entries(category.subjects).map(([subjectKey, subject]) => {
+            const topicCount = subject.topics.length;
+            return (
+              <button
+                key={subjectKey}
+                onClick={() => selectSubjectFromCatalogue(subjectKey)}
+                className="w-full bg-neural-dark rounded-xl p-4 border border-gray-800 hover:border-neural-purple/50 transition-all text-left group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="text-2xl">{subject.icon}</span>
+                    <div>
+                      <h3 className="font-medium text-white group-hover:text-neural-purple transition-colors">
+                        {subject.name}
+                      </h3>
+                      <p className="text-sm text-gray-500">{topicCount} topic{topicCount !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-neural-purple transition-colors" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Render subject view - list of topics with settings panel
+  const renderSubjectView = () => {
+    const category = SUBJECT_CATALOGUE[selectedCategory];
+    const subject = category?.subjects[selectedSubject];
+    if (!category || !subject) return renderCategoryView();
+
+    return (
+      <div className="space-y-6">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm flex-wrap">
+          <button 
+            onClick={backToCatalogue}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            Catalogue
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <button 
+            onClick={navigateBack}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            {category.name}
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <span className="text-white">{subject.name}</span>
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={navigateBack}
+            className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-400" />
+          </button>
+          <div className="w-14 h-14 bg-neural-purple/20 rounded-xl flex items-center justify-center text-3xl">
+            {subject.icon}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">{subject.name}</h1>
+            <p className="text-sm text-gray-400">Select a topic to practice</p>
+          </div>
+        </div>
+
+        {/* Settings Panel */}
+        {renderSettingsPanel()}
+
+        {/* Topic List */}
+        <div className="space-y-3">
+          {subject.topics.map(topic => {
+            const bestScore = getBestScore(topic.id);
+            return (
+              <button
+                key={topic.id}
+                onClick={() => selectTopicDetail(topic)}
+                className="w-full bg-neural-dark rounded-xl p-4 border border-gray-800 hover:border-neural-purple/50 transition-all text-left group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-white group-hover:text-neural-purple transition-colors">
+                        {topic.name}
+                      </h3>
+                      {bestScore && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 flex items-center gap-1">
+                          <Trophy className="w-3 h-3" />
+                          {bestScore.percentage}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{topic.description}</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-neural-purple transition-colors" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Render topic detail view - learning sections (Quiz, Cheat Sheet, etc.)
+  const renderTopicDetailView = () => {
+    const category = SUBJECT_CATALOGUE[selectedCategory];
+    const subject = category?.subjects[selectedSubject];
+    const topic = selectedTopic;
+    
+    if (!category || !subject || !topic) return renderSubjectView();
+
+    const bestScore = getBestScore(topic.id);
+
+    const learningSections = [
+      {
+        id: 'quiz',
+        icon: '📝',
+        name: 'Practice Quiz',
+        description: 'AI-generated questions to test your understanding',
+        available: true,
+        onClick: () => startPractice(topic),
+      },
+      {
+        id: 'cheatsheet',
+        icon: '📄',
+        name: 'Cheat Sheet',
+        description: 'Condensed summary of key concepts and formulas',
+        available: true,
+        onClick: () => setShowCheatSheet(true),
+      },
+      {
+        id: 'flashcards',
+        icon: '🃏',
+        name: 'Flashcards',
+        description: 'Spaced repetition for memorizing formulas and definitions',
+        available: false,
+      },
+      {
+        id: 'mindmap',
+        icon: '🗺️',
+        name: 'Mind Map',
+        description: 'Visual overview of how concepts connect',
+        available: false,
+      },
+    ];
+
+    return (
+      <div className="space-y-6">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm flex-wrap">
+          <button 
+            onClick={backToCatalogue}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            Catalogue
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <button 
+            onClick={() => { setSelectedTopic(null); setNavigationLevel('category'); }}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            {category.name}
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <button 
+            onClick={navigateBack}
+            className="text-gray-400 hover:text-neural-purple transition-colors"
+          >
+            {subject.name}
+          </button>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+          <span className="text-white">{topic.name}</span>
+        </div>
+
+        {/* Topic Header Card */}
+        <div className="bg-neural-dark rounded-xl p-6 border border-gray-800">
+          <div className="flex items-start gap-4">
+            <button
+              onClick={navigateBack}
+              className="w-10 h-10 bg-gray-800 rounded-lg flex items-center justify-center hover:bg-gray-700 transition-colors flex-shrink-0"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-400" />
+            </button>
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold mb-2">{topic.name}</h1>
+              <p className="text-gray-400">{topic.description}</p>
+              
+              {bestScore && (
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="text-sm text-gray-500">Best Score:</span>
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    bestScore.percentage >= 80 
+                      ? 'bg-green-500/20 text-green-400' 
+                      : bestScore.percentage >= 60 
+                        ? 'bg-yellow-500/20 text-yellow-400' 
+                        : 'bg-orange-500/20 text-orange-400'
+                  }`}>
+                    <Trophy className="w-3 h-3 inline mr-1" />
+                    {bestScore.percentage}%
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Learning Sections Heading */}
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">Learning Sections</h2>
+        </div>
+
+        {/* Learning Sections Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {learningSections.map(section => (
+            <button
+              key={section.id}
+              onClick={section.available ? section.onClick : undefined}
+              disabled={!section.available}
+              className={`bg-neural-dark rounded-xl p-5 border text-left transition-all group ${
+                section.available
+                  ? 'border-gray-800 hover:border-neural-purple/50 cursor-pointer'
+                  : 'border-gray-800 opacity-60 cursor-not-allowed'
+              }`}
+            >
+              <div className="flex items-start gap-4">
+                <span className="text-3xl">{section.icon}</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className={`font-medium ${section.available ? 'group-hover:text-neural-purple' : ''} transition-colors`}>
+                      {section.name}
+                    </h3>
+                    {!section.available && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">
+                        Coming Soon
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500">{section.description}</p>
+                </div>
+                {section.available && (
+                  <ChevronRight className="w-5 h-5 text-gray-500 group-hover:text-neural-purple transition-colors" />
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const renderTopicSelection = () => {
     const subject = SUBJECTS[selectedSubject];
@@ -1508,14 +1819,48 @@ function Learning() {
 
       {activeTab === 'progress' && renderProgressDashboard()}
       {activeTab === 'history' && renderHistoryViewer()}
-      {activeTab === 'practice' && !selectedTopic && renderTopicSelection()}
-      {activeTab === 'practice' && selectedTopic && isLoading && renderLoading()}
-      {activeTab === 'practice' && selectedTopic && error && renderError()}
-      {activeTab === 'practice' && selectedTopic && !isLoading && !error && questions.length > 0 && !showResults && renderQuestion()}
-      {activeTab === 'practice' && selectedTopic && showResults && renderResults()}
+      
+      {/* Practice Tab with Catalogue Navigation */}
+      {activeTab === 'practice' && (
+        <>
+          {/* Quiz in progress */}
+          {selectedTopic && questions.length > 0 && !showResults && !isLoading && !error && renderQuestion()}
+          
+          {/* Quiz results */}
+          {selectedTopic && showResults && renderResults()}
+          
+          {/* Loading state */}
+          {selectedTopic && isLoading && renderLoading()}
+          
+          {/* Error state */}
+          {selectedTopic && error && !isLoading && renderError()}
+          
+          {/* Navigation views (only when not in quiz) */}
+          {!selectedTopic && questions.length === 0 && (
+            <>
+              {navigationLevel === 'catalogue' && renderCatalogue()}
+              {navigationLevel === 'category' && selectedCategory && renderCategoryView()}
+              {navigationLevel === 'subject' && selectedCategory && renderSubjectView()}
+            </>
+          )}
+          
+          {/* Topic detail view (when topic selected but no quiz active) */}
+          {selectedTopic && questions.length === 0 && !isLoading && !error && renderTopicDetailView()}
+        </>
+      )}
 
       {/* Recommendation Modal */}
       {renderRecommendationModal()}
+
+      {/* Cheat Sheet Viewer Modal */}
+      {showCheatSheet && selectedTopic && (
+        <CheatSheetViewer
+          subject={selectedSubject}
+          topic={selectedTopic.name}
+          topicDescription={selectedTopic.description}
+          onClose={() => setShowCheatSheet(false)}
+        />
+      )}
     </div>
   );
 }

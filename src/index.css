@@ -216,3 +216,88 @@ input[type="range"].slider::-moz-range-track {
 .rbc-current-time-indicator {
   display: none;
 }
+
+/* Print styles for Cheat Sheet PDF download */
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+  
+  /* Show only the cheat sheet content */
+  .cheatsheet-printable,
+  .cheatsheet-printable * {
+    visibility: visible;
+  }
+  
+  /* Position the printable content at the top */
+  .cheatsheet-printable {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+  
+  /* Hide buttons and non-content elements when printing */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Override dark theme for print */
+  .cheatsheet-printable .bg-neural-dark,
+  .cheatsheet-printable .bg-neural-darker {
+    background: white !important;
+  }
+  
+  .cheatsheet-printable .text-gray-300,
+  .cheatsheet-printable .text-gray-400,
+  .cheatsheet-printable .text-white {
+    color: #1f2937 !important;
+  }
+  
+  .cheatsheet-printable .text-neural-purple {
+    color: #7c3aed !important;
+  }
+  
+  .cheatsheet-printable .border-gray-800 {
+    border-color: #d1d5db !important;
+  }
+  
+  /* Ensure good readability */
+  .cheatsheet-printable {
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+  
+  .cheatsheet-printable h1 {
+    font-size: 18pt;
+  }
+  
+  .cheatsheet-printable h2 {
+    font-size: 14pt;
+    margin-bottom: 8pt;
+  }
+  
+  /* Page break handling */
+  .cheatsheet-printable > div > div {
+    page-break-inside: avoid;
+  }
+  
+  /* KaTeX formulas should print clearly */
+  .cheatsheet-printable .katex {
+    color: black !important;
+  }
+  
+  /* Remove shadows and unnecessary styling */
+  .cheatsheet-printable * {
+    box-shadow: none !important;
+  }
+  
+  /* Set page margins */
+  @page {
+    margin: 0.5in;
+    size: A4;
+  }
+}

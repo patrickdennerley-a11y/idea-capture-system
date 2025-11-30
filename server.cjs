@@ -1084,6 +1084,100 @@ const normalizeSubject = (subject) => {
   return subject.toLowerCase().replace(/[^a-z0-9]/g, '');
 };
 
+// POST /api/generate-cheatsheet - Generate a condensed cheat sheet for a topic
+app.post('/api/generate-cheatsheet', async (req, res) => {
+  try {
+    const { subject, topic, topicDescription } = req.body;
+
+    if (!subject || !topic) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid request: subject and topic are required'
+      });
+    }
+
+    console.log(`Generating cheat sheet for ${subject} - ${topic}...`);
+
+    // Use Sonnet for high-quality output
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 4096,
+      messages: [{
+        role: 'user',
+        content: `You are creating an ultra-condensed cheat sheet for a university student studying ${topic} in ${subject}.
+
+Requirements:
+- Content must fit on 1-2 printed pages when rendered
+- Use LaTeX notation: $inline$ and $$block$$ for all math expressions
+- Be extremely concise - bullet points over paragraphs
+- Include ALL essential formulas for this topic
+- Focus on what students need for exams
+- Make it scannable - use bullet points, numbered lists where appropriate
+
+Topic: ${topic}
+${topicDescription ? `Description: ${topicDescription}` : ''}
+
+Structure your response EXACTLY with these markdown sections:
+
+## Key Concepts
+List 5-8 core concepts with brief (1-2 sentence) explanations. Use bullet points.
+
+## Essential Formulas
+List ALL important formulas with LaTeX notation. Include what each variable represents.
+
+## Definitions
+Key terms and their definitions. Use bullet points with **bold** term names.
+
+## Common Pitfalls
+3-5 mistakes students often make. Use numbered list.
+
+## Quick Reference
+A summary of the most important points - could be a condensed list or key facts to memorize.
+
+## Connections
+How this topic relates to other topics in ${subject}. Brief bullet points.
+
+Generate the cheat sheet now:`
+      }]
+    });
+
+    const content = message.content[0].text;
+
+    console.log('Successfully generated cheat sheet');
+    res.json({
+      success: true,
+      data: {
+        content,
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error generating cheat sheet:');
+    console.error('   Status:', error.status || 'N/A');
+    console.error('   Message:', error.message);
+
+    if (error.status === 401) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid API key. Please check your ANTHROPIC_API_KEY environment variable.'
+      });
+    }
+
+    if (error.status === 429) {
+      return res.status(429).json({
+        success: false,
+        error: 'Rate limit exceeded. Please try again in a moment.'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to generate cheat sheet. Please try again.'
+    });
+  }
+});
+
 // POST /api/classify-subject - Classify a study subject into hierarchical categories
 app.post('/api/classify-subject', async (req, res) => {
   try {
