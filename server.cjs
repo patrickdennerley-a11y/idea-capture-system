@@ -675,10 +675,115 @@ const RANDOM_CONTEXTS = [
 // Helper to get random context
 const getRandomContext = () => RANDOM_CONTEXTS[Math.floor(Math.random() * RANDOM_CONTEXTS.length)];
 
+// Helper function to detect empty or starter code submissions
+function isEmptyOrStarterCode(code, starterCode = '', language = 'python') {
+  if (!code || typeof code !== 'string') return true;
+  
+  // Normalize the code by trimming whitespace
+  const normalizedCode = code.trim();
+  
+  // Check if completely empty
+  if (normalizedCode.length === 0) return true;
+  
+  // Check if it's just whitespace/newlines
+  if (/^\s*$/.test(normalizedCode)) return true;
+  
+  // Python-specific patterns
+  if (language === 'python' || language === 'py') {
+    // Just 'pass' statement (with optional whitespace/comments)
+    if (/^(\s*(#.*)?[\n\r]*)*\s*pass\s*(\s*(#.*)?[\n\r]*)*$/i.test(normalizedCode)) return true;
+    
+    // Only comments with no actual code
+    const linesWithoutComments = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !trimmed.startsWith('#');
+      });
+    if (linesWithoutComments.length === 0) return true;
+    
+    // Check for common placeholder patterns
+    const placeholderPatterns = [
+      /^\s*def\s+\w+\s*\([^)]*\)\s*:\s*(#.*)?(\s*pass\s*)?$/m, // def func(): pass
+      /^\s*#\s*your\s*(code|solution)\s*here/i,
+      /^\s*#\s*write\s*your\s*(code|solution)/i,
+      /^\s*#\s*todo/i,
+      /^\s*#\s*implement/i,
+      /^\s*raise\s+NotImplementedError/i,
+    ];
+    
+    for (const pattern of placeholderPatterns) {
+      // Check if code ONLY contains this pattern (possibly with pass)
+      const codeWithoutPlaceholders = normalizedCode
+        .split('\n')
+        .filter(line => {
+          const trimmed = line.trim();
+          if (trimmed.length === 0) return false;
+          if (trimmed === 'pass') return false;
+          if (trimmed.startsWith('#')) return false;
+          return true;
+        })
+        .join('\n');
+      
+      // If after removing comments and pass, there's nothing meaningful
+      if (codeWithoutPlaceholders.length === 0) return true;
+    }
+    
+    // Check if the code is just a function definition with only pass or placeholder
+    const funcDefWithPassOnly = /^\s*def\s+\w+\s*\([^)]*\)\s*:\s*(\n\s*(#.*)?)*\s*pass\s*$/m;
+    if (funcDefWithPassOnly.test(normalizedCode)) return true;
+  }
+  
+  // JavaScript/TypeScript specific patterns
+  if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') {
+    // Only comments
+    const linesWithoutComments = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && 
+               !trimmed.startsWith('//') && 
+               !trimmed.startsWith('/*') &&
+               !trimmed.startsWith('*');
+      });
+    if (linesWithoutComments.length === 0) return true;
+    
+    // Empty function body
+    if (/^\s*function\s+\w+\s*\([^)]*\)\s*\{\s*\}\s*$/m.test(normalizedCode)) return true;
+    if (/^\s*const\s+\w+\s*=\s*\([^)]*\)\s*=>\s*\{\s*\}\s*$/m.test(normalizedCode)) return true;
+  }
+  
+  // R specific patterns
+  if (language === 'r' || language === 'R') {
+    const linesWithoutComments = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !trimmed.startsWith('#');
+      });
+    if (linesWithoutComments.length === 0) return true;
+  }
+  
+  // Compare against starter code (if provided)
+  if (starterCode && starterCode.trim().length > 0) {
+    const normalizedStarter = starterCode.trim();
+    
+    // Exact match with starter code
+    if (normalizedCode === normalizedStarter) return true;
+    
+    // Check if only whitespace differences
+    const codeNoWhitespace = normalizedCode.replace(/\s+/g, '');
+    const starterNoWhitespace = normalizedStarter.replace(/\s+/g, '');
+    if (codeNoWhitespace === starterNoWhitespace) return true;
+  }
+  
+  return false;
+}
+
 // POST /api/evaluate-answer - AI evaluation of student answers (Haiku 3.5 for cost efficiency)
 app.post('/api/evaluate-answer', async (req, res) => {
   try {
-    const { question, userAnswer, correctAnswer, questionType, testCases, language } = req.body;
+    const { question, userAnswer, correctAnswer, questionType, testCases, language, starterCode } = req.body;
 
     if (!question || !userAnswer || !correctAnswer) {
       return res.status(400).json({
@@ -687,6 +792,20 @@ app.post('/api/evaluate-answer', async (req, res) => {
     }
 
     console.log(`Evaluating answer for question type: ${questionType || 'unknown'}...`);
+
+    // Check for empty/starter code submissions BEFORE calling Claude API
+    if (questionType === 'code') {
+      if (isEmptyOrStarterCode(userAnswer, starterCode, language)) {
+        console.log('Empty or unchanged starter code detected - returning incorrect without API call');
+        return res.json({
+          result: 'incorrect',
+          score: 0,
+          feedback: 'No solution provided. Please write your code before submitting. Your submission appears to be empty or contains only the starter template.',
+          issues: ['No implementation provided', 'Code is empty or unchanged from starter template'],
+          suggestions: ['Write your solution code', 'Replace placeholder comments with actual implementation', 'Make sure to implement the required logic']
+        });
+      }
+    }
 
     // Use different prompts for code vs regular answers
     let promptContent;
@@ -715,7 +834,13 @@ ${userAnswer}
 Test Cases:
 ${testCasesStr}
 
-Evaluate the student's code for:
+CRITICAL FIRST CHECK:
+Before evaluating correctness, you MUST first verify that the student has written meaningful code:
+1. If the code is empty, only contains comments, only contains 'pass', or just has placeholder text like "# Your code here" - mark as INCORRECT with score 0 immediately.
+2. If the code is essentially the starter template unchanged - mark as INCORRECT with score 0.
+3. If the code does not attempt to solve the problem (e.g., just prints something unrelated) - mark as INCORRECT with score 0.
+
+Only if the student has written actual implementation code, evaluate for:
 1. CORRECTNESS: Would the code produce the correct output for the test cases?
 2. LOGIC: Is the algorithmic approach correct?
 3. QUALITY: Code style, efficiency, and best practices
@@ -723,7 +848,7 @@ Evaluate the student's code for:
 Scoring:
 - CORRECT (1 point): Code would produce correct output for all test cases, logic is sound
 - PARTIAL (0.5 points): Code has the right idea but has bugs, or works for some but not all test cases
-- INCORRECT (0 points): Code is fundamentally wrong or would not work
+- INCORRECT (0 points): Code is fundamentally wrong, would not work, OR student did not write any meaningful implementation
 
 IMPORTANT: Return ONLY valid JSON with no markdown formatting.
 Return pure JSON:

@@ -231,14 +231,28 @@ export const getReminders = async (ideas, logs, checklist, reviews, reminderHist
  * @param {string} question - The question that was asked
  * @param {string} userAnswer - The student's answer
  * @param {string} correctAnswer - The expected correct answer
- * @param {string} questionType - Type of question (short_answer, calculation, etc.)
+ * @param {string} questionType - Type of question (short_answer, calculation, code, etc.)
+ * @param {Object} options - Additional options for code questions
+ * @param {Array} options.testCases - Test cases for code evaluation
+ * @param {string} options.language - Programming language for code questions
+ * @param {string} options.starterCode - Original starter code template
  * @returns {Promise} - Evaluation result with score and feedback
  */
-export const evaluateAnswer = async (question, userAnswer, correctAnswer, questionType) => {
+export const evaluateAnswer = async (question, userAnswer, correctAnswer, questionType, options = {}) => {
   try {
+    const { testCases, language, starterCode } = options;
+    
     const response = await fetchWithRetry(`${API_BASE_URL}/api/evaluate-answer`, {
       method: 'POST',
-      body: JSON.stringify({ question, userAnswer, correctAnswer, questionType }),
+      body: JSON.stringify({ 
+        question, 
+        userAnswer, 
+        correctAnswer, 
+        questionType,
+        testCases,
+        language,
+        starterCode
+      }),
     });
 
     return {

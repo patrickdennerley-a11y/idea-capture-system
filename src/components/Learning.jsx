@@ -125,6 +125,85 @@ const renderMathText = (text) => {
 
 const generateQuestionId = () => `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+// Helper function to check if code is empty or unchanged from starter code
+const isCodeEmptyOrUnchanged = (code, starterCode = '', language = 'python') => {
+  if (!code || typeof code !== 'string') return true;
+  
+  const normalizedCode = code.trim();
+  
+  // Check if completely empty
+  if (normalizedCode.length === 0) return true;
+  
+  // Check if it's just whitespace/newlines
+  if (/^\s*$/.test(normalizedCode)) return true;
+  
+  // Python-specific patterns
+  if (language === 'python' || language === 'py') {
+    // Just 'pass' statement (with optional whitespace/comments)
+    if (/^(\s*(#.*)?[\n\r]*)*\s*pass\s*(\s*(#.*)?[\n\r]*)*$/i.test(normalizedCode)) return true;
+    
+    // Only comments with no actual code
+    const linesWithoutComments = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && !trimmed.startsWith('#');
+      });
+    if (linesWithoutComments.length === 0) return true;
+    
+    // Check if the code is just a function definition with only pass
+    const funcDefWithPassOnly = /^\s*def\s+\w+\s*\([^)]*\)\s*:\s*(\n\s*(#.*)?)*\s*pass\s*$/m;
+    if (funcDefWithPassOnly.test(normalizedCode)) return true;
+    
+    // Check for only comments and pass
+    const codeWithoutCommentsAndPass = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        if (trimmed.length === 0) return false;
+        if (trimmed === 'pass') return false;
+        if (trimmed.startsWith('#')) return false;
+        return true;
+      })
+      .join('\n');
+    
+    if (codeWithoutCommentsAndPass.length === 0) return true;
+  }
+  
+  // JavaScript/TypeScript specific patterns
+  if (language === 'javascript' || language === 'js' || language === 'typescript' || language === 'ts') {
+    const linesWithoutComments = normalizedCode
+      .split('\n')
+      .filter(line => {
+        const trimmed = line.trim();
+        return trimmed.length > 0 && 
+               !trimmed.startsWith('//') && 
+               !trimmed.startsWith('/*') &&
+               !trimmed.startsWith('*');
+      });
+    if (linesWithoutComments.length === 0) return true;
+    
+    // Empty function body
+    if (/^\s*function\s+\w+\s*\([^)]*\)\s*\{\s*\}\s*$/m.test(normalizedCode)) return true;
+    if (/^\s*const\s+\w+\s*=\s*\([^)]*\)\s*=>\s*\{\s*\}\s*$/m.test(normalizedCode)) return true;
+  }
+  
+  // Compare against starter code (if provided)
+  if (starterCode && starterCode.trim().length > 0) {
+    const normalizedStarter = starterCode.trim();
+    
+    // Exact match with starter code
+    if (normalizedCode === normalizedStarter) return true;
+    
+    // Check if only whitespace differences
+    const codeNoWhitespace = normalizedCode.replace(/\s+/g, '');
+    const starterNoWhitespace = normalizedStarter.replace(/\s+/g, '');
+    if (codeNoWhitespace === starterNoWhitespace) return true;
+  }
+  
+  return false;
+};
+
 function Learning() {
   const { user } = useAuth();
   
@@ -448,7 +527,28 @@ function Learning() {
     // Track the score earned for mastery updates
     let scoreEarned = 0;
 
-    if (question.type === 'short_answer' && userAnswer) {
+    if (question.type === 'code' && userAnswer) {
+      // Code question evaluation - pass additional options
+      setIsEvaluating(true);
+      const evalResult = await evaluateAnswer(
+        question.question, 
+        userAnswer, 
+        question.correctAnswer, 
+        question.type,
+        {
+          testCases: question.testCases || [],
+          language: question.language || 'python',
+          starterCode: question.starterCode || ''
+        }
+      );
+      setIsEvaluating(false);
+
+      if (evalResult.success && evalResult.data) {
+        setAnswerEvaluations(prev => ({ ...prev, [question.id]: evalResult.data }));
+        scoreEarned = evalResult.data.score;
+        await saveQuestionToHistory(question, userAnswer, evalResult.data.result, evalResult.data.score, timeTaken);
+      }
+    } else if (question.type === 'short_answer' && userAnswer) {
       // Check if we already have an image-based evaluation
       if (imageAnswer) {
         setAnswerEvaluations(prev => ({ ...prev, [question.id]: imageAnswer }));
@@ -1583,7 +1683,15 @@ function Learning() {
     if (!question) return null;
 
     const userAnswer = userAnswers[question.id];
-    const isAnswered = userAnswer !== undefined && userAnswer !== '';
+    
+    // For code questions, check if the code is meaningful (not empty/starter code)
+    const isCodeQuestionEmpty = question.type === 'code' && 
+      isCodeEmptyOrUnchanged(userAnswer, question.starterCode || '', question.language || 'python');
+    
+    // isAnswered should be false for code questions with empty/unchanged code
+    const isAnswered = question.type === 'code' 
+      ? (userAnswer !== undefined && userAnswer !== '' && !isCodeQuestionEmpty)
+      : (userAnswer !== undefined && userAnswer !== '');
 
     return (
       <div className="space-y-6">
@@ -1679,6 +1787,14 @@ function Learning() {
                 placeholder="Write your code solution here..."
                 minHeight={250}
               />
+              
+              {/* Warning for empty/starter code */}
+              {isCodeQuestionEmpty && userAnswer && userAnswer.length > 0 && (
+                <div className="flex items-center gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>Please write your solution before submitting. The code appears to be empty or unchanged from the starter template.</span>
+                </div>
+              )}
             </div>
           ) : question.type === 'project' ? (
             <ProjectViewer
