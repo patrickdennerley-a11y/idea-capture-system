@@ -1040,11 +1040,14 @@ function Learning() {
         ) : (
           <div className="divide-y divide-gray-800 max-h-[500px] overflow-y-auto">
             {filteredHistory.slice(0, 50).map((item, idx) => {
-              const isExpanded = expandedHistoryItem === item.visibleID;
+              // Create a guaranteed unique ID for each history item
+              // Using combination of id, index, and timestamp to ensure uniqueness
+              const uniqueId = item.id ? `${item.id}` : `idx-${idx}-${item.timestamp || Date.now()}`;
+              const isExpanded = expandedHistoryItem === uniqueId;
               return (
-                <div key={item.visibleID || idx} className="hover:bg-gray-800/30 transition-colors">
+                <div key={uniqueId} className="hover:bg-gray-800/30 transition-colors">
                   <button
-                    onClick={() => setExpandedHistoryItem(isExpanded ? null : item.visibleID)}
+                    onClick={() => setExpandedHistoryItem(isExpanded ? null : uniqueId)}
                     className="w-full p-4 text-left"
                   >
                     <div className="flex items-start gap-3">
